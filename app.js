@@ -5,14 +5,7 @@ const TYPE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7', '#e87ba4', '#00
 const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추론역량', '의사소통': '의사소통역량', '연결': '연결역량', '정보처리': '정보처리역량' };
 const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
 
-const LOGO_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M 58 9 A 41 41 0 1 0 58 91" fill="none" stroke="#c8102e" stroke-width="10" stroke-linecap="round"/>
-  <path d="M 53 9 A 41 41 0 0 1 53 91" fill="none" stroke="#333333" stroke-width="10" stroke-linecap="round"/>
-  <path d="M 68 22 L 30 50 L 65 76" fill="none" stroke="#333333" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M 75 36 L 42 59 L 72 82" fill="none" stroke="#c8102e" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
-
-function logoBlock() { return `<div class="logo-mark">${LOGO_SVG}<span class="wordmark">KASTLE MATH</span></div>`; }
+function logoBlock() { return `<div class="logo-mark"><img src="logo.png" alt="KASTLE MATH" class="logo-icon"><span class="wordmark">KASTLE MATH</span></div>`; }
 
 /* ---------- AI 연동 (Anthropic API, 브라우저에서 직접 호출) ---------- */
 

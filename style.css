@@ -54,7 +54,7 @@ button { font-family: inherit; }
 .brand h1 { font-size: 22px; }
 
 .logo-mark { display: flex; align-items: center; gap: 8px; }
-.logo-mark svg { width: 30px; height: 30px; flex-shrink: 0; }
+.logo-mark img.logo-icon { width: 30px; height: 30px; flex-shrink: 0; object-fit: contain; }
 .logo-mark .wordmark {
   font-family: "Noto Sans KR", sans-serif; font-weight: 900; font-size: 22px;
   letter-spacing: 0.01em; color: var(--ink); white-space: nowrap;
