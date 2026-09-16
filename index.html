@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>캐치유테스트 리포트 · KASTLE MATH</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-mark" id="topbarLogo"></div>
+    <h1 class="display">분석보고서</h1>
+  </div>
+  <nav class="tabs" id="tabNav">
+    <button class="tab-btn active" data-tab="students">학생 관리</button>
+    <button class="tab-btn" data-tab="rounds">회차 · 시험지</button>
+    <button class="tab-btn" data-tab="score">채점 입력</button>
+    <button class="tab-btn" data-tab="retest">재시험</button>
+    <button class="tab-btn" data-tab="report">리포트</button>
+    <button class="tab-btn" data-tab="data">데이터 관리</button>
+  </nav>
+</header>
+
+<main id="app">
+
+  <!-- 학생 관리 -->
+  <section class="tab-panel active" id="panel-students">
+    <div class="card">
+      <h2>학생 등록</h2>
+      <p class="card-sub">이름과 학년/반을 입력해 학생을 등록하세요.</p>
+      <form id="studentForm" class="inline-form">
+        <input type="text" id="stuName" placeholder="이름 (예: 김민준)" required>
+        <select id="stuGrade" required>
+          <option value="" disabled selected>학년 선택</option>
+          <option value="초1">초1</option><option value="초2">초2</option><option value="초3">초3</option>
+          <option value="초4">초4</option><option value="초5">초5</option><option value="초6">초6</option>
+          <option value="중1">중1</option><option value="중2">중2</option><option value="중3">중3</option>
+          <option value="고1">고1</option><option value="고2">고2</option><option value="고3">고3</option>
+        </select>
+        <input type="text" id="stuClass" placeholder="반 (예: A반)">
+        <button type="submit" class="btn primary" id="stuSubmitBtn">학생 추가</button>
+        <button type="button" class="btn ghost" id="stuCancelBtn" style="display:none;">취소</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>학생 목록</h2>
+      <div id="studentListWrap"></div>
+    </div>
+  </section>
+
+  <!-- 회차 · 시험지 -->
+  <section class="tab-panel" id="panel-rounds">
+    <div class="card">
+      <h2>새 회차 등록</h2>
+      <p class="card-sub">캐치유테스트는 매주 금요일에 봐요. 학년마다 시험지가 다르니, 학년을 선택하고 그 학년의 시험지를 업로드하세요. (같은 날짜에 학년별로 회차를 각각 등록하면 돼요)</p>
+      <form id="roundForm">
+        <div class="inline-form">
+          <select id="roundDate" required></select>
+          <select id="roundGrade" required>
+            <option value="" disabled selected>학년 선택</option>
+            <option value="초1">초1</option><option value="초2">초2</option><option value="초3">초3</option>
+            <option value="초4">초4</option><option value="초5">초5</option><option value="초6">초6</option>
+            <option value="중1">중1</option><option value="중2">중2</option><option value="중3">중3</option>
+            <option value="고1">고1</option><option value="고2">고2</option><option value="고3">고3</option>
+          </select>
+          <input type="number" id="roundTotal" value="30" min="1" max="200" style="max-width:110px" title="총 문항 수">
+          <span class="field-hint">총 문항 수</span>
+        </div>
+
+        <div class="upload-box">
+          <label class="btn ghost" for="examFileInput">📄 시험지 업로드 (이미지 · PDF)</label>
+          <input type="file" id="examFileInput" accept="image/*,application/pdf" style="display:none;">
+          <div id="examFileInfo" class="field-hint">아직 업로드된 시험지가 없어요.</div>
+          <img id="examThumb" class="exam-thumb" style="display:none;" alt="시험지 미리보기">
+        </div>
+
+        <div class="ai-import-box">
+          <p class="card-sub" style="margin:0;">시험지를 업로드한 뒤 버튼을 누르면 AI가 문항별 유형 · 2022 개정 교육과정 단원 · 핵심역량 · 난이도를 자동으로 분석해요.</p>
+          <div class="inline-form">
+            <button type="button" class="btn primary" id="aiAnalyzeBtn">🪄 AI로 자동 분석</button>
+            <span id="aiAnalyzeStatus" class="field-hint"></span>
+          </div>
+          <details class="manual-fallback" style="margin-top:2px;">
+            <summary>API 키 설정</summary>
+            <p class="card-sub" style="margin:8px 0;">console.anthropic.com에서 발급받은 API 키를 입력하세요. 이 컴퓨터에만 저장되고, 백업 파일에는 포함되지 않아요.</p>
+            <div class="inline-form">
+              <input type="password" id="apiKeyInput" placeholder="sk-ant-..." style="min-width:260px;">
+              <button type="button" class="btn ghost" id="saveApiKeyBtn">저장</button>
+              <span id="apiKeyStatus" class="field-hint"></span>
+            </div>
+          </details>
+          <details class="manual-fallback">
+            <summary>API 키가 없어요 (Claude 채팅으로 대신 분석)</summary>
+            <p class="card-sub" style="margin:8px 0;">
+              위 시험지를 <b>Claude 채팅창</b>에 올려 "문항별 유형 분석해줘"라고 요청하면, 같은 형식의 JSON을 만들어드려요.
+            </p>
+            <label class="btn ghost" for="mappingFileInput">JSON 파일 불러오기</label>
+            <input type="file" id="mappingFileInput" accept="application/json" style="display:none;">
+          </details>
+        </div>
+
+        <details class="manual-fallback" id="manualFallback">
+          <summary>직접 입력할게요 (수동으로 유형 지정 / AI 결과 수정)</summary>
+          <div id="typeRows" class="type-rows"></div>
+          <div class="inline-form" style="margin-top:8px;">
+            <button type="button" class="btn ghost" id="addTypeRowBtn">+ 유형 추가</button>
+            <span id="coverageHint" class="field-hint"></span>
+          </div>
+        </details>
+
+        <button type="submit" class="btn primary" style="margin-top:12px;">회차 저장</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>등록된 회차</h2>
+      <div id="roundListWrap"></div>
+    </div>
+  </section>
+
+  <!-- 채점 입력 -->
+  <section class="tab-panel" id="panel-score">
+    <div class="card">
+      <h2>채점 입력</h2>
+      <p class="card-sub">회차와 학생을 선택하고, 틀린 문항 번호를 클릭하세요.</p>
+      <div class="inline-form">
+        <select id="scoreRoundSel"></select>
+        <select id="scoreStudentSel"></select>
+      </div>
+      <div id="scoreGridWrap"></div>
+      <div class="inline-form" style="margin-top:10px;">
+        <input type="text" id="quickWrongInput" placeholder="빠른 입력: 틀린 문항 번호 (예: 3,7,15) — 입력하면 바로 반영돼요">
+      </div>
+      <div class="inline-form" style="margin-top:14px;">
+        <button type="button" class="btn primary" id="saveScoreBtn">채점 저장</button>
+        <button type="button" class="btn ghost" id="clearScoreBtn">전체 취소</button>
+        <span id="scoreSummary" class="field-hint"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 재시험 -->
+  <section class="tab-panel" id="panel-retest">
+    <div class="card">
+      <h2>재시험 채점</h2>
+      <p class="card-sub">원래 회차에서 틀렸던 문항만 쌍둥이문제로 다시 봅니다. 여전히 틀린 문항만 클릭하세요.</p>
+      <div class="inline-form">
+        <select id="retestRoundSel"></select>
+        <select id="retestStudentSel"></select>
+        <input type="date" id="retestDate">
+      </div>
+      <div id="retestGridWrap"></div>
+      <div class="inline-form" style="margin-top:14px;">
+        <button type="button" class="btn primary" id="saveRetestBtn">재시험 결과 저장</button>
+        <span id="retestSummary" class="field-hint"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>재시험 기록</h2>
+      <div id="retestListWrap"></div>
+    </div>
+  </section>
+
+  <!-- 리포트 -->
+  <section class="tab-panel" id="panel-report">
+    <div class="card no-print">
+      <h2>리포트 생성</h2>
+      <div class="inline-form">
+        <select id="reportStudentSel"></select>
+        <select id="reportWindowSel">
+          <option value="4">최근 4회차</option>
+          <option value="5" selected>최근 5회차</option>
+          <option value="8">최근 8회차</option>
+          <option value="999">전체 기간</option>
+        </select>
+        <button type="button" class="btn primary" id="pdfExportBtn">⬇ PDF로 저장</button>
+        <button type="button" class="btn ghost" id="printReportBtn">🖨 인쇄 (프린터로 바로 출력)</button>
+        <span id="pdfExportStatus" class="field-hint"></span>
+      </div>
+    </div>
+    <div id="reportOutput"></div>
+  </section>
+
+  <!-- 데이터 관리 -->
+  <section class="tab-panel" id="panel-data">
+    <div class="card">
+      <h2>백업 · 이전</h2>
+      <p class="card-sub">이 프로그램의 데이터는 <b>이 컴퓨터의 이 브라우저</b>에만 저장돼요. 다른 컴퓨터로 옮기거나 백업하려면 내보내기 파일을 사용하세요.</p>
+      <div class="inline-form">
+        <button type="button" class="btn primary" id="exportBtn">⬇ 데이터 내보내기 (백업 파일)</button>
+        <label class="btn ghost" for="importFile">⬆ 데이터 가져오기</label>
+        <input type="file" id="importFile" accept="application/json" style="display:none;">
+      </div>
+    </div>
+    <div class="card">
+      <h2>예시 데이터</h2>
+      <p class="card-sub">프로그램이 처음이라면 예시 데이터를 불러와 기능을 먼저 살펴보세요. (기존 데이터가 있으면 백업 후 사용하세요)</p>
+      <button type="button" class="btn ghost" id="seedBtn">예시 데이터 불러오기</button>
+    </div>
+    <div class="card">
+      <h2>전체 초기화</h2>
+      <p class="card-sub">모든 학생·회차·채점 기록을 삭제합니다. 되돌릴 수 없어요.</p>
+      <button type="button" class="btn danger" id="resetBtn">전체 데이터 초기화</button>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

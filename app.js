@@ -1,0 +1,1575 @@
+/* 캐치유테스트 리포트 — 로컬 저장(localStorage) 기반, 서버/로그인 불필요 */
+
+const STORAGE_KEY = 'catchu_v1';
+const TYPE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7', '#e87ba4', '#008300', '#e34948', '#eda100'];
+const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추론역량', '의사소통': '의사소통역량', '연결': '연결역량', '정보처리': '정보처리역량' };
+const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
+
+const LOGO_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M 56 10 A 42 42 0 1 0 56 90" fill="none" stroke="#c8102e" stroke-width="9" stroke-linecap="round"/>
+  <path d="M 52 10 A 42 42 0 0 1 52 90" fill="none" stroke="#3a3a3a" stroke-width="9" stroke-linecap="round"/>
+  <path d="M 66 20 L 32 48 L 63 73" fill="none" stroke="#3a3a3a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 72 33 L 41 58 L 70 83" fill="none" stroke="#c8102e" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+function logoBlock() { return `<div class="logo-mark">${LOGO_SVG}<span class="wordmark">KASTLE MATH</span></div>`; }
+
+/* ---------- AI 연동 (Anthropic API, 브라우저에서 직접 호출) ---------- */
+
+const API_KEY_STORAGE = 'catchu_api_key'; // 별도 저장 — 백업 파일(state)에는 절대 포함하지 않음
+
+function getApiKey() { try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch (e) { return ''; } }
+function setApiKey(key) { try { localStorage.setItem(API_KEY_STORAGE, key); } catch (e) {} }
+
+async function callClaudeAPI({ content, maxTokens = 2000 }) {
+  const key = getApiKey();
+  if (!key) throw new Error('API 키가 설정되지 않았어요. "API 키 설정"에서 먼저 입력해주세요.');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-5',
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content }],
+    }),
+  });
+  if (!res.ok) {
+    let msg = res.status + ' ' + res.statusText;
+    try { const body = await res.json(); if (body?.error?.message) msg = body.error.message; } catch (e) {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return (data.content || []).map(c => c.text || '').join('');
+}
+
+function extractJson(text) {
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  return JSON.parse(t);
+}
+
+const EXAM_ANALYSIS_PROMPT_TEMPLATE = total => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다.
+시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 판단해주세요.
+또한 문항 하나하나마다(전체 문항 각각에 대해) 다음 두 가지를 판단해주세요:
+- 난이도: 1(하)~5(최상)
+- 핵심역량: 문제해결/추론/의사소통/연결/정보처리 중 그 문항이 주로 평가하는 역량 하나 (같은 유형 안에서도 문항마다 역량이 다를 수 있으니 문항별로 판단하세요)
+
+아래 JSON 형식으로만 응답하세요. 다른 설명이나 마크다운 없이 JSON 객체만 출력하세요:
+{
+  "total": ${total},
+  "types": [
+    { "name": "유형명", "unit": "2022개정 단원명", "questions": [1,2,3] }
+  ],
+  "difficulty": { "1": 2, "2": 3 },
+  "competency": { "1": "문제해결", "2": "추론" }
+}`;
+
+async function analyzeExamWithAI() {
+  const btn = document.getElementById('aiAnalyzeBtn');
+  const status = document.getElementById('aiAnalyzeStatus');
+  if (!pendingExamFile || !pendingExamFile.dataUrl) {
+    status.textContent = '먼저 시험지를 업로드해주세요 (4MB 이하 이미지를 권장해요).';
+    status.style.color = 'var(--critical)';
+    return;
+  }
+  const total = parseInt(document.getElementById('roundTotal').value, 10) || 30;
+  const mediaMatch = pendingExamFile.dataUrl.match(/^data:([^;]+);base64,(.*)$/s);
+  if (!mediaMatch) { status.textContent = '시험지 파일을 읽을 수 없어요.'; return; }
+  const [, mediaType, base64] = mediaMatch;
+  const isPdf = mediaType === 'application/pdf';
+  const fileBlock = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: mediaType, data: base64 } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } };
+
+  btn.disabled = true;
+  status.style.color = 'var(--muted)';
+  status.textContent = '분석 중이에요... (몇 초에서 1분 정도 걸려요)';
+  try {
+    const text = await callClaudeAPI({
+      content: [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total) }],
+      maxTokens: 3000,
+    });
+    const json = extractJson(text);
+    if (!Array.isArray(json.types) || !json.types.length) throw new Error('분석 결과가 비어있어요. 시험지 사진이 잘 보이는지 확인해주세요.');
+    document.getElementById('typeRows').innerHTML = '';
+    json.types.forEach(t => addTypeRow(t.name || '', rangeToString(t.questions || []), t.unit || ''));
+    if (json.total) document.getElementById('roundTotal').value = json.total;
+    pendingDifficulty = (json.difficulty && typeof json.difficulty === 'object') ? json.difficulty : null;
+    pendingCompetency = (json.competency && typeof json.competency === 'object') ? json.competency : null;
+    updateCoverageHint();
+    document.getElementById('manualFallback').open = true;
+    status.style.color = 'var(--good)';
+    status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.';
+    toast('AI 분석이 끝났어요.');
+  } catch (err) {
+    console.error(err);
+    status.style.color = 'var(--critical)';
+    status.textContent = '분석 실패: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const keyInput = document.getElementById('apiKeyInput');
+  const keyStatus = document.getElementById('apiKeyStatus');
+  if (keyInput) {
+    keyInput.value = getApiKey();
+    if (getApiKey()) keyStatus.textContent = '저장된 키가 있어요.';
+    document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
+      setApiKey(keyInput.value.trim());
+      keyStatus.textContent = '저장했어요.';
+      toast('API 키를 저장했어요.');
+    });
+  }
+  const analyzeBtn = document.getElementById('aiAnalyzeBtn');
+  if (analyzeBtn) analyzeBtn.addEventListener('click', analyzeExamWithAI);
+});
+
+let state = loadState();
+let editingRoundId = null;
+let editingStudentId = null;
+let pendingExamFile = null;
+let pendingDifficulty = null;
+let pendingCompetency = null;
+
+/* ---------- state ---------- */
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (!data.teacherNotes) data.teacherNotes = {};
+      if (!data.retests) data.retests = [];
+      return data;
+    }
+  } catch (e) { console.warn('load failed', e); }
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [] };
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    toast('저장 실패: 브라우저 저장공간을 확인해주세요.');
+  }
+}
+
+/* ---------- utils ---------- */
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function hasBatchim(str) {
+  const c = String(str).trim().slice(-1).charCodeAt(0);
+  if (c < 0xAC00 || c > 0xD7A3) return false;
+  return (c - 0xAC00) % 28 !== 0;
+}
+function josa(word, withB, withoutB) { return escapeHtml(word) + (hasBatchim(word) ? withB : withoutB); }
+
+function shortDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d)) return iso;
+  return (d.getMonth() + 1) + '.' + d.getDate();
+}
+
+function toISODate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// 캐치유테스트는 매주 금요일만 봄 — 금요일만 고를 수 있는 선택지를 만들어줌 (지난 8주 ~ 앞으로 26주)
+function populateFridaySelect(selectEl, keepValue) {
+  const today = new Date();
+  const day = today.getDay(); // 0=일 ... 5=금 ... 6=토
+  const diffToFriday = (5 - day + 7) % 7;
+  const nearestFriday = new Date(today);
+  nearestFriday.setDate(today.getDate() + diffToFriday);
+
+  const fridays = [];
+  for (let i = -8; i <= 26; i++) {
+    const d = new Date(nearestFriday);
+    d.setDate(nearestFriday.getDate() + i * 7);
+    fridays.push(d);
+  }
+  const options = fridays.map(d => {
+    const iso = toISODate(d);
+    return `<option value="${iso}">${d.getMonth() + 1}월 ${d.getDate()}일 (금)</option>`;
+  });
+  // 기존 데이터의 날짜가 금요일이 아니거나 목록 범위 밖이면(과거 회차 등) 선택 유지를 위해 추가해둠
+  if (keepValue && !fridays.some(d => toISODate(d) === keepValue)) {
+    options.unshift(`<option value="${keepValue}">${keepValue} (금요일 아님)</option>`);
+  }
+  selectEl.innerHTML = options.join('');
+  if (keepValue) selectEl.value = keepValue;
+  else selectEl.value = toISODate(nearestFriday);
+}
+
+function parseRange(str) {
+  const set = new Set();
+  String(str || '').split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+    const m = tok.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      let a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+      if (a > b) [a, b] = [b, a];
+      for (let i = a; i <= b; i++) set.add(i);
+    } else if (/^\d+$/.test(tok)) {
+      set.add(parseInt(tok, 10));
+    }
+  });
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+function rangeToString(arr) {
+  if (!arr || !arr.length) return '';
+  const sorted = [...arr].sort((a, b) => a - b);
+  const parts = [];
+  let start = sorted[0], prev = sorted[0];
+  for (let i = 1; i <= sorted.length; i++) {
+    const cur = sorted[i];
+    if (cur === prev + 1) { prev = cur; continue; }
+    parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = prev = cur;
+  }
+  return parts.join(',');
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* ---------- tabs ---------- */
+
+function initTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+}
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (name === 'score') renderScoreTab();
+  if (name === 'retest') renderRetestTab();
+  if (name === 'report') renderReportTab();
+}
+
+/* ================= 학생 관리 ================= */
+
+function renderStudents() {
+  const wrap = document.getElementById('studentListWrap');
+  if (!state.students.length) {
+    wrap.innerHTML = '<div class="empty-state">아직 등록된 학생이 없어요. 위에서 학생을 추가해보세요.</div>';
+  } else {
+    const rows = state.students.map(s => `
+      <tr>
+        <td>${escapeHtml(s.name)}</td>
+        <td>${escapeHtml(s.grade || '-')}</td>
+        <td>${escapeHtml(s.class || '-')}</td>
+        <td class="row-actions">
+          <button class="icon-btn" data-report="${s.id}">리포트</button>
+          <button class="icon-btn" data-edit-student="${s.id}">수정</button>
+          <button class="icon-btn" data-del-student="${s.id}">삭제</button>
+        </td>
+      </tr>`).join('');
+    wrap.innerHTML = `<table class="data-table"><thead><tr><th>이름</th><th>학년</th><th>반</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  wrap.querySelectorAll('[data-del-student]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.delStudent;
+    const s = state.students.find(x => x.id === id);
+    if (!confirm(`"${s.name}" 학생과 채점 기록을 모두 삭제할까요?`)) return;
+    state.students = state.students.filter(x => x.id !== id);
+    state.results = state.results.filter(r => r.studentId !== id);
+    if (editingStudentId === id) resetStudentForm();
+    saveState(); renderStudents(); populateSelects();
+    toast('학생을 삭제했어요.');
+  }));
+  wrap.querySelectorAll('[data-report]').forEach(b => b.addEventListener('click', () => {
+    switchTab('report');
+    document.getElementById('reportStudentSel').value = b.dataset.report;
+    renderReportTab();
+  }));
+  wrap.querySelectorAll('[data-edit-student]').forEach(b => b.addEventListener('click', () => {
+    const s = state.students.find(x => x.id === b.dataset.editStudent);
+    if (!s) return;
+    editingStudentId = s.id;
+    document.getElementById('stuName').value = s.name;
+    document.getElementById('stuGrade').value = s.grade || '';
+    document.getElementById('stuClass').value = s.class || '';
+    document.getElementById('stuSubmitBtn').textContent = '학생 수정 저장';
+    document.getElementById('stuCancelBtn').style.display = '';
+    document.getElementById('stuName').focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+}
+
+function resetStudentForm() {
+  editingStudentId = null;
+  document.getElementById('studentForm').reset();
+  document.getElementById('stuSubmitBtn').textContent = '학생 추가';
+  document.getElementById('stuCancelBtn').style.display = 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('studentForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = document.getElementById('stuName').value.trim();
+    if (!name) return;
+    const grade = document.getElementById('stuGrade').value.trim();
+    const cls = document.getElementById('stuClass').value.trim();
+    if (editingStudentId) {
+      const s = state.students.find(x => x.id === editingStudentId);
+      s.name = name; s.grade = grade; s.class = cls;
+      toast('학생 정보를 수정했어요.');
+    } else {
+      state.students.push({ id: uid(), name, grade, class: cls });
+      toast('학생을 추가했어요.');
+    }
+    saveState();
+    resetStudentForm();
+    renderStudents(); populateSelects();
+  });
+  document.getElementById('stuCancelBtn').addEventListener('click', resetStudentForm);
+});
+
+/* ================= 회차 · 시험지 ================= */
+
+const COMPETENCY_OPTIONS = ['', '문제해결', '추론', '의사소통', '연결', '정보처리'];
+
+// 문항별 역량 맵에서, 이 유형에 속한 문항들이 가장 많이 갖는 역량을 보여줌(수정 화면 프리필용, 편집 시 참고만)
+function majorityCompetency(round, type) {
+  if (!round.competency) return '';
+  const counts = {};
+  type.questions.forEach(q => {
+    const c = round.competency[q] ?? round.competency[String(q)];
+    if (c) counts[c] = (counts[c] || 0) + 1;
+  });
+  const entries = Object.entries(counts);
+  if (!entries.length) return '';
+  entries.sort((a, b) => b[1] - a[1]);
+  return entries[0][1] === type.questions.length ? entries[0][0] : '';
+}
+
+function addTypeRow(name = '', range = '', unit = '', competency = '') {
+  const wrap = document.getElementById('typeRows');
+  const idx = wrap.children.length;
+  const row = document.createElement('div');
+  row.className = 'type-row';
+  const compOptions = COMPETENCY_OPTIONS.map(c => `<option value="${c}"${c === competency ? ' selected' : ''}>${c ? COMPETENCY_LABELS[c] : '역량 일괄지정(선택)'}</option>`).join('');
+  row.innerHTML = `
+    <span class="type-swatch" style="background:${TYPE_COLORS[idx % TYPE_COLORS.length]}"></span>
+    <input type="text" class="type-name" placeholder="유형명 (예: 도형)" value="${escapeHtml(name)}">
+    <input type="text" class="type-range" placeholder="문항 번호 (예: 7-12)" value="${escapeHtml(range)}">
+    <input type="text" class="type-unit" placeholder="교육과정 단원 (선택, 예: 분수의 덧셈과 뺄셈)" value="${escapeHtml(unit)}">
+    <select class="type-competency">${compOptions}</select>
+    <button type="button" class="icon-btn" data-remove-type>✕</button>
+  `;
+  row.querySelector('[data-remove-type]').addEventListener('click', () => { row.remove(); updateCoverageHint(); });
+  row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateCoverageHint));
+  wrap.appendChild(row);
+  updateCoverageHint();
+}
+
+function readTypeRows() {
+  return Array.from(document.querySelectorAll('#typeRows .type-row')).map((row, i) => {
+    const name = row.querySelector('.type-name').value.trim();
+    const questions = parseRange(row.querySelector('.type-range').value);
+    const unit = row.querySelector('.type-unit').value.trim();
+    const competency = row.querySelector('.type-competency').value;
+    return { name, questions, unit, competency, color: TYPE_COLORS[i % TYPE_COLORS.length] };
+  }).filter(t => t.name && t.questions.length);
+}
+
+function updateCoverageHint() {
+  const total = parseInt(document.getElementById('roundTotal').value, 10) || 0;
+  const types = readTypeRows();
+  const covered = new Set();
+  types.forEach(t => t.questions.forEach(q => covered.add(q)));
+  const hint = document.getElementById('coverageHint');
+  hint.textContent = `${covered.size} / ${total} 문항 배정됨`;
+  hint.style.color = covered.size === total && total > 0 ? 'var(--good)' : 'var(--warn-ink)';
+}
+
+function renderExamFileInfo() {
+  const info = document.getElementById('examFileInfo');
+  const thumb = document.getElementById('examThumb');
+  if (!pendingExamFile) {
+    info.textContent = '아직 업로드된 시험지가 없어요.';
+    thumb.style.display = 'none';
+    return;
+  }
+  const sizeTxt = (pendingExamFile.size / 1024 / 1024).toFixed(1) + 'MB';
+  if (pendingExamFile.dataUrl && pendingExamFile.dataUrl.startsWith('data:image')) {
+    thumb.src = pendingExamFile.dataUrl;
+    thumb.style.display = 'block';
+    info.textContent = `${pendingExamFile.name} (${sizeTxt})`;
+  } else if (pendingExamFile.dataUrl) {
+    thumb.style.display = 'none';
+    info.textContent = `${pendingExamFile.name} (${sizeTxt}) · PDF 첨부됨`;
+  } else {
+    thumb.style.display = 'none';
+    info.textContent = `${pendingExamFile.name} (${sizeTxt}) · 용량이 커서 미리보기는 생략했어요`;
+  }
+}
+
+function resetRoundForm() {
+  editingRoundId = null;
+  pendingExamFile = null;
+  pendingDifficulty = null;
+  pendingCompetency = null;
+  document.getElementById('roundForm').reset();
+  populateFridaySelect(document.getElementById('roundDate'));
+  document.getElementById('roundGrade').value = '';
+  document.getElementById('roundTotal').value = 30;
+  document.getElementById('typeRows').innerHTML = '';
+  addTypeRow();
+  updateCoverageHint();
+  renderExamFileInfo();
+  const details = document.getElementById('manualFallback');
+  if (details) details.open = false;
+}
+
+// 회차 번호는 같은 학년 안에서만 매김 (학년마다 시험지가 다르므로 전체를 섞어 세지 않음)
+function roundLabel(round) {
+  const sameGrade = state.rounds.filter(r => r.grade === round.grade).sort((a, b) => a.date.localeCompare(b.date));
+  return (sameGrade.findIndex(r => r.id === round.id) + 1) + '회차';
+}
+
+function renderRounds() {
+  const wrap = document.getElementById('roundListWrap');
+  const sorted = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
+  if (!sorted.length) {
+    wrap.innerHTML = '<div class="empty-state">아직 등록된 회차가 없어요.</div>';
+  } else {
+    const rows = [...sorted].reverse().map(r => `
+      <tr>
+        <td>${escapeHtml(r.grade || '-')} ${roundLabel(r)}</td>
+        <td>${shortDate(r.date)}</td>
+        <td>${r.total}문항</td>
+        <td>${r.types.map(t => escapeHtml(t.name) + (t.unit ? ` <span class="type-unit-caption">(${escapeHtml(t.unit)})</span>` : '')).join(', ')}</td>
+        <td>${r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—'}</td>
+        <td class="row-actions">
+          <button class="icon-btn" data-edit-round="${r.id}">수정</button>
+          <button class="icon-btn" data-del-round="${r.id}">삭제</button>
+        </td>
+      </tr>`).join('');
+    wrap.innerHTML = `<table class="data-table"><thead><tr><th>학년·회차</th><th>날짜</th><th>문항수</th><th>유형</th><th>시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  wrap.querySelectorAll('[data-del-round]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.delRound;
+    if (!confirm('이 회차와 관련된 채점 기록도 함께 삭제됩니다. 계속할까요?')) return;
+    state.rounds = state.rounds.filter(r => r.id !== id);
+    state.results = state.results.filter(r => r.roundId !== id);
+    saveState(); renderRounds(); populateSelects();
+    toast('회차를 삭제했어요.');
+  }));
+  wrap.querySelectorAll('[data-edit-round]').forEach(b => b.addEventListener('click', () => {
+    const r = state.rounds.find(x => x.id === b.dataset.editRound);
+    if (!r) return;
+    editingRoundId = r.id;
+    pendingExamFile = r.examFile || null;
+    populateFridaySelect(document.getElementById('roundDate'), r.date);
+    document.getElementById('roundGrade').value = r.grade || '';
+    document.getElementById('roundTotal').value = r.total;
+    document.getElementById('typeRows').innerHTML = '';
+    r.types.forEach(t => addTypeRow(t.name, rangeToString(t.questions), t.unit || '', majorityCompetency(r, t)));
+    updateCoverageHint();
+    renderExamFileInfo();
+    document.getElementById('manualFallback').open = true;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  addTypeRow('', '');
+  document.getElementById('addTypeRowBtn').addEventListener('click', () => addTypeRow());
+  document.getElementById('roundTotal').addEventListener('input', updateCoverageHint);
+
+  document.getElementById('examFileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > MAX_EXAM_FILE_BYTES) {
+      pendingExamFile = { name: file.name, dataUrl: null, size: file.size };
+      renderExamFileInfo();
+      toast('파일이 너무 커서 미리보기 저장은 생략했어요 (기록용으로 이름만 남겨요).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingExamFile = { name: file.name, dataUrl: reader.result, size: file.size };
+      renderExamFileInfo();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('mappingFileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data.types) || !data.types.length) throw new Error('형식 오류');
+        if (data.date && !document.getElementById('roundDate').value) document.getElementById('roundDate').value = data.date;
+        if (data.total) document.getElementById('roundTotal').value = data.total;
+        document.getElementById('typeRows').innerHTML = '';
+        data.types.forEach(t => addTypeRow(t.name || '', rangeToString(t.questions || []), t.unit || ''));
+        pendingDifficulty = (data.difficulty && typeof data.difficulty === 'object') ? data.difficulty : null;
+        pendingCompetency = (data.competency && typeof data.competency === 'object') ? data.competency : null;
+        updateCoverageHint();
+        document.getElementById('manualFallback').open = true;
+        toast('AI 분석 결과를 불러왔어요. 확인 후 회차를 저장하세요.');
+      } catch (err) {
+        alert('올바른 유형 매핑 파일이 아니에요.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  document.getElementById('roundForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const date = document.getElementById('roundDate').value;
+    const grade = document.getElementById('roundGrade').value;
+    const total = parseInt(document.getElementById('roundTotal').value, 10) || 30;
+    if (!date) { toast('날짜를 선택해주세요.'); return; }
+    if (!grade) { toast('학년을 선택해주세요.'); return; }
+    const types = readTypeRows();
+    if (!types.length) { toast('유형을 최소 1개 이상 입력해주세요.'); return; }
+    const covered = new Set();
+    types.forEach(t => t.questions.forEach(q => covered.add(q)));
+    if (covered.size !== total) toast(`참고: ${covered.size}/${total} 문항만 유형에 배정되었어요.`);
+
+    // 문항별 역량: AI/JSON이 준 값을 기본으로, 유형 행에서 직접 고른 값이 있으면 그 유형의 문항들에 덮어씀
+    const rowOverrides = {};
+    let hasRowOverride = false;
+    types.forEach(t => { if (t.competency) { hasRowOverride = true; t.questions.forEach(q => { rowOverrides[q] = t.competency; }); } });
+    const mergedCompetency = (pendingCompetency || hasRowOverride) ? { ...(pendingCompetency || {}), ...rowOverrides } : null;
+
+    if (editingRoundId) {
+      const r = state.rounds.find(x => x.id === editingRoundId);
+      r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = pendingExamFile || null;
+      if (pendingDifficulty) r.difficulty = pendingDifficulty;
+      if (mergedCompetency) r.competency = mergedCompetency;
+    } else {
+      state.rounds.push({ id: uid(), date, grade, total, types, examFile: pendingExamFile || null, difficulty: pendingDifficulty || undefined, competency: mergedCompetency || undefined });
+    }
+    saveState();
+    pendingDifficulty = null;
+    pendingCompetency = null;
+    resetRoundForm();
+    renderRounds(); populateSelects();
+    toast('회차를 저장했어요.');
+  });
+});
+
+/* ================= 채점 입력 ================= */
+
+function populateSelects() {
+  const sortedRounds = [...state.rounds].sort((a, b) => b.date.localeCompare(a.date));
+  const roundOpts = sortedRounds.map(r => `<option value="${r.id}">${escapeHtml(r.grade || '')} · ${roundLabel(r)} (${shortDate(r.date)})</option>`).join('');
+  const studentOpts = state.students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`).join('');
+
+  document.getElementById('scoreRoundSel').innerHTML = roundOpts || '<option value="">회차를 먼저 등록하세요</option>';
+  document.getElementById('reportStudentSel').innerHTML = studentOpts || '<option value="">학생을 먼저 등록하세요</option>';
+  populateScoreStudentSelect();
+}
+
+// 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
+function populateScoreStudentSelect() {
+  const round = state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value);
+  const sel = document.getElementById('scoreStudentSel');
+  const prev = sel.value;
+  const eligible = round && round.grade ? state.students.filter(s => s.grade === round.grade) : state.students;
+  sel.innerHTML = eligible.length
+    ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
+    : `<option value="">${round && round.grade ? escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
+  if (eligible.some(s => s.id === prev)) sel.value = prev;
+}
+
+function currentScoreRound() { return state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value); }
+function currentScoreStudent() { return state.students.find(s => s.id === document.getElementById('scoreStudentSel').value); }
+
+function typeForQuestion(round, q) {
+  for (let i = 0; i < round.types.length; i++) if (round.types[i].questions.includes(q)) return { ...round.types[i], idx: i };
+  return null;
+}
+
+function renderScoreTab() {
+  const round = currentScoreRound();
+  const wrap = document.getElementById('scoreGridWrap');
+  if (!round) {
+    wrap.innerHTML = '<div class="empty-state">회차와 학생을 먼저 선택하세요.</div>';
+    return;
+  }
+  const student = currentScoreStudent();
+  const existing = student ? state.results.find(r => r.studentId === student.id && r.roundId === round.id) : null;
+  const wrongSet = new Set(existing ? existing.wrong : []);
+
+  let btns = '';
+  for (let q = 1; q <= round.total; q++) {
+    const t = typeForQuestion(round, q);
+    const style = t ? `box-shadow: inset 3px 0 0 ${t.color};` : '';
+    btns += `<button type="button" class="qbtn${wrongSet.has(q) ? ' wrong' : ''}" style="${style}" data-q="${q}">${q}</button>`;
+  }
+  const legend = round.types.map((t, i) => `<span class="legend-item"><span class="type-swatch" style="background:${TYPE_COLORS[i % TYPE_COLORS.length]}"></span>${escapeHtml(t.name)}</span>`).join('');
+
+  wrap.innerHTML = `<div class="score-grid">${btns}</div><div class="type-legend">${legend}</div>`;
+  wrap.querySelectorAll('.qbtn').forEach(b => b.addEventListener('click', () => {
+    b.classList.toggle('wrong');
+    syncQuickInputFromGrid();
+    updateScoreSummary();
+  }));
+  document.getElementById('quickWrongInput').value = rangeToString(Array.from(wrongSet));
+  updateScoreSummary();
+}
+
+function syncQuickInputFromGrid() {
+  const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+  document.getElementById('quickWrongInput').value = rangeToString(wrong);
+}
+
+function updateScoreSummary() {
+  const round = currentScoreRound();
+  if (!round) { document.getElementById('scoreSummary').textContent = ''; return; }
+  const wrongCount = document.querySelectorAll('.qbtn.wrong').length;
+  const correct = round.total - wrongCount;
+  const pct = round.total ? Math.round((correct / round.total) * 100) : 0;
+  document.getElementById('scoreSummary').textContent = `정답 ${correct} / ${round.total} (${pct}%)`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
+  document.getElementById('scoreStudentSel').addEventListener('change', renderScoreTab);
+
+  document.getElementById('quickWrongInput').addEventListener('input', () => {
+    const round = currentScoreRound();
+    if (!round) return;
+    const wrong = new Set(parseRange(document.getElementById('quickWrongInput').value));
+    document.querySelectorAll('.qbtn').forEach(b => {
+      const q = parseInt(b.dataset.q, 10);
+      b.classList.toggle('wrong', wrong.has(q));
+    });
+    updateScoreSummary();
+  });
+
+  document.getElementById('clearScoreBtn').addEventListener('click', () => {
+    document.querySelectorAll('.qbtn.wrong').forEach(b => b.classList.remove('wrong'));
+    document.getElementById('quickWrongInput').value = '';
+    updateScoreSummary();
+  });
+
+  document.getElementById('saveScoreBtn').addEventListener('click', () => {
+    const round = currentScoreRound(), student = currentScoreStudent();
+    if (!round || !student) { toast('회차와 학생을 선택해주세요.'); return; }
+    const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+    const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
+    if (existing) existing.wrong = wrong;
+    else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
+    saveState();
+    toast(`${student.name} 학생의 채점을 저장했어요.`);
+  });
+});
+
+/* ================= 재시험 ================= */
+
+// 재시험은 새 유형표가 필요 없음 — 원래 회차에서 틀린 문항 번호를 그대로 재사용해서
+// "쌍둥이문제를 다시 풀었을 때도 틀렸는지"만 기록. 유형·단원·난이도·역량은 원래 회차 것을 그대로 물려받음.
+
+function roundsWithWrongForAnyStudent() {
+  const roundIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.roundId));
+  return [...state.rounds].filter(r => roundIdsWithWrong.has(r.id)).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function populateRetestRoundSelect() {
+  const sel = document.getElementById('retestRoundSel');
+  const rounds = roundsWithWrongForAnyStudent();
+  sel.innerHTML = rounds.length
+    ? rounds.map(r => `<option value="${r.id}">${escapeHtml(r.grade || '')} · ${roundLabel(r)} (${shortDate(r.date)})</option>`).join('')
+    : '<option value="">오답이 있는 회차가 없어요</option>';
+}
+
+function populateRetestStudentSelect() {
+  const roundId = document.getElementById('retestRoundSel').value;
+  const sel = document.getElementById('retestStudentSel');
+  const withWrong = state.results.filter(r => r.roundId === roundId && r.wrong.length);
+  const opts = withWrong.map(r => {
+    const s = state.students.find(x => x.id === r.studentId);
+    return s ? `<option value="${s.id}">${escapeHtml(s.name)} (오답 ${r.wrong.length}개)</option>` : '';
+  }).join('');
+  sel.innerHTML = opts || '<option value="">이 회차에 오답 학생이 없어요</option>';
+}
+
+function currentRetestRound() { return state.rounds.find(r => r.id === document.getElementById('retestRoundSel').value); }
+function currentRetestStudent() { return state.students.find(s => s.id === document.getElementById('retestStudentSel').value); }
+
+function renderRetestTab() {
+  populateRetestRoundSelect();
+  populateRetestStudentSelect();
+  if (!document.getElementById('retestDate').value) document.getElementById('retestDate').value = new Date().toISOString().slice(0, 10);
+  renderRetestGrid();
+  renderRetestList();
+}
+
+function renderRetestGrid() {
+  const wrap = document.getElementById('retestGridWrap');
+  const round = currentRetestRound();
+  const student = currentRetestStudent();
+  if (!round || !student) { wrap.innerHTML = '<div class="empty-state">회차와 학생을 선택하세요.</div>'; updateRetestSummary(); return; }
+  const result = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
+  const originalWrong = result ? [...result.wrong].sort((a, b) => a - b) : [];
+  if (!originalWrong.length) { wrap.innerHTML = '<div class="empty-state">이 학생은 이 회차에 틀린 문항이 없어요.</div>'; updateRetestSummary(); return; }
+  const legend = round.types.map((t, i) => `<span class="legend-item"><span class="type-swatch" style="background:${TYPE_COLORS[i % TYPE_COLORS.length]}"></span>${escapeHtml(t.name)}</span>`).join('');
+  const btns = originalWrong.map(q => {
+    const t = typeForQuestion(round, q);
+    const style = t ? `box-shadow: inset 3px 0 0 ${t.color};` : '';
+    return `<button type="button" class="qbtn" style="${style}" data-q="${q}">${q}</button>`;
+  }).join('');
+  wrap.innerHTML = `<p class="card-sub" style="margin-top:10px;">원래 오답 ${originalWrong.length}문항 · 재시험에서도 틀린 문항만 클릭하세요 (기본값: 전부 정답)</p><div class="score-grid">${btns}</div><div class="type-legend">${legend}</div>`;
+  wrap.querySelectorAll('.qbtn').forEach(b => b.addEventListener('click', () => { b.classList.toggle('wrong'); updateRetestSummary(); }));
+  updateRetestSummary();
+}
+
+function updateRetestSummary() {
+  const total = document.querySelectorAll('#retestGridWrap .qbtn').length;
+  const stillWrong = document.querySelectorAll('#retestGridWrap .qbtn.wrong').length;
+  const summary = document.getElementById('retestSummary');
+  if (!total) { summary.textContent = ''; return; }
+  const corrected = total - stillWrong;
+  summary.textContent = `정답 전환 ${corrected} / ${total} (${Math.round((corrected / total) * 100)}%)`;
+}
+
+function renderRetestList() {
+  const wrap = document.getElementById('retestListWrap');
+  if (!state.retests.length) { wrap.innerHTML = '<div class="empty-state">아직 재시험 기록이 없어요.</div>'; return; }
+  const roundLabelById = id => { const r = state.rounds.find(x => x.id === id); return r ? roundLabel(r) : '(삭제된 회차)'; };
+  const sorted = [...state.retests].sort((a, b) => b.date.localeCompare(a.date));
+  const rows = sorted.map(rt => {
+    const s = state.students.find(x => x.id === rt.studentId);
+    const result = state.results.find(r => r.studentId === rt.studentId && r.roundId === rt.roundId);
+    const originalCount = result ? result.wrong.length : rt.stillWrong.length;
+    const corrected = originalCount - rt.stillWrong.length;
+    const pct = originalCount ? Math.round((corrected / originalCount) * 100) : 0;
+    return `<tr>
+      <td>${s ? escapeHtml(s.name) : '(삭제된 학생)'}</td>
+      <td>${roundLabelById(rt.roundId)}</td>
+      <td>${shortDate(rt.date)}</td>
+      <td class="tnum">${corrected} / ${originalCount} (${pct}%)</td>
+      <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="data-table"><thead><tr><th>학생</th><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+  wrap.querySelectorAll('[data-del-retest]').forEach(b => b.addEventListener('click', () => {
+    if (!confirm('이 재시험 기록을 삭제할까요?')) return;
+    state.retests = state.retests.filter(rt => rt.id !== b.dataset.delRetest);
+    saveState(); renderRetestList();
+    toast('삭제했어요.');
+  }));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('retestRoundSel').addEventListener('change', () => { populateRetestStudentSelect(); renderRetestGrid(); });
+  document.getElementById('retestStudentSel').addEventListener('change', renderRetestGrid);
+  document.getElementById('saveRetestBtn').addEventListener('click', () => {
+    const round = currentRetestRound(), student = currentRetestStudent();
+    if (!round || !student) { toast('회차와 학생을 선택해주세요.'); return; }
+    const stillWrong = Array.from(document.querySelectorAll('#retestGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+    const date = document.getElementById('retestDate').value || new Date().toISOString().slice(0, 10);
+    state.retests.push({ id: uid(), studentId: student.id, roundId: round.id, date, stillWrong });
+    saveState();
+    renderRetestList();
+    toast(`${student.name} 학생의 재시험 결과를 저장했어요.`);
+  });
+});
+
+/* ================= 리포트 ================= */
+
+function gradeTier(pct) {
+  if (pct >= 90) return { n: 1, label: '1등급' };
+  if (pct >= 80) return { n: 2, label: '2등급' };
+  if (pct >= 70) return { n: 3, label: '3등급' };
+  if (pct >= 50) return { n: 4, label: '4등급' };
+  return { n: 5, label: '5등급' };
+}
+
+function computeStudentReport(studentId, windowN) {
+  const student = state.students.find(s => s.id === studentId);
+  if (!student) return null;
+  const ascRounds = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
+  const withResult = ascRounds
+    .map(r => ({ round: r, label: roundLabel(r), result: state.results.find(x => x.studentId === studentId && x.roundId === r.id) }))
+    .filter(x => x.result);
+  const windowed = windowN >= 999 ? withResult : withResult.slice(-windowN);
+  const roundIds = windowed.map(x => x.round.id);
+
+  const points = windowed.map(x => {
+    const wrongSet = new Set(x.result.wrong);
+    const correct = x.round.total - wrongSet.size;
+    const pct = x.round.total ? Math.round((correct / x.round.total) * 100) : 0;
+    return { label: x.label, date: shortDate(x.round.date), pct, correct, total: x.round.total, roundId: x.round.id };
+  });
+
+  // union of type names across the window, preserving first-seen order
+  const typeNames = [];
+  windowed.forEach(x => x.round.types.forEach(t => { if (!typeNames.includes(t.name)) typeNames.push(t.name); }));
+
+  const typeStats = typeNames.map((name, i) => {
+    const series = windowed.map(x => {
+      const t = x.round.types.find(tt => tt.name === name);
+      if (!t || !t.questions.length) return null;
+      const wrongSet = new Set(x.result.wrong);
+      const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
+      const pct = Math.round(((t.questions.length - wrongInType) / t.questions.length) * 100);
+      return pct;
+    });
+    const vals = series.filter(v => v !== null);
+    const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    const first = vals.length ? vals[0] : null;
+    const last = vals.length ? vals[vals.length - 1] : null;
+    const delta = (first !== null && last !== null) ? last - first : null;
+    const unit = windowed.map(x => x.round.types.find(tt => tt.name === name)).filter(Boolean).map(t => t.unit).filter(Boolean)[0] || '';
+    const classAvg = computeClassAverageByType(roundIds, name, studentId);
+    return { name, unit, color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
+  });
+
+  // weighted overall accuracy across the window (more correct than averaging per-round %)
+  const totalCorrect = points.reduce((a, p) => a + p.correct, 0);
+  const totalQ = points.reduce((a, p) => a + p.total, 0);
+  const overallPct = totalQ ? Math.round((totalCorrect / totalQ) * 100) : 0;
+  const classAvgOverall = computeClassAverageOverall(roundIds, studentId);
+
+  // difficulty (optional; only present if the round data was tagged via AI-import)
+  const diff = computeDifficultyBreakdown(windowed);
+
+  // curriculum-unit rollup (optional; only present once types carry a `unit`)
+  const unitBreakdown = computeUnitBreakdown(windowed);
+
+  // competency rollup (optional; only present once types carry a `competency`)
+  const compRaw = computeCompetencyBreakdown(windowed);
+  const classCompMap = computeClassCompetencyBreakdown(roundIds, studentId);
+  const competencyStats = Object.values(compRaw).map(c => ({ label: COMPETENCY_LABELS[c.competency] || c.competency, value: c.total ? Math.round((c.correct / c.total) * 100) : 0 }));
+  const competencyClassStats = Object.values(compRaw).map(c => {
+    const cc = classCompMap[c.competency];
+    return { label: COMPETENCY_LABELS[c.competency] || c.competency, value: cc && cc.total ? Math.round((cc.correct / cc.total) * 100) : 0 };
+  });
+
+  // 재시험 (원래 회차의 오답 문항을 쌍둥이문제로 재검사한 기록) — 메인 정답률과는 별도로 집계
+  const retest = computeRetestSummary(studentId, points);
+
+  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, competencyClassStats, retest };
+}
+
+function computeRetestSummary(studentId, points) {
+  const items = [];
+  let sumOriginal = 0, sumStillWrong = 0;
+  points.forEach(p => {
+    const attempts = state.retests.filter(rt => rt.studentId === studentId && rt.roundId === p.roundId).sort((a, b) => a.date.localeCompare(b.date));
+    if (!attempts.length) return;
+    const result = state.results.find(r => r.studentId === studentId && r.roundId === p.roundId);
+    const originalWrong = result ? result.wrong.length : 0;
+    if (!originalWrong) return;
+    const latest = attempts[attempts.length - 1];
+    const corrected = originalWrong - latest.stillWrong.length;
+    sumOriginal += originalWrong;
+    sumStillWrong += latest.stillWrong.length;
+    items.push({ label: p.label, date: latest.date, attempts: attempts.length, originalWrong, corrected, stillWrong: latest.stillWrong.length, pct: Math.round((corrected / originalWrong) * 100) });
+  });
+  const overallPct = sumOriginal ? Math.round(((sumOriginal - sumStillWrong) / sumOriginal) * 100) : null;
+  return { items, overallPct, sumOriginal, sumCorrected: sumOriginal - sumStillWrong };
+}
+
+function computeUnitBreakdown(windowed) {
+  const map = {};
+  windowed.forEach(x => {
+    const wrongSet = new Set(x.result.wrong);
+    x.round.types.forEach(t => {
+      if (!t.unit || !t.questions.length) return;
+      const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
+      if (!map[t.unit]) map[t.unit] = { unit: t.unit, total: 0, correct: 0 };
+      map[t.unit].total += t.questions.length;
+      map[t.unit].correct += t.questions.length - wrongInType;
+    });
+  });
+  return Object.values(map).map(u => ({ ...u, pct: u.total ? Math.round((u.correct / u.total) * 100) : 0 })).sort((a, b) => a.pct - b.pct);
+}
+
+// 역량은 문항 단위(round.competency: {문항번호: 역량})로 집계 — 같은 유형 안에서도 문항마다 다를 수 있음
+function computeCompetencyBreakdown(windowed) {
+  const map = {};
+  windowed.forEach(x => {
+    const compMap = x.round.competency;
+    if (!compMap) return;
+    const wrongSet = new Set(x.result.wrong);
+    for (let q = 1; q <= x.round.total; q++) {
+      const c = compMap[q] ?? compMap[String(q)];
+      if (!c) continue;
+      if (!map[c]) map[c] = { competency: c, total: 0, correct: 0 };
+      map[c].total += 1;
+      if (!wrongSet.has(q)) map[c].correct += 1;
+    }
+  });
+  return map;
+}
+
+function computeClassCompetencyBreakdown(roundIds, excludeStudentId) {
+  const map = {};
+  state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
+    const round = state.rounds.find(x => x.id === r.roundId);
+    const compMap = round && round.competency;
+    if (!compMap) return;
+    const wrongSet = new Set(r.wrong);
+    for (let q = 1; q <= round.total; q++) {
+      const c = compMap[q] ?? compMap[String(q)];
+      if (!c) continue;
+      if (!map[c]) map[c] = { competency: c, total: 0, correct: 0 };
+      map[c].total += 1;
+      if (!wrongSet.has(q)) map[c].correct += 1;
+    }
+  });
+  return map;
+}
+
+/* class/원내 comparison — computed from this app's own local data, never invented "national" figures */
+function computeClassAverageOverall(roundIds, excludeStudentId) {
+  let correct = 0, total = 0;
+  state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
+    const round = state.rounds.find(x => x.id === r.roundId);
+    if (!round) return;
+    correct += round.total - new Set(r.wrong).size;
+    total += round.total;
+  });
+  return total ? Math.round((correct / total) * 100) : null;
+}
+
+function computeClassAverageByType(roundIds, typeName, excludeStudentId) {
+  let correct = 0, total = 0;
+  state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
+    const round = state.rounds.find(x => x.id === r.roundId);
+    const t = round && round.types.find(tt => tt.name === typeName);
+    if (!t || !t.questions.length) return;
+    const wrongSet = new Set(r.wrong);
+    const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
+    correct += t.questions.length - wrongInType;
+    total += t.questions.length;
+  });
+  return total ? Math.round((correct / total) * 100) : null;
+}
+
+function computeDifficultyBreakdown(windowed) {
+  let sumAll = 0, cntAll = 0, sumCorrect = 0, cntCorrect = 0, sumWrong = 0, cntWrong = 0;
+  windowed.forEach(x => {
+    const diffMap = x.round.difficulty;
+    if (!diffMap) return;
+    const wrongSet = new Set(x.result.wrong);
+    for (let q = 1; q <= x.round.total; q++) {
+      const d = diffMap[q] ?? diffMap[String(q)];
+      if (!d) continue;
+      sumAll += d; cntAll++;
+      if (wrongSet.has(q)) { sumWrong += d; cntWrong++; } else { sumCorrect += d; cntCorrect++; }
+    }
+  });
+  if (!cntAll) return null;
+  return {
+    avgAll: +(sumAll / cntAll).toFixed(1),
+    avgCorrect: cntCorrect ? +(sumCorrect / cntCorrect).toFixed(1) : null,
+    avgWrong: cntWrong ? +(sumWrong / cntWrong).toFixed(1) : null,
+  };
+}
+
+function mapY(v, top, bottom) { return top + (100 - v) / 100 * (bottom - top); }
+
+function buildMainChartSVG(points) {
+  const top = 30, bottom = 224, x0 = 44, x1 = 620, w = 640, h = 262;
+  if (points.length === 0) return '';
+  if (points.length === 1) {
+    const p = points[0];
+    return `<svg viewBox="0 0 ${w} 140" role="img"><text x="${w/2}" y="60" text-anchor="middle" class="axis-label" font-size="13">${escapeHtml(p.label)} 정답률</text>
+      <text x="${w/2}" y="100" text-anchor="middle" fill="var(--accent)" font-size="34" font-weight="700" font-family="Noto Sans KR">${p.pct}%</text></svg>`;
+  }
+  const n = points.length;
+  const xs = points.map((_, i) => x0 + i * (x1 - x0) / (n - 1));
+  const ys = points.map(p => mapY(p.pct, top, bottom));
+  const linePts = xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' L');
+  const areaPts = `M${xs[0]},${ys[0]} L${linePts.split('L').slice(1).join('L')} L${xs[n-1]},${bottom} L${xs[0]},${bottom} Z`;
+
+  let dots = '';
+  points.forEach((p, i) => {
+    const always = (i === 0 || i === n - 1) ? ' always' : '';
+    const labelY = ys[i] - 16 < 14 ? ys[i] + 22 : ys[i] - 16;
+    dots += `<g class="pt-group">
+      <circle class="pt" cx="${xs[i]}" cy="${ys[i]}" r="4"/>
+      <circle class="pt-hit" cx="${xs[i]}" cy="${ys[i]}" r="14"/>
+      <text class="pt-label${always}" x="${xs[i]}" y="${labelY}" text-anchor="middle">${p.pct}%</text>
+    </g>`;
+  });
+
+  let weekLabels = '';
+  points.forEach((p, i) => {
+    weekLabels += `<text class="week-label" x="${xs[i]}" y="246" text-anchor="middle">${escapeHtml(p.label)}<tspan x="${xs[i]}" dy="13">${escapeHtml(p.date)}</tspan></text>`;
+  });
+
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="전체 정답률 추이">
+    <line class="gridline" x1="${x0}" y1="30" x2="${x1}" y2="30"/><text class="axis-label" x="${x0-6}" y="34" text-anchor="end">100%</text>
+    <line class="gridline" x1="${x0}" y1="78.5" x2="${x1}" y2="78.5"/><text class="axis-label" x="${x0-6}" y="82.5" text-anchor="end">75%</text>
+    <line class="gridline" x1="${x0}" y1="127" x2="${x1}" y2="127"/><text class="axis-label" x="${x0-6}" y="131" text-anchor="end">50%</text>
+    <line class="gridline" x1="${x0}" y1="175.5" x2="${x1}" y2="175.5"/><text class="axis-label" x="${x0-6}" y="179.5" text-anchor="end">25%</text>
+    <line class="gridline" x1="${x0}" y1="224" x2="${x1}" y2="224" stroke="var(--baseline)"/><text class="axis-label" x="${x0-6}" y="228" text-anchor="end">0%</text>
+    <path class="area-fill" d="${areaPts}"/>
+    <path class="trend-line" d="M${linePts}"/>
+    ${dots}
+    ${weekLabels}
+  </svg>`;
+}
+
+function buildSparkSVG(series, color) {
+  const vals = series.map(v => v === null ? null : v);
+  const known = vals.filter(v => v !== null);
+  if (!known.length) return '<svg class="spark" viewBox="0 0 120 36"></svg>';
+  const n = vals.length;
+  const top = 4, bottom = 32, x0 = 6, x1 = 114;
+  const pts = vals.map((v, i) => {
+    const x = n > 1 ? x0 + i * (x1 - x0) / (n - 1) : (x0 + x1) / 2;
+    const y = v === null ? null : mapY(v, top, bottom);
+    return { x, y };
+  });
+  const known2 = pts.filter(p => p.y !== null);
+  const line = known2.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const last = known2[known2.length - 1];
+  return `<svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+    <polyline class="spark-line" style="stroke:${color}" points="${line}"/>
+    <circle style="fill:${color}" cx="${last.x}" cy="${last.y}" r="3"/>
+  </svg>`;
+}
+
+function buildBarRow(pct, classAvg, color) {
+  const marker = classAvg !== null && classAvg !== undefined
+    ? `<div class="bar-marker" style="left:${classAvg}%" title="반 평균 ${classAvg}%"></div>` : '';
+  return `<div class="bar-track">
+    <div class="bar-fill" style="width:${pct}%; background:${color}"></div>
+    ${marker}
+  </div>`;
+}
+
+function buildRadarSVG(items, classItems) {
+  const n = items.length;
+  if (n < 3) return '';
+  const cx = 150, cy = 128, R = 66;
+  const angleFor = i => -Math.PI / 2 + i * (2 * Math.PI / n);
+  const pointAt = (i, frac) => {
+    const a = angleFor(i);
+    return [cx + R * frac * Math.cos(a), cy + R * frac * Math.sin(a)];
+  };
+  const ringPath = frac => Array.from({ length: n }, (_, i) => pointAt(i, frac)).map(p => p.join(',')).join(' ');
+  const rings = [0.25, 0.5, 0.75, 1].map(f => `<polygon points="${ringPath(f)}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join('');
+  const axes = Array.from({ length: n }, (_, i) => {
+    const [x, y] = pointAt(i, 1);
+    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`;
+  }).join('');
+  const studentPts = items.map((it, i) => pointAt(i, Math.max(0, Math.min(1, it.value / 100))).join(',')).join(' ');
+  const classPts = classItems ? classItems.map((it, i) => pointAt(i, Math.max(0, Math.min(1, it.value / 100))).join(',')).join(' ') : '';
+  const labels = items.map((it, i) => {
+    const [x, y] = pointAt(i, 1.32);
+    const anchor = Math.abs(x - cx) < 4 ? 'middle' : (x > cx ? 'start' : 'end');
+    const shortLabel = (it.label || '').replace(/역량$/, '');
+    return `<text x="${x}" y="${y}" text-anchor="${anchor}" class="axis-label" font-size="11.5" font-weight="700" fill="var(--ink-soft)">${escapeHtml(shortLabel)}</text>
+      <text x="${x}" y="${y + 13}" text-anchor="${anchor}" class="axis-label" font-size="11">${it.value}%</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 300 270" role="img" aria-label="역량별 성취도 레이더 차트">
+    ${rings}${axes}
+    ${classPts ? `<polygon points="${classPts}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ''}
+    <polygon points="${studentPts}" fill="var(--accent-fill)" stroke="var(--accent)" stroke-width="2"/>
+    ${labels}
+  </svg>`;
+}
+
+function computeStrengthWatch(typeStats) {
+  const known = typeStats.filter(t => t.last !== null);
+  const strengths = known.filter(t => t.last >= 90 && (t.delta === null || t.delta >= 0)).sort((a, b) => b.last - a.last).slice(0, 4);
+  const watch = known.filter(t => t.last < 70 || (t.delta !== null && t.delta <= 0 && t.avg < 85))
+    .sort((a, b) => a.last - b.last).slice(0, 4);
+  return { strengths, watch };
+}
+
+// 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
+function buildComment(student, points, typeStats) {
+  if (points.length < 2) {
+    return `${josa(student.name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.`;
+  }
+  const first = points[0].pct, last = points[points.length - 1].pct;
+  const rise = last - first;
+  const overallVerb = rise > 0 ? `${first}% → ${last}%로 꾸준히 상승했어요` : rise < 0 ? `${first}% → ${last}%로 다소 낮아졌어요` : `${first}%대를 꾸준히 유지하고 있어요`;
+
+  const withDelta = typeStats.filter(t => t.delta !== null);
+  const strengths = withDelta.filter(t => t.last >= 90 && t.delta >= 0).sort((a, b) => b.last - a.last);
+  const improving = withDelta.filter(t => t.delta > 0 && !strengths.includes(t)).sort((a, b) => b.delta - a.delta);
+  const watch = withDelta.filter(t => t.delta <= 0 && t.avg < 85).sort((a, b) => a.avg - b.avg);
+
+  const nameList = arr => arr.map(t => t.name).join(', ');
+
+  const parts = [];
+  parts.push(`${josa(student.name, '은', '는')} ${points.length}회차 동안 전체 정답률이 ${overallVerb}.`);
+  if (strengths.length) parts.push(`특히 ${nameList(strengths)} 유형은 ${strengths[0].last}% 수준까지 올라오며 확실히 자리를 잡았습니다.`);
+  if (improving.length) parts.push(`${nameList(improving)} 유형도 ${improving.map(t => (t.delta > 0 ? '+' : '') + t.delta + '%p').join(', ')} 상승하며 꾸준히 좋아지는 중이에요.`);
+  if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 ${watch.map(t => t.avg + '%').join(', ')} 수준에서 정체되어 있어, 다음 학습에서 가장 집중적으로 다룰 예정입니다.`);
+  if (!strengths.length && !improving.length && !watch.length) parts.push('아직 뚜렷한 강점·약점 유형을 판단하기엔 데이터가 조금 더 필요해요.');
+  return parts.join(' ');
+}
+
+function renderReportTab() {
+  const out = document.getElementById('reportOutput');
+  const studentId = document.getElementById('reportStudentSel').value;
+  const windowN = parseInt(document.getElementById('reportWindowSel').value, 10);
+  if (!studentId) { out.innerHTML = '<div class="card empty-state">학생을 먼저 등록하고 채점을 입력하세요.</div>'; return; }
+
+  const data = computeStudentReport(studentId, windowN);
+  if (!data || !data.points.length) {
+    out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? data.student.name : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
+    return;
+  }
+  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, competencyClassStats, retest } = data;
+  const first = points[0], last = points[points.length - 1];
+  const totalQ = points.reduce((a, p) => a + p.total, 0);
+  const delta = last.pct - first.pct;
+  const grade = gradeTier(overallPct);
+  const gradeCompareTxt = classAvgOverall !== null ? `반 평균은 ${gradeTier(classAvgOverall).label}이에요` : '비교할 반 데이터가 아직 없어요';
+  const pctCompareTxt = classAvgOverall !== null
+    ? (overallPct - classAvgOverall === 0 ? '반 평균과 같아요' : `반 평균보다 ${overallPct - classAvgOverall > 0 ? '+' : ''}${overallPct - classAvgOverall}%p ${overallPct - classAvgOverall > 0 ? '높아요' : '낮아요'}`)
+    : '비교할 반 데이터가 아직 없어요';
+
+  const { strengths, watch } = computeStrengthWatch(typeStats);
+  const strengthsHtml = strengths.length
+    ? `<ul>${strengths.map(t => `<li>${escapeHtml(t.name)} <span class="tnum">${t.last}%</span></li>`).join('')}</ul>`
+    : '<div class="empty">아직 뚜렷한 강점 유형이 없어요</div>';
+  const watchHtml = watch.length
+    ? `<ul>${watch.map(t => `<li>${escapeHtml(t.name)} <span class="tnum">${t.avg}%</span></li>`).join('')}</ul>`
+    : '<div class="empty">대표 취약 유형이 없어요</div>';
+
+  const typeCards = typeStats.map(t => {
+    if (t.last === null) return '';
+    const isStrength = strengths.includes(t);
+    const isWatch = watch.includes(t);
+    const deltaCls = t.delta === null ? '' : t.delta > 0 ? 'up' : t.delta < 0 ? 'down' : 'flat';
+    const deltaTxt = t.delta === null ? '' : (t.delta > 0 ? `+${t.delta}%p` : t.delta < 0 ? `${t.delta}%p` : '±0%p');
+    const badge = isStrength ? `<span class="badge good"><span class="dot"></span>강점 유형</span>`
+      : isWatch ? `<span class="badge watch"><span class="dot"></span>집중 필요</span>` : '';
+    return `<div class="type-card">
+      <div class="type-name">${escapeHtml(t.name)}</div>
+      ${t.unit ? `<div class="type-unit">${escapeHtml(t.unit)}</div>` : ''}
+      ${buildSparkSVG(t.series, isWatch ? 'var(--warn-dot)' : t.color)}
+      <div class="type-row2"><span class="type-pct tnum">${t.last}%</span>${deltaTxt ? `<span class="type-delta ${deltaCls} tnum">${deltaTxt}</span>` : ''}</div>
+      ${buildBarRow(t.last, t.classAvg, isWatch ? 'var(--warn-dot)' : t.color)}
+      ${badge}
+    </div>`;
+  }).join('');
+
+  const tableRows = typeStats.map(t => {
+    const cells = points.map((p, i) => {
+      const v = t.series[i];
+      if (v === null) return '<td>—</td>';
+      const watchCell = watch.includes(t) ? ' class="watch-cell"' : '';
+      return `<td${watchCell} class="tnum">${v}%</td>`;
+    }).join('');
+    return `<tr><td>${escapeHtml(t.name)}${t.unit ? `<span class="unit-sub">${escapeHtml(t.unit)}</span>` : ''}</td>${cells}<td class="tnum">${t.avg !== null ? t.avg + '%' : '—'}</td></tr>`;
+  }).join('');
+
+  const totalRow = `<tr class="total"><td>전체</td>${points.map(p => `<td class="tnum">${p.pct}%<br>(${p.correct}/${p.total})</td>`).join('')}<td class="tnum">${overallPct}%</td></tr>`;
+  const headCells = points.map(p => `<th>${escapeHtml(p.label)}<br>${escapeHtml(p.date)}</th>`).join('');
+
+  const retestSection = retest.items.length ? `
+    <div class="card">
+      <h2>재시험 결과</h2>
+      <p class="card-sub">오답 문항을 쌍둥이문제로 다시 본 기록 · 메인 정답률과 별도로 집계돼요</p>
+      <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
+        <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">재시험 정답률 ${retest.overallPct}%</span>
+          <div class="pill-value tnum">${retest.overallPct}%</div>
+          <div class="pill-compare">오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환</div>
+        </div>
+      </div>
+      ${retest.items.map(it => `
+        <div class="unit-row">
+          <div class="unit-name">${escapeHtml(it.label)} <span class="type-unit-caption">(${escapeHtml(it.date)})</span></div>
+          <div class="unit-count">오답 ${it.originalWrong}개</div>
+          <div class="unit-bar-wrap">${buildBarRow(it.pct, null, it.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
+          <div class="unit-pct tnum">${it.corrected}/${it.originalWrong}</div>
+        </div>`).join('')}
+    </div>` : '';
+
+  const unitSection = unitBreakdown.length ? `
+    <div class="card">
+      <h2>단원별 학습성과</h2>
+      <p class="card-sub">2022 개정 교육과정 단원 기준 · 측정 기간 누적</p>
+      ${unitBreakdown.map(u => `
+        <div class="unit-row">
+          <div class="unit-name">${escapeHtml(u.unit)}</div>
+          <div class="unit-count">${u.total}문항</div>
+          <div class="unit-bar-wrap">${buildBarRow(u.pct, null, u.pct < 70 ? 'var(--warn-dot)' : 'var(--accent)')}</div>
+          <div class="unit-pct tnum">${u.pct}%</div>
+        </div>`).join('')}
+    </div>` : '';
+
+  const diffSection = difficulty ? `
+    <div class="card">
+      <h2>난이도 분석</h2>
+      <p class="card-sub">문항별 난이도 1(하)~5(최상) · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <div class="diff-row">
+        <div class="diff-tile"><div class="label">전체 평균 난이도</div><div class="value tnum">${difficulty.avgAll}</div></div>
+        <div class="diff-tile"><div class="label">정답 문항 평균 난이도</div><div class="value tnum" style="color:var(--good)">${difficulty.avgCorrect ?? '—'}</div></div>
+        <div class="diff-tile"><div class="label">오답 문항 평균 난이도</div><div class="value tnum" style="color:var(--critical)">${difficulty.avgWrong ?? '—'}</div></div>
+      </div>
+      ${difficulty.avgWrong !== null && difficulty.avgCorrect !== null ? `<p class="comment" style="margin-top:10px;">${
+        difficulty.avgWrong > difficulty.avgCorrect + 0.5
+          ? '오답 문항의 난이도가 정답 문항보다 뚜렷이 높아요 — 어려운 문제에서 막히는 경향이에요. 심화 개념 보완이 필요해 보여요.'
+          : difficulty.avgWrong < difficulty.avgCorrect - 0.5
+          ? '오답 문항 중 비교적 쉬운 문제가 섞여 있어요 — 실수(연산 실수, 문제 잘못 읽기 등)를 줄이는 훈련이 도움이 될 수 있어요.'
+          : '정답·오답 문항의 난이도 차이가 크지 않아요 — 특정 난이도 구간보다는 유형 자체에 대한 이해를 더 살펴보면 좋겠어요.'
+      }</p>` : ''}
+    </div>` : '';
+
+  const radarSection = competencyStats.length >= 3 ? `
+    <div class="card">
+      <h2>역량 분석</h2>
+      <p class="card-sub">2022 개정 수학과 핵심역량 기준 · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <div class="radar-wrap">${buildRadarSVG(competencyStats, competencyClassStats)}</div>
+      <div class="radar-legend"><span><span class="swatch" style="background:var(--accent)"></span>${escapeHtml(student.name)}</span><span><span class="swatch" style="background:var(--muted); border-top:1px dashed var(--muted)"></span>반 평균</span></div>
+    </div>` : '';
+
+  const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);
+
+  out.innerHTML = `
+    <div class="sample-flag no-print">실제 데이터 기반 리포트 미리보기 · 인쇄 버튼으로 PDF 저장 가능</div>
+    <div class="card">
+      <div class="masthead">
+        <div>
+          <div class="brand-line">${logoBlock()}</div>
+          <h2>캐치유테스트 성장 리포트</h2>
+        </div>
+        <div class="meta">
+          <div><b>${escapeHtml(student.name)}</b> 학생 ${student.grade ? '· ' + escapeHtml(student.grade) : ''} ${student.class ? escapeHtml(student.class) : ''}</div>
+          <div>측정 기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
+        </div>
+      </div>
+    </div>
+    <div class="pill-row">
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">${grade.label}</span>
+        <div class="pill-value tnum">${grade.n}</div>
+        <div class="pill-compare">${gradeCompareTxt}</div>
+        <div class="pill-caption">1등급 90%+ · 2등급 80%+ · 3등급 70%+ · 4등급 50%+ · 5등급 50%미만</div>
+      </div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">정답률 ${overallPct}%</span>
+        <div class="pill-value tnum">${overallPct}</div>
+        <div class="pill-compare">${pctCompareTxt}</div>
+      </div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>
+        <div class="pill-value tnum">${totalQ}</div>
+        <div class="pill-compare">측정 기간 내 채점된 문항 수</div>
+      </div>
+      <div class="stat-tile"><div class="label">기간 변화</div><div class="value tnum ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div><div class="sub">${first.label} ${first.pct}% → ${last.label} ${last.pct}%</div></div>
+    </div>
+    <div class="card">
+      <h2>대표 강점 · 취약 유형</h2>
+      <p class="card-sub">측정 기간 기준</p>
+      <div class="summary-cols">
+        <div class="summary-box good"><h3>대표 강점 유형</h3>${strengthsHtml}</div>
+        <div class="summary-box watch"><h3>대표 취약 유형</h3>${watchHtml}</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>전체 정답률 추이</h2>
+      <p class="card-sub">회차별 ${points[points.length-1].total}문항 기준</p>
+      <div class="chart-wrap">${buildMainChartSVG(points)}</div>
+    </div>
+    <div class="card">
+      <h2>유형별 정답률</h2>
+      <p class="card-sub">위: 회차 흐름 · 아래: 최근 정답률 (회색 막대는 반 평균)</p>
+      <div class="type-grid">${typeCards}</div>
+    </div>
+    ${retestSection}
+    ${unitSection}
+    ${diffSection}
+    ${radarSection}
+    <div class="card">
+      <h2>선생님 의견</h2>
+      <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
+      <div class="inline-form no-print" style="margin-bottom:8px;">
+        <button type="button" class="btn ghost" id="aiCommentBtn">🪄 AI로 의견 초안 작성</button>
+        <span id="aiCommentStatus" class="field-hint"></span>
+      </div>
+      <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
+      <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
+    </div>
+    <div class="card">
+      <h2>회차별 상세 기록</h2>
+      <p class="card-sub">유형별 정답률(%)</p>
+      <div class="table-wrap">
+        <table class="report-table">
+          <thead><tr><th>유형</th>${headCells}<th>평균</th></tr></thead>
+          <tbody>${totalRow}${tableRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="report-footer">KASTLE MATH · 캐치유테스트 리포트는 매주 결과를 누적하여 4–5주 단위로 발행됩니다</div>
+  `;
+
+  const noteInput = document.getElementById('teacherNoteInput');
+  if (noteInput) {
+    noteInput.addEventListener('change', () => {
+      state.teacherNotes[studentId] = noteInput.value;
+      saveState();
+      out.querySelector('.print-only').innerHTML = noteInput.value ? escapeHtml(noteInput.value).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)';
+      toast('선생님 의견을 저장했어요.');
+    });
+  }
+
+  const aiCommentBtn = document.getElementById('aiCommentBtn');
+  if (aiCommentBtn) {
+    aiCommentBtn.addEventListener('click', async () => {
+      const status = document.getElementById('aiCommentStatus');
+      aiCommentBtn.disabled = true;
+      status.style.color = 'var(--muted)';
+      status.textContent = '작성 중이에요...';
+      try {
+        const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch);
+        const text = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 600 });
+        noteInput.value = text.trim();
+        state.teacherNotes[studentId] = noteInput.value;
+        saveState();
+        out.querySelector('.print-only').innerHTML = escapeHtml(noteInput.value).replace(/\n/g, '<br>');
+        status.style.color = 'var(--good)';
+        status.textContent = '작성 완료! 내용을 확인하고 필요하면 수정하세요.';
+      } catch (err) {
+        console.error(err);
+        status.style.color = 'var(--critical)';
+        status.textContent = '작성 실패: ' + err.message;
+      } finally {
+        aiCommentBtn.disabled = false;
+      }
+    });
+  }
+}
+
+function buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch) {
+  const period = `${points[0].date} ~ ${points[points.length - 1].date} (${points.length}회차)`;
+  const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
+  return `다음은 수학학원 캐치유테스트에서 한 학생의 최근 학습 데이터 요약입니다. 이 데이터를 바탕으로 학부모님께 보여드릴 "선생님 의견" 문단을 자연스러운 한국어로 3~5문장 작성해주세요. 잘하고 있는 부분과 보완이 필요한 부분을 구체적인 유형명과 함께 언급하고, 앞으로의 지도 계획을 한 문장 포함해주세요. 너무 딱딱하지 않으면서도 전문적인 톤으로 써주세요. 결과는 문단 텍스트만 출력하세요 (따옴표, 마크다운, 제목 없이).
+
+학생: ${student.name}
+측정 기간: ${period}
+전체 정답률: ${overallPct}%${classAvgOverall !== null ? ` (반 평균 ${classAvgOverall}%)` : ''}
+강점 유형: ${strengths.length ? strengths.map(t => `${t.name}(${t.last}%)`).join(', ') : '없음'}
+취약 유형: ${watch.length ? watch.map(t => `${t.name}(${t.avg}%)`).join(', ') : '없음'}
+
+유형별 상세:
+${typeLines}`;
+}
+
+async function exportReportPDF() {
+  const btn = document.getElementById('pdfExportBtn');
+  const status = document.getElementById('pdfExportStatus');
+  const target = document.getElementById('reportOutput');
+  if (!target || !target.children.length) { status.textContent = '먼저 리포트를 생성하세요.'; return; }
+  if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
+    status.style.color = 'var(--critical)';
+    status.textContent = 'PDF 기능을 불러오지 못했어요 (인터넷 연결을 확인해주세요).';
+    return;
+  }
+  btn.disabled = true;
+  status.style.color = 'var(--muted)';
+  status.textContent = 'PDF 생성 중이에요...';
+  document.body.classList.add('exporting-pdf');
+  try {
+    const canvas = await html2canvas(target, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4', true);
+    const pageWidth = 210, pageHeight = 297;
+    const imgWidth = pageWidth;
+    const imgHeight = canvas.height * imgWidth / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+    let heightLeft = imgHeight;
+    let position = 0;
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, 'report', 'FAST');
+    heightLeft -= pageHeight;
+    while (heightLeft > 0) {
+      position -= pageHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, 'report', 'FAST');
+      heightLeft -= pageHeight;
+    }
+    const studentSel = document.getElementById('reportStudentSel');
+    const studentName = (studentSel.options[studentSel.selectedIndex] && studentSel.options[studentSel.selectedIndex].textContent) || '학생';
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    pdf.save(`캐치유테스트_${studentName}_${stamp}.pdf`);
+    status.style.color = 'var(--good)';
+    status.textContent = 'PDF를 저장했어요.';
+  } catch (err) {
+    console.error(err);
+    status.style.color = 'var(--critical)';
+    status.textContent = 'PDF 생성 실패: ' + err.message;
+  } finally {
+    document.body.classList.remove('exporting-pdf');
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('reportStudentSel').addEventListener('change', renderReportTab);
+  document.getElementById('reportWindowSel').addEventListener('change', renderReportTab);
+  document.getElementById('printReportBtn').addEventListener('click', () => window.print());
+  document.getElementById('pdfExportBtn').addEventListener('click', exportReportPDF);
+});
+
+/* ================= 데이터 관리 ================= */
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    a.href = url; a.download = `catchu_backup_${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('백업 파일을 내보냈어요.');
+  });
+
+  document.getElementById('importFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data.students || !data.rounds || !data.results) throw new Error('형식 오류');
+        if (!data.teacherNotes) data.teacherNotes = {};
+        if (!data.retests) data.retests = [];
+        if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
+        state = data;
+        saveState();
+        renderAll();
+        toast('데이터를 가져왔어요.');
+      } catch (err) {
+        alert('올바른 백업 파일이 아니에요.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  document.getElementById('seedBtn').addEventListener('click', () => {
+    if (!confirm('예시 데이터를 불러올까요? (현재 데이터가 있다면 먼저 백업하세요)')) return;
+    seedDemoData();
+    renderAll();
+    switchTab('report');
+    document.getElementById('reportStudentSel').value = state.students[0].id;
+    renderReportTab();
+    toast('예시 데이터를 불러왔어요.');
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [] };
+    saveState();
+    renderAll();
+    toast('초기화했어요.');
+  });
+});
+
+function seedDemoData() {
+  const types = [
+    { name: '수와 연산', unit: '자연수의 혼합계산', questions: [1,2,3,4,5,6] },
+    { name: '도형', unit: '평면도형의 이동', questions: [7,8,9,10,11,12] },
+    { name: '측정', unit: '어림하기와 들이·무게', questions: [13,14,15,16,17,18] },
+    { name: '규칙성', unit: '규칙과 대응', questions: [19,20,21,22,23,24] },
+    { name: '문장제/문제해결', unit: '문제해결 전략', questions: [25,26,27,28,29,30] },
+  ].map((t, i) => ({ ...t, color: TYPE_COLORS[i % TYPE_COLORS.length] }));
+
+  const difficulty = {};
+  [1,7,13,19,25].forEach(q => difficulty[q] = 1);
+  [2,3,8,9,14,15,20,21,26,27].forEach(q => difficulty[q] = 2);
+  [4,5,10,11,16,17,22,23,28].forEach(q => difficulty[q] = 3);
+  [6,12,18,24,29].forEach(q => difficulty[q] = 4);
+  [30].forEach(q => difficulty[q] = 5);
+
+  // 문항별 역량 — 같은 유형 안에서도 문항마다 다를 수 있음을 보여주는 예시
+  const competency = {
+    1:'문제해결', 2:'문제해결', 3:'추론', 4:'문제해결', 5:'문제해결', 6:'추론',
+    7:'추론', 8:'추론', 9:'정보처리', 10:'추론', 11:'추론', 12:'추론',
+    13:'정보처리', 14:'정보처리', 15:'정보처리', 16:'연결', 17:'정보처리', 18:'정보처리',
+    19:'연결', 20:'연결', 21:'연결', 22:'추론', 23:'연결', 24:'연결',
+    25:'의사소통', 26:'의사소통', 27:'의사소통', 28:'문제해결', 29:'의사소통', 30:'의사소통',
+  };
+
+  const dates = ['2026-08-14', '2026-08-21', '2026-08-28', '2026-09-04', '2026-09-11']; // 매주 금요일
+  const rounds = dates.map(date => ({ id: uid(), date, grade: '초4', total: 30, types, difficulty, competency }));
+
+  const wrongByRound = [
+    [2,5, 7,9,11, 14,17, 20,23, 26,29],
+    [3, 8,10,12, 15,18, 21, 27,30],
+    [4, 9,11, 13,16,18, 22,24, 28,30],
+    [7,10, 17, 23, 25,29],
+    [12, 18, 26,30],
+  ];
+  const studentId = uid();
+  const student = { id: studentId, name: '김민준', grade: '초4', class: 'A반' };
+  const results = rounds.map((r, i) => ({ id: uid(), studentId, roundId: r.id, wrong: wrongByRound[i] }));
+
+  // a couple of classmates on the same rounds, so 반 평균 comparisons have something to show
+  const classmateNames = ['이서연', '박도윤'];
+  const classmateWrongByRound = [
+    [[1,6, 8,10, 15, 21,24, 28], [3, 9, 16,17, 22, 27,29,30], [2, 7,8, 14,16,18, 20, 26], [5, 11, 18, 26,27,28], [9, 16, 24, 28,29,30]],
+    [[4, 10,12, 16, 19,20,22, 27], [2,6, 8, 17, 23, 28,29], [1, 8,10, 15,17, 21,23, 27,29], [8, 14, 22, 28], [6,11, 17, 23,25]],
+  ];
+  const classmates = classmateNames.map((name, ci) => {
+    const id = uid();
+    return { student: { id, name, grade: '초4', class: 'A반' }, results: rounds.map((r, i) => ({ id: uid(), studentId: id, roundId: r.id, wrong: classmateWrongByRound[ci][i] })) };
+  });
+
+  // 1회차 오답([2,5,7,9,11,14,17,20,23,26,29]) 중 대부분을 재시험에서 교정한 예시
+  const retests = [
+    { id: uid(), studentId, roundId: rounds[0].id, date: '2026-08-17', stillWrong: [9, 26] },
+  ];
+
+  state = {
+    students: [student, ...classmates.map(c => c.student)],
+    rounds,
+    results: [...results, ...classmates.flatMap(c => c.results)],
+    retests,
+    teacherNotes: {
+      [studentId]: '민준이는 이번 4주간 차분하게 문제를 풀어가는 흐름을 보였습니다. 수와 연산, 규칙성 유형은 기본기가 탄탄하게 자리 잡았고, 도형과 측정도 꾸준히 좋아지는 중입니다. 다만 문장제·문제해결 유형에서 정체가 이어지고 있어, 다음 학습에서는 문제를 끝까지 읽고 조건을 정리하는 연습을 함께 해보려 합니다.',
+    },
+  };
+  saveState();
+}
+
+/* ================= init ================= */
+
+function renderAll() {
+  const logoEl = document.getElementById('topbarLogo');
+  if (logoEl) logoEl.innerHTML = logoBlock();
+  renderStudents();
+  resetRoundForm();
+  renderRounds();
+  populateSelects();
+  renderScoreTab();
+  renderReportTab();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initTabs();
+  renderAll();
+});
