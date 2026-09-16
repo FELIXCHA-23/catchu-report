@@ -6,10 +6,10 @@ const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추
 const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
 
 const LOGO_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M 56 10 A 42 42 0 1 0 56 90" fill="none" stroke="#c8102e" stroke-width="9" stroke-linecap="round"/>
-  <path d="M 52 10 A 42 42 0 0 1 52 90" fill="none" stroke="#3a3a3a" stroke-width="9" stroke-linecap="round"/>
-  <path d="M 66 20 L 32 48 L 63 73" fill="none" stroke="#3a3a3a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M 72 33 L 41 58 L 70 83" fill="none" stroke="#c8102e" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 58 9 A 41 41 0 1 0 58 91" fill="none" stroke="#c8102e" stroke-width="10" stroke-linecap="round"/>
+  <path d="M 53 9 A 41 41 0 0 1 53 91" fill="none" stroke="#333333" stroke-width="10" stroke-linecap="round"/>
+  <path d="M 68 22 L 30 50 L 65 76" fill="none" stroke="#333333" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 75 36 L 42 59 L 72 82" fill="none" stroke="#c8102e" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
 function logoBlock() { return `<div class="logo-mark">${LOGO_SVG}<span class="wordmark">KASTLE MATH</span></div>`; }
@@ -44,14 +44,20 @@ async function callClaudeAPI({ content, maxTokens = 2000 }) {
     throw new Error(msg);
   }
   const data = await res.json();
-  return (data.content || []).map(c => c.text || '').join('');
+  const text = (data.content || []).map(c => c.text || '').join('');
+  return { text, stopReason: data.stop_reason };
 }
 
-function extractJson(text) {
-  let t = text.trim();
+function extractJson(text, stopReason) {
+  let t = (text || '').trim();
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) t = fence[1].trim();
-  return JSON.parse(t);
+  try {
+    return JSON.parse(t);
+  } catch (err) {
+    if (stopReason === 'max_tokens') throw new Error('응답이 길어서 도중에 잘렸어요. 문항 수가 많은 시험지라 그래요 — 다시 시도해보세요.');
+    throw new Error('AI 응답을 이해하지 못했어요. 다시 시도해주세요.');
+  }
 }
 
 const EXAM_ANALYSIS_PROMPT_TEMPLATE = total => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다.
@@ -91,11 +97,11 @@ async function analyzeExamWithAI() {
   status.style.color = 'var(--muted)';
   status.textContent = '분석 중이에요... (몇 초에서 1분 정도 걸려요)';
   try {
-    const text = await callClaudeAPI({
+    const { text, stopReason } = await callClaudeAPI({
       content: [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total) }],
-      maxTokens: 3000,
+      maxTokens: 8000,
     });
-    const json = extractJson(text);
+    const json = extractJson(text, stopReason);
     if (!Array.isArray(json.types) || !json.types.length) throw new Error('분석 결과가 비어있어요. 시험지 사진이 잘 보이는지 확인해주세요.');
     document.getElementById('typeRows').innerHTML = '';
     json.types.forEach(t => addTypeRow(t.name || '', rangeToString(t.questions || []), t.unit || ''));
@@ -1343,7 +1349,7 @@ function renderReportTab() {
       status.textContent = '작성 중이에요...';
       try {
         const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch);
-        const text = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 600 });
+        const { text } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 600 });
         noteInput.value = text.trim();
         state.teacherNotes[studentId] = noteInput.value;
         saveState();
