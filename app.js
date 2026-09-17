@@ -535,6 +535,19 @@ function roundLabel(round) {
   return (sameGrade.findIndex(r => r.id === round.id) + 1) + '회차';
 }
 
+// 개별시험지(그 학생 전용 회차)는 이름을 같이 표시
+function roundStudentTag(round) {
+  if (!round.studentId) return '';
+  const s = state.students.find(x => x.id === round.studentId);
+  return s ? ` · ${escapeHtml(s.name)} 개별` : (round.studentName ? ` · ${escapeHtml(round.studentName)} 개별` : ' · 개별시험지');
+}
+
+// 같은 날짜·학년에 진도가 다른 시험지가 여러 개일 수 있어, 첫 유형명을 같이 보여줘 구분되게 함
+function roundTopicHint(round) {
+  if (!round.types || !round.types.length) return '';
+  return ` · ${escapeHtml(round.types[0].name)}${round.types.length > 1 ? ' 외' : ''}`;
+}
+
 function populateRoundGradeFilter() {
   const sel = document.getElementById('roundGradeFilter');
   if (!sel) return;
@@ -560,7 +573,7 @@ function renderRounds() {
       const diffBadge = diff ? `<span class="badge ${diff.n >= 5 ? 'watch' : 'good'}"><span class="dot"></span>${diff.label}(${diff.n}) · 정답률 ${diff.pct}%</span>` : '<span class="field-hint">채점 전</span>';
       return `
       <tr>
-        <td>${escapeHtml(r.grade || '-')} ${roundLabel(r)}</td>
+        <td>${escapeHtml(r.grade || '-')} ${roundLabel(r)}${roundStudentTag(r)}</td>
         <td>${shortDate(r.date)}</td>
         <td>${r.total}문항</td>
         <td>${diffBadge}</td>
@@ -687,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function populateSelects() {
   const sortedRounds = [...state.rounds].sort((a, b) => b.date.localeCompare(a.date));
-  const roundOpts = sortedRounds.map(r => `<option value="${r.id}">${escapeHtml(r.grade || '')} · ${roundLabel(r)} (${shortDate(r.date)})</option>`).join('');
+  const roundOpts = sortedRounds.map(r => `<option value="${r.id}">${escapeHtml(r.grade || '')} · ${roundLabel(r)}${roundStudentTag(r)}${roundTopicHint(r)} (${shortDate(r.date)})</option>`).join('');
   const studentOpts = state.students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`).join('');
 
   document.getElementById('scoreRoundSel').innerHTML = roundOpts || '<option value="">회차를 먼저 등록하세요</option>';
@@ -696,11 +709,17 @@ function populateSelects() {
 }
 
 // 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
+// 개별시험지(studentId 지정된 회차)는 그 학생 한 명만 보여줌
 function populateScoreStudentSelect() {
   const round = state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value);
   const sel = document.getElementById('scoreStudentSel');
   const prev = sel.value;
-  const eligible = round && round.grade ? state.students.filter(s => s.grade === round.grade) : state.students;
+  let eligible;
+  if (round && round.studentId) {
+    eligible = state.students.filter(s => s.id === round.studentId);
+  } else {
+    eligible = round && round.grade ? state.students.filter(s => s.grade === round.grade) : state.students;
+  }
   sel.innerHTML = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
     : `<option value="">${round && round.grade ? escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
@@ -1330,7 +1349,7 @@ function renderReportTab() {
   const diffSection = difficulty ? `
     <div class="card">
       <h2>난이도 분석</h2>
-      <p class="card-sub">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <p class="card-sub no-print">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시돼요</p>
       <div class="diff-row">
         <div class="diff-tile"><div class="label">전체 평균 난이도</div><div class="value tnum">${difficulty.avgAll}</div></div>
         <div class="diff-tile"><div class="label">정답 문항 평균 난이도</div><div class="value tnum" style="color:var(--good)">${difficulty.avgCorrect ?? '—'}</div></div>
@@ -1348,7 +1367,7 @@ function renderReportTab() {
   const radarSection = competencyStats.length >= 3 ? `
     <div class="card">
       <h2>역량 분석</h2>
-      <p class="card-sub">2022 개정 수학과 핵심역량 기준 · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <p class="card-sub no-print">2022 개정 수학과 핵심역량 기준 · 시험지 분석 시 태그된 경우에만 표시돼요</p>
       <div class="radar-wrap">${buildRadarSVG(competencyStats, competencyClassStats)}</div>
       <div class="radar-legend"><span><span class="swatch" style="background:var(--accent)"></span>${escapeHtml(student.name)}</span><span><span class="swatch" style="background:var(--muted); border-top:1px dashed var(--muted)"></span>반 평균</span></div>
     </div>` : '';
@@ -1356,7 +1375,7 @@ function renderReportTab() {
   const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);
 
   out.innerHTML = `
-    <div class="sample-flag no-print">실제 데이터 기반 리포트 미리보기 · 인쇄 버튼으로 PDF 저장 가능</div>
+    <div class="sample-flag no-print">실제 데이터 기반 리포트 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요</div>
     <div class="card">
       <div class="masthead">
         <div>
@@ -1498,22 +1517,52 @@ async function exportReportPDF() {
   status.textContent = 'PDF 생성 중이에요...';
   document.body.classList.add('exporting-pdf');
   try {
-    const canvas = await html2canvas(target, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true });
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4', true);
     const pageWidth = 210, pageHeight = 297;
-    const imgWidth = pageWidth;
-    const imgHeight = canvas.height * imgWidth / canvas.width;
-    const imgData = canvas.toDataURL('image/jpeg', 0.9);
-    let heightLeft = imgHeight;
-    let position = 0;
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, 'report', 'FAST');
-    heightLeft -= pageHeight;
-    while (heightLeft > 0) {
-      position -= pageHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, 'report', 'FAST');
-      heightLeft -= pageHeight;
+    const marginX = 10, marginY = 10, gap = 4;
+    const contentWidth = pageWidth - marginX * 2;
+    const contentBottom = pageHeight - marginY;
+    const pageContentH = pageHeight - marginY * 2;
+    const scale = 3;
+
+    // 카드(섹션) 단위로 따로 캡처해서, 페이지가 넘어갈 때 카드 중간이 아니라
+    // 카드와 카드 사이에서만 끊기도록 함 (내용이 어중간하게 잘리는 문제 방지)
+    const blocks = Array.from(target.children).filter(el => !el.classList.contains('no-print') && el.offsetHeight > 0);
+
+    let y = marginY;
+    let pageHasContent = false;
+
+    for (const el of blocks) {
+      const canvas = await html2canvas(el, { scale, backgroundColor: '#ffffff', useCORS: true });
+      const imgH = canvas.height * contentWidth / canvas.width;
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      if (imgH > pageContentH) {
+        // 카드 하나가 한 페이지보다 큰 경우에만 어쩔 수 없이 슬라이스
+        if (pageHasContent) pdf.addPage();
+        let heightLeft = imgH, position = marginY;
+        pdf.addImage(imgData, 'JPEG', marginX, position, contentWidth, imgH, undefined, 'FAST');
+        heightLeft -= pageContentH;
+        while (heightLeft > 0) {
+          position -= pageContentH;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', marginX, position, contentWidth, imgH, undefined, 'FAST');
+          heightLeft -= pageContentH;
+        }
+        y = Infinity;
+        pageHasContent = true;
+        continue;
+      }
+
+      if (pageHasContent && y + imgH > contentBottom) {
+        pdf.addPage();
+        y = marginY;
+        pageHasContent = false;
+      }
+      pdf.addImage(imgData, 'JPEG', marginX, y, contentWidth, imgH, undefined, 'FAST');
+      y += imgH + gap;
+      pageHasContent = true;
     }
     const studentSel = document.getElementById('reportStudentSel');
     const studentName = (studentSel.options[studentSel.selectedIndex] && studentSel.options[studentSel.selectedIndex].textContent) || '학생';
@@ -1535,7 +1584,6 @@ async function exportReportPDF() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reportStudentSel').addEventListener('change', renderReportTab);
   document.getElementById('reportWindowSel').addEventListener('change', renderReportTab);
-  document.getElementById('printReportBtn').addEventListener('click', () => window.print());
   document.getElementById('pdfExportBtn').addEventListener('click', exportReportPDF);
 });
 
@@ -1705,6 +1753,52 @@ async function syncSharedRounds() {
     // 공용 파일이 아직 없거나(첫 배포) 오프라인인 경우 — 조용히 넘어감
   }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('importRoundsBatchFile');
+  if (btn) btn.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const list = JSON.parse(reader.result);
+        if (!Array.isArray(list)) throw new Error('형식 오류');
+        let added = 0, updated = 0, unmatchedNames = [];
+        list.forEach(r => {
+          if (!r.date || !r.grade || !Array.isArray(r.types)) return;
+          let studentId = null;
+          if (r.studentName) {
+            const matched = state.students.find(s => s.name === r.studentName);
+            if (matched) studentId = matched.id;
+            else unmatchedNames.push(r.studentName);
+          }
+          // 같은 날짜·학년이어도 진도가 달라 시험지 내용(유형 구성)이 다르면 별개 회차로 취급
+          // (같은 파일을 다시 가져올 때만 갱신되도록 유형명 시그니처까지 매칭 키에 포함)
+          const topicKey = (r.types || []).map(t => t.name).join('|');
+          const idx = studentId
+            ? state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.studentId === studentId)
+            : state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && (x.types || []).map(t => t.name).join('|') === topicKey);
+          const payload = { date: r.date, grade: r.grade, total: r.total || 30, types: r.types, difficulty: r.difficulty || undefined, competency: r.competency || undefined, studentId: studentId || undefined, studentName: r.studentName || undefined };
+          if (idx === -1) {
+            state.rounds.push({ id: uid(), ...payload });
+            added++;
+          } else {
+            state.rounds[idx] = { ...state.rounds[idx], ...payload };
+            updated++;
+          }
+        });
+        saveState();
+        renderRounds(); populateSelects();
+        toast(`회차 ${added}개 추가, ${updated}개 갱신했어요.${unmatchedNames.length ? ' (학생 미발견: ' + unmatchedNames.join(', ') + ')' : ''}`);
+      } catch (err) {
+        alert('올바른 회차 일괄 파일이 아니에요.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+});
 
 function exportSharedRounds() {
   if (!state.rounds.length) { toast('내보낼 회차가 없어요.'); return; }

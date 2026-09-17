@@ -36,6 +36,8 @@ body {
   background: var(--surface-page);
   color: var(--ink);
   font-family: "Noto Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 .display { font-family: "Gowun Dodum", "Noto Sans KR", sans-serif; font-weight: 400; }
 .tnum { font-variant-numeric: tabular-nums; }

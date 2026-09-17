@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=12">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -124,6 +124,12 @@
       </form>
     </div>
     <div class="card">
+      <h2>회차 일괄 가져오기</h2>
+      <p class="card-sub">Claude에게 여러 시험지를 한 번에 분석해달라고 하면, 회차 여러 개가 담긴 파일을 만들어드려요. 그 파일을 불러오면 전부 한 번에 등록돼요.</p>
+      <label class="btn primary" for="importRoundsBatchFile">⬆ 회차 일괄 가져오기</label>
+      <input type="file" id="importRoundsBatchFile" accept="application/json" style="display:none;">
+    </div>
+    <div class="card">
       <h2>등록된 회차</h2>
       <div class="inline-form" style="margin-bottom:10px;">
         <select id="roundGradeFilter">
@@ -190,7 +196,6 @@
           <option value="999">전체 기간</option>
         </select>
         <button type="button" class="btn primary" id="pdfExportBtn">⬇ PDF로 저장</button>
-        <button type="button" class="btn ghost" id="printReportBtn">🖨 인쇄 (프린터로 바로 출력)</button>
         <span id="pdfExportStatus" class="field-hint"></span>
       </div>
     </div>
@@ -239,6 +244,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
