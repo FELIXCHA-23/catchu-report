@@ -4,6 +4,40 @@ const STORAGE_KEY = 'catchu_v1';
 const TYPE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7', '#e87ba4', '#008300', '#e34948', '#eda100'];
 const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추론역량', '의사소통': '의사소통역량', '연결': '연결역량', '정보처리': '정보처리역량' };
 const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
+const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALPHA','MH2-GAMMA','TM1-GAMMA','TM2-GAMMA','TM3-GAMMA','TH1-BETA','TH2-BETA','TH1-ALPHA','SH2-ALPHA','ME-INDV'];
+const TEACHER_OPTIONS = ['차성빈','방희진','문태민','목윤재','오민경'];
+const CLASS_TEACHER_MAP = {
+  'MM1-BETA': '문태민', 'MM2-GAMMA': '문태민', 'TM1-GAMMA': '문태민', 'TM2-GAMMA': '문태민', 'ME-INDV': '문태민',
+  'MH1-GAMMA': '목윤재', 'TH1-BETA': '목윤재', 'MM3-BETA': '목윤재', 'TM3-GAMMA': '목윤재',
+  'MH2-GAMMA': '방희진', 'TH2-BETA': '방희진',
+  'MH2-ALPHA': '차성빈', 'TH1-ALPHA': '차성빈', 'SH2-ALPHA': '차성빈',
+};
+function teacherTitle(name) { return name === '차성빈' ? '원장' : '선생님'; }
+
+// 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
+function difficultyTierByAccuracy(pct) {
+  if (pct >= 90) return { n: 1, label: '하' };
+  if (pct >= 80) return { n: 2, label: '중하' };
+  if (pct >= 65) return { n: 3, label: '중' };
+  if (pct >= 55) return { n: 4, label: '중상' };
+  if (pct >= 45) return { n: 5, label: '상' };
+  return { n: 6, label: '최상' };
+}
+
+// 회차(시험지) 전체의 정답률을 계산해 난이도로 환산 — 그 회차를 본 모든 학생의 실제 채점 결과 기반
+function computeRoundOverallDifficulty(roundId) {
+  const round = state.rounds.find(r => r.id === roundId);
+  if (!round) return null;
+  let correct = 0, total = 0;
+  state.results.filter(r => r.roundId === roundId).forEach(r => {
+    correct += round.total - new Set(r.wrong).size;
+    total += round.total;
+  });
+  if (!total) return null;
+  const pct = Math.round((correct / total) * 100);
+  const tier = difficultyTierByAccuracy(pct);
+  return { pct, ...tier };
+}
 
 function logoBlock() { return `<div class="logo-mark"><img src="logo.png" alt="KASTLE MATH" class="logo-icon"><span class="wordmark">KASTLE MATH</span></div>`; }
 
@@ -57,7 +91,8 @@ const EXAM_ANALYSIS_PROMPT_TEMPLATE = total => `다음은 초·중·고 수학 �
 시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 판단해주세요.
 유형은 너무 잘게 쪼개지 말고 굵직하게 묶어주세요 — 같은 단원 안에서는 유형이 2~3개를 넘지 않도록 통합해주세요 (예: "원의 접선의 방정식(1)", "(2)", "(3)"처럼 세분화된 소유형들은 "원의 접선의 방정식" 하나로 합치는 식).
 또한 문항 하나하나마다(전체 문항 각각에 대해) 다음 두 가지를 판단해주세요:
-- 난이도: 1(하)~5(최상)
+- 난이도: 문항별 정답률이 시험지에 표시되어 있다면 그 정답률을 기준으로 아래 표에 따라 매겨주세요. 정답률 정보가 없다면(신규 시험지 등) 문제 내용을 보고 합리적으로 추정해주세요.
+  90% 이상 → 1(하) · 80~90% → 2(중하) · 65~80% → 3(중) · 55~65% → 4(중상) · 45~55% → 5(상) · 45% 미만 → 6(최상)
 - 핵심역량: 문제해결/추론/의사소통/연결/정보처리 중 그 문항이 주로 평가하는 역량 하나 (같은 유형 안에서도 문항마다 역량이 다를 수 있으니 문항별로 판단하세요)
 
 아래 JSON 형식으로만 응답하세요. 다른 설명이나 마크다운 없이 JSON 객체만 출력하세요:
@@ -277,16 +312,17 @@ function renderStudents() {
   } else {
     const rows = state.students.map(s => `
       <tr>
-        <td>${escapeHtml(s.name)}</td>
+        <td>${escapeHtml(s.name)}${s.school ? `<br><span class="type-unit-caption">${escapeHtml(s.school)}</span>` : ''}</td>
         <td>${escapeHtml(s.grade || '-')}</td>
         <td>${escapeHtml(s.class || '-')}</td>
+        <td>${escapeHtml(s.teacher || '-')}</td>
         <td class="row-actions">
           <button class="icon-btn" data-report="${s.id}">리포트</button>
           <button class="icon-btn" data-edit-student="${s.id}">수정</button>
           <button class="icon-btn" data-del-student="${s.id}">삭제</button>
         </td>
       </tr>`).join('');
-    wrap.innerHTML = `<table class="data-table"><thead><tr><th>이름</th><th>학년</th><th>반</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+    wrap.innerHTML = `<table class="data-table"><thead><tr><th>이름</th><th>학년</th><th>반</th><th>담당 선생님</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   wrap.querySelectorAll('[data-del-student]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.delStudent;
@@ -310,6 +346,8 @@ function renderStudents() {
     document.getElementById('stuName').value = s.name;
     document.getElementById('stuGrade').value = s.grade || '';
     document.getElementById('stuClass').value = s.class || '';
+    document.getElementById('stuTeacher').value = s.teacher || '';
+    document.getElementById('stuSchool').value = s.school || '';
     document.getElementById('stuSubmitBtn').textContent = '학생 수정 저장';
     document.getElementById('stuCancelBtn').style.display = '';
     document.getElementById('stuName').focus();
@@ -325,18 +363,28 @@ function resetStudentForm() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const classSel = document.getElementById('stuClass');
+  STANDARD_CLASSES.forEach(c => classSel.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
+  const teacherSel = document.getElementById('stuTeacher');
+  TEACHER_OPTIONS.forEach(t => teacherSel.insertAdjacentHTML('beforeend', `<option value="${t}">${t}</option>`));
+  classSel.addEventListener('change', () => {
+    if (CLASS_TEACHER_MAP[classSel.value]) teacherSel.value = CLASS_TEACHER_MAP[classSel.value];
+  });
+
   document.getElementById('studentForm').addEventListener('submit', e => {
     e.preventDefault();
     const name = document.getElementById('stuName').value.trim();
     if (!name) return;
     const grade = document.getElementById('stuGrade').value.trim();
     const cls = document.getElementById('stuClass').value.trim();
+    const teacher = document.getElementById('stuTeacher').value.trim();
+    const school = document.getElementById('stuSchool').value.trim();
     if (editingStudentId) {
       const s = state.students.find(x => x.id === editingStudentId);
-      s.name = name; s.grade = grade; s.class = cls;
+      s.name = name; s.grade = grade; s.class = cls; s.teacher = teacher; s.school = school;
       toast('학생 정보를 수정했어요.');
     } else {
-      state.students.push({ id: uid(), name, grade, class: cls });
+      state.students.push({ id: uid(), name, grade, class: cls, teacher, school });
       toast('학생을 추가했어요.');
     }
     saveState();
@@ -344,6 +392,44 @@ document.addEventListener('DOMContentLoaded', () => {
     renderStudents(); populateSelects();
   });
   document.getElementById('stuCancelBtn').addEventListener('click', resetStudentForm);
+
+  document.getElementById('importRosterFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const list = JSON.parse(reader.result);
+        if (!Array.isArray(list)) throw new Error('형식 오류');
+        let added = 0, skipped = 0;
+        list.forEach(s => {
+          if (!s.name) return;
+          const exists = state.students.some(x => x.name === s.name && x.class === s.class);
+          if (exists) { skipped++; return; }
+          state.students.push({ id: uid(), name: s.name, grade: s.grade || '', class: s.class || '', teacher: s.teacher || '', school: s.school || '' });
+          added++;
+        });
+        saveState();
+        renderStudents(); populateSelects();
+        toast(`학생 ${added}명 추가했어요${skipped ? ` (중복 ${skipped}명 건너뜀)` : ''}.`);
+      } catch (err) {
+        alert('올바른 명단 파일이 아니에요.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  document.getElementById('applyClassTeacherBtn').addEventListener('click', () => {
+    let changed = 0;
+    state.students.forEach(s => {
+      const t = CLASS_TEACHER_MAP[s.class];
+      if (t && s.teacher !== t) { s.teacher = t; changed++; }
+    });
+    if (!changed) { toast('이미 다 적용되어 있거나, 매핑된 반의 학생이 없어요.'); return; }
+    saveState(); renderStudents(); populateSelects();
+    toast(`${changed}명의 담당 선생님을 반 기준으로 일괄 적용했어요.`);
+  });
 });
 
 /* ================= 회차 · 시험지 ================= */
@@ -449,25 +535,44 @@ function roundLabel(round) {
   return (sameGrade.findIndex(r => r.id === round.id) + 1) + '회차';
 }
 
+function populateRoundGradeFilter() {
+  const sel = document.getElementById('roundGradeFilter');
+  if (!sel) return;
+  const prev = sel.value;
+  const grades = Array.from(new Set(state.rounds.map(r => r.grade).filter(Boolean)));
+  const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
+  grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  sel.innerHTML = '<option value="">학년 전체</option>' + grades.map(g => `<option value="${g}">${g}</option>`).join('');
+  if (grades.includes(prev)) sel.value = prev;
+}
+
 function renderRounds() {
   const wrap = document.getElementById('roundListWrap');
+  populateRoundGradeFilter();
+  const gradeFilter = document.getElementById('roundGradeFilter')?.value || '';
   const sorted = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
-  if (!sorted.length) {
-    wrap.innerHTML = '<div class="empty-state">아직 등록된 회차가 없어요.</div>';
+  const filtered = gradeFilter ? sorted.filter(r => r.grade === gradeFilter) : sorted;
+  if (!filtered.length) {
+    wrap.innerHTML = '<div class="empty-state">해당하는 회차가 없어요.</div>';
   } else {
-    const rows = [...sorted].reverse().map(r => `
+    const rows = [...filtered].reverse().map(r => {
+      const diff = computeRoundOverallDifficulty(r.id);
+      const diffBadge = diff ? `<span class="badge ${diff.n >= 5 ? 'watch' : 'good'}"><span class="dot"></span>${diff.label}(${diff.n}) · 정답률 ${diff.pct}%</span>` : '<span class="field-hint">채점 전</span>';
+      return `
       <tr>
         <td>${escapeHtml(r.grade || '-')} ${roundLabel(r)}</td>
         <td>${shortDate(r.date)}</td>
         <td>${r.total}문항</td>
+        <td>${diffBadge}</td>
         <td>${r.types.map(t => escapeHtml(t.name) + (t.unit ? ` <span class="type-unit-caption">(${escapeHtml(t.unit)})</span>` : '')).join(', ')}</td>
         <td>${r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—'}</td>
         <td class="row-actions">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
           <button class="icon-btn" data-del-round="${r.id}">삭제</button>
         </td>
-      </tr>`).join('');
-    wrap.innerHTML = `<table class="data-table"><thead><tr><th>학년·회차</th><th>날짜</th><th>문항수</th><th>유형</th><th>시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+      </tr>`;
+    }).join('');
+    wrap.innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>학년·회차</th><th>날짜</th><th>문항수</th><th>전체 난이도</th><th>유형</th><th>시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   wrap.querySelectorAll('[data-del-round]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.delRound;
@@ -498,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addTypeRow('', '');
   document.getElementById('addTypeRowBtn').addEventListener('click', () => addTypeRow());
   document.getElementById('roundTotal').addEventListener('input', updateCoverageHint);
+  document.getElementById('roundGradeFilter').addEventListener('change', renderRounds);
 
   document.getElementById('examFileInput').addEventListener('change', e => {
     const file = e.target.files[0];
@@ -1224,7 +1330,7 @@ function renderReportTab() {
   const diffSection = difficulty ? `
     <div class="card">
       <h2>난이도 분석</h2>
-      <p class="card-sub">문항별 난이도 1(하)~5(최상) · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <p class="card-sub">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시돼요</p>
       <div class="diff-row">
         <div class="diff-tile"><div class="label">전체 평균 난이도</div><div class="value tnum">${difficulty.avgAll}</div></div>
         <div class="diff-tile"><div class="label">정답 문항 평균 난이도</div><div class="value tnum" style="color:var(--good)">${difficulty.avgCorrect ?? '—'}</div></div>
@@ -1259,6 +1365,7 @@ function renderReportTab() {
         </div>
         <div class="meta">
           <div><b>${escapeHtml(student.name)}</b> 학생 ${student.grade ? '· ' + escapeHtml(student.grade) : ''} ${student.class ? escapeHtml(student.class) : ''}</div>
+          ${student.teacher ? `<div>담임: ${escapeHtml(student.teacher)} ${teacherTitle(student.teacher)}</div>` : ''}
           <div>측정 기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
         </div>
       </div>

@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=9">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -33,7 +33,7 @@
   <section class="tab-panel active" id="panel-students">
     <div class="card">
       <h2>학생 등록</h2>
-      <p class="card-sub">이름과 학년/반을 입력해 학생을 등록하세요.</p>
+      <p class="card-sub">이름, 학년, 반, 담당 선생님을 선택해 학생을 등록하세요.</p>
       <form id="studentForm" class="inline-form">
         <input type="text" id="stuName" placeholder="이름 (예: 김민준)" required>
         <select id="stuGrade" required>
@@ -43,7 +43,13 @@
           <option value="중1">중1</option><option value="중2">중2</option><option value="중3">중3</option>
           <option value="고1">고1</option><option value="고2">고2</option><option value="고3">고3</option>
         </select>
-        <input type="text" id="stuClass" placeholder="반 (예: A반)">
+        <select id="stuClass" required>
+          <option value="" disabled selected>반 선택</option>
+        </select>
+        <select id="stuTeacher">
+          <option value="">담당 선생님 선택</option>
+        </select>
+        <input type="text" id="stuSchool" placeholder="학교 (선택)">
         <button type="submit" class="btn primary" id="stuSubmitBtn">학생 추가</button>
         <button type="button" class="btn ghost" id="stuCancelBtn" style="display:none;">취소</button>
       </form>
@@ -119,6 +125,11 @@
     </div>
     <div class="card">
       <h2>등록된 회차</h2>
+      <div class="inline-form" style="margin-bottom:10px;">
+        <select id="roundGradeFilter">
+          <option value="">학년 전체</option>
+        </select>
+      </div>
       <div id="roundListWrap"></div>
     </div>
   </section>
@@ -193,8 +204,17 @@
       <p class="card-sub">이 프로그램의 데이터는 <b>이 컴퓨터의 이 브라우저</b>에만 저장돼요. 다른 컴퓨터로 옮기거나 백업하려면 내보내기 파일을 사용하세요.</p>
       <div class="inline-form">
         <button type="button" class="btn primary" id="exportBtn">⬇ 데이터 내보내기 (백업 파일)</button>
-        <label class="btn ghost" for="importFile">⬆ 데이터 가져오기</label>
+        <label class="btn ghost" for="importFile">⬆ 데이터 가져오기 (전체 덮어쓰기)</label>
         <input type="file" id="importFile" accept="application/json" style="display:none;">
+      </div>
+    </div>
+    <div class="card">
+      <h2>학생 명단 추가 (병합)</h2>
+      <p class="card-sub">명단 파일을 불러오면 기존 데이터를 지우지 않고 새 학생만 추가돼요 (이름+반이 같으면 중복으로 보고 건너뜀).</p>
+      <label class="btn ghost" for="importRosterFile">⬆ 학생 명단 파일 가져오기</label>
+      <input type="file" id="importRosterFile" accept="application/json" style="display:none;">
+      <div class="inline-form" style="margin-top:10px;">
+        <button type="button" class="btn ghost" id="applyClassTeacherBtn">반별 기본 담당 선생님 일괄 적용</button>
       </div>
     </div>
     <div class="card">
@@ -219,6 +239,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
