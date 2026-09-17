@@ -1200,17 +1200,20 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     return { label: x.label, date: shortDate(x.round.date), pct, correct, total: x.round.total, roundId: x.round.id };
   });
 
-  // union of type names across the window, preserving first-seen order
-  const typeNames = [];
-  windowed.forEach(x => x.round.types.forEach(t => { if (!typeNames.includes(t.name)) typeNames.push(t.name); }));
+  // 유형명이 아니라 소단원(unit의 " - " 뒷부분) 기준으로 묶음 — 같은 소단원이어도 주차마다
+  // AI가 유형명을 다르게 붙이는 경우가 많아(예: "접선의 방정식" / "접선의 기울기와 방정식") 유형명 기준으로
+  // 묶으면 사실상 같은 내용이 여러 카드로 쪼개져 리포트가 너무 잘게 나뉘고 PDF도 이상하게 분배됨
+  const groupNames = [];
+  windowed.forEach(x => x.round.types.forEach(t => { const key = subUnitKey(t); if (!groupNames.includes(key)) groupNames.push(key); }));
 
-  const typeStats = typeNames.map((name, i) => {
+  const typeStats = groupNames.map((name, i) => {
     const series = windowed.map(x => {
-      const t = x.round.types.find(tt => tt.name === name);
-      if (!t || !t.questions.length) return null;
+      const matching = x.round.types.filter(tt => subUnitKey(tt) === name);
+      const questions = matching.flatMap(tt => tt.questions);
+      if (!questions.length) return null;
       const wrongSet = new Set(x.result.wrong);
-      const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
-      const pct = Math.round(((t.questions.length - wrongInType) / t.questions.length) * 100);
+      const wrongInType = questions.filter(q => wrongSet.has(q)).length;
+      const pct = Math.round(((questions.length - wrongInType) / questions.length) * 100);
       return pct;
     });
     const vals = series.filter(v => v !== null);
@@ -1218,7 +1221,9 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     const first = vals.length ? vals[0] : null;
     const last = vals.length ? vals[vals.length - 1] : null;
     const delta = (first !== null && last !== null) ? last - first : null;
-    const unit = windowed.map(x => x.round.types.find(tt => tt.name === name)).filter(Boolean).map(t => t.unit).filter(Boolean)[0] || '';
+    // 카드 아래 캡션에는 소단원명(=카드 제목)과 안 겹치게 대단원명만 보여줌
+    const fullUnit = windowed.map(x => x.round.types.find(tt => subUnitKey(tt) === name)).filter(Boolean).map(t => t.unit).filter(Boolean)[0] || '';
+    const unit = fullUnit.includes(' - ') ? fullUnit.split(' - ')[0].trim() : '';
     const classAvg = computeClassAverageByType(roundIds, name, studentId);
     return { name, unit, color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
   });
@@ -1263,6 +1268,16 @@ function computeRetestSummary(studentId, points) {
   });
   const overallPct = sumOriginal ? Math.round(((sumOriginal - sumStillWrong) / sumOriginal) * 100) : null;
   return { items, overallPct, sumOriginal, sumCorrected: sumOriginal - sumStillWrong };
+}
+
+// 유형(type)을 소단원 단위로 묶기 위한 키 — unit이 "대단원 - 소단원" 형식이면 소단원 부분만,
+// 아니면(단원 미지정) 유형명을 그대로 씀
+function subUnitKey(type) {
+  if (type.unit) {
+    const parts = type.unit.split(' - ');
+    return parts.length > 1 ? parts.slice(1).join(' - ').trim() : type.unit.trim();
+  }
+  return type.name;
 }
 
 // 소단원까지 너무 잘게 쪼개지지 않게, 대단원(" - " 앞부분) 기준으로 묶어서 집계
@@ -1314,16 +1329,17 @@ function computeClassAverageOverall(roundIds, excludeStudentId) {
   return total ? Math.round((correct / total) * 100) : null;
 }
 
-function computeClassAverageByType(roundIds, typeName, excludeStudentId) {
+function computeClassAverageByType(roundIds, groupKey, excludeStudentId) {
   let correct = 0, total = 0;
   state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
     const round = state.rounds.find(x => x.id === r.roundId);
-    const t = round && round.types.find(tt => tt.name === typeName);
-    if (!t || !t.questions.length) return;
+    if (!round) return;
+    const questions = round.types.filter(tt => subUnitKey(tt) === groupKey).flatMap(tt => tt.questions);
+    if (!questions.length) return;
     const wrongSet = new Set(r.wrong);
-    const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
-    correct += t.questions.length - wrongInType;
-    total += t.questions.length;
+    const wrongInType = questions.filter(q => wrongSet.has(q)).length;
+    correct += questions.length - wrongInType;
+    total += questions.length;
   });
   return total ? Math.round((correct / total) * 100) : null;
 }
@@ -1800,6 +1816,25 @@ function pdfSplittableChildren(el) {
     });
     return out.filter(c => c.offsetHeight > 0);
   }
+  if (el.classList && el.classList.contains('type-grid')) {
+    // 그리드를 카드 한 장씩 쪼개서 캡처하면 좁은 카드 폭이 페이지 폭에 맞춰 억지로 확대돼 이상해 보이므로,
+    // 여러 장씩 묶은 임시 그리드로 잘라서 원래처럼 여러 열로 보이게 캡처하고, 다 쓰고 나면 지움(data-pdf-temp로 표시)
+    const items = Array.from(el.children).filter(c => c.offsetHeight > 0);
+    if (items.length <= 1) return items;
+    const width = el.getBoundingClientRect().width;
+    const chunkSize = 6;
+    const chunks = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const wrap = document.createElement('div');
+      wrap.className = 'type-grid';
+      wrap.style.cssText = `position:fixed; left:-99999px; top:0; width:${width}px;`;
+      wrap.dataset.pdfTemp = '1';
+      items.slice(i, i + chunkSize).forEach(item => wrap.appendChild(item.cloneNode(true)));
+      document.body.appendChild(wrap);
+      chunks.push(wrap);
+    }
+    return chunks;
+  }
   return Array.from(el.children).filter(c => c.offsetHeight > 0);
 }
 
@@ -1812,7 +1847,10 @@ async function pdfPlaceElement(pdf, el, ctx) {
   if (imgH > ctx.pageContentH) {
     const kids = pdfSplittableChildren(el);
     if (kids.length > 1) {
-      for (const kid of kids) await pdfPlaceElement(pdf, kid, ctx);
+      for (const kid of kids) {
+        await pdfPlaceElement(pdf, kid, ctx);
+        if (kid.dataset && kid.dataset.pdfTemp === '1') kid.remove();
+      }
       return;
     }
     // 더 쪼갤 수 없는데도 한 페이지보다 큰 경우에만 어쩔 수 없이 이미지째로 슬라이스
