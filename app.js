@@ -2027,9 +2027,9 @@ async function exportReportPDF() {
     const blocks = Array.from(target.children).filter(el => !el.classList.contains('no-print') && el.offsetHeight > 0);
     for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
 
-    const stampD = new Date();
-    const stamp = `${stampD.getFullYear()}${String(stampD.getMonth() + 1).padStart(2, '0')}${String(stampD.getDate()).padStart(2, '0')}`;
-    pdf.save(`캐치유테스트_${displayName(data.student.name)}_${stamp}.pdf`);
+    // 파일명 맨 앞에 기준 주차(리포트에 포함된 마지막 회차)를 "9월3주차" 형식으로 붙임
+    const lastLabel = data.points.length ? data.points[data.points.length - 1].label.replace('-', '월') : '';
+    pdf.save(`캐치유월간리포트_${lastLabel ? lastLabel + '_' : ''}${displayName(data.student.name)}.pdf`);
     status.style.color = 'var(--good)';
     status.textContent = 'PDF를 저장했어요.';
   } catch (err) {
