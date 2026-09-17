@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -144,8 +144,10 @@
   <section class="tab-panel" id="panel-score">
     <div class="card">
       <h2>채점 입력</h2>
-      <p class="card-sub">회차와 학생을 선택하고, 틀린 문항 번호를 클릭하세요.</p>
+      <p class="card-sub">학년 · 회차 · 시험지 · 학생을 차례로 선택하고, 틀린 문항 번호를 클릭하세요.</p>
       <div class="inline-form">
+        <select id="scoreGradeSel"></select>
+        <select id="scoreRoundGroupSel"></select>
         <select id="scoreRoundSel"></select>
         <select id="scoreStudentSel"></select>
       </div>
@@ -242,6 +244,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

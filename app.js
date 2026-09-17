@@ -699,12 +699,54 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ================= 채점 입력 ================= */
 
 function populateSelects() {
-  const sortedRounds = [...state.rounds].sort((a, b) => b.date.localeCompare(a.date));
-  const roundOpts = sortedRounds.map(r => `<option value="${r.id}">${escapeHtml(r.grade || '')} · ${roundLabel(r)}${roundStudentTag(r)}${roundTopicHint(r)} (${shortDate(r.date)})</option>`).join('');
   const studentOpts = state.students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`).join('');
-
-  document.getElementById('scoreRoundSel').innerHTML = roundOpts || '<option value="">회차를 먼저 등록하세요</option>';
   document.getElementById('reportStudentSel').innerHTML = studentOpts || '<option value="">학생을 먼저 등록하세요</option>';
+  populateScoreGradeSel();
+}
+
+// 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N회차"는 하나로 묶여요)
+function scoreRoundGroups(grade) {
+  const rounds = state.rounds.filter(r => r.grade === grade);
+  const dates = Array.from(new Set(rounds.map(r => r.date))).sort((a, b) => a.localeCompare(b));
+  return dates.map((date, i) => ({ date, n: i + 1, rounds: rounds.filter(r => r.date === date) }));
+}
+
+function populateScoreGradeSel() {
+  const sel = document.getElementById('scoreGradeSel');
+  const prev = sel.value;
+  const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
+  const grades = Array.from(new Set(state.rounds.map(r => r.grade).filter(Boolean)));
+  grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  sel.innerHTML = grades.length
+    ? grades.map(g => `<option value="${g}">${g}</option>`).join('')
+    : '<option value="">회차를 먼저 등록하세요</option>';
+  if (grades.includes(prev)) sel.value = prev;
+  populateScoreRoundGroupSel();
+}
+
+function populateScoreRoundGroupSel() {
+  const grade = document.getElementById('scoreGradeSel').value;
+  const sel = document.getElementById('scoreRoundGroupSel');
+  const prev = sel.value;
+  const groups = grade ? scoreRoundGroups(grade) : [];
+  sel.innerHTML = groups.length
+    ? [...groups].reverse().map(g => `<option value="${g.date}">${g.n}회차 (${shortDate(g.date)})</option>`).join('')
+    : '<option value="">회차가 없어요</option>';
+  if (groups.some(g => g.date === prev)) sel.value = prev;
+  populateScoreExamSel();
+}
+
+// 같은 회차(날짜)에 시험지가 여러 개인 경우(진도가 다른 반) 어떤 시험지인지 고름
+function populateScoreExamSel() {
+  const grade = document.getElementById('scoreGradeSel').value;
+  const date = document.getElementById('scoreRoundGroupSel').value;
+  const sel = document.getElementById('scoreRoundSel');
+  const prev = sel.value;
+  const rounds = state.rounds.filter(r => r.grade === grade && r.date === date);
+  sel.innerHTML = rounds.length
+    ? rounds.map(r => `<option value="${r.id}">${escapeHtml(r.types[0] ? r.types[0].name : '시험지')}${r.types.length > 1 ? ' 외' : ''}${roundStudentTag(r)}</option>`).join('')
+    : '<option value="">시험지를 먼저 등록하세요</option>';
+  if (rounds.some(r => r.id === prev)) sel.value = prev;
   populateScoreStudentSelect();
 }
 
@@ -778,6 +820,8 @@ function updateScoreSummary() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('scoreGradeSel').addEventListener('change', () => { populateScoreRoundGroupSel(); renderScoreTab(); });
+  document.getElementById('scoreRoundGroupSel').addEventListener('change', () => { populateScoreExamSel(); renderScoreTab(); });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', renderScoreTab);
 
