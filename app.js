@@ -213,10 +213,11 @@ function loadState() {
       if (!data.teacherNotes) data.teacherNotes = {};
       if (!data.retests) data.retests = [];
       if (!data.gradeOverrides) data.gradeOverrides = {};
+      if (!data.sharedRoundIds) data.sharedRoundIds = [];
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {} };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [] };
 }
 
 function saveState() {
@@ -2145,12 +2146,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 /* ================= 공용 회차 공유 (관리자가 내보내고, 모든 선생님 컴퓨터가 자동으로 읽어옴) ================= */
 
 // 회차 정의(날짜/학년/유형/단원/난이도/역량)만 공유 — 시험지 원본 이미지, 학생·채점 데이터는 이 파일에 안 들어감
+// 이 기능(동기화 시 삭제 반영)이 생기기 전에 잘못 등록되어 이미 각자 브라우저에 들어가 있던
+// 회차를 한 번만 강제로 정리함. 채점 기록이 있으면(이미 누가 썼으면) 안전하게 건너뜀.
+const LEGACY_REMOVED_ROUND_IDS = ['r_er9f44ek6v'];
+
 async function syncSharedRounds() {
   try {
+    LEGACY_REMOVED_ROUND_IDS.forEach(id => {
+      if (state.results.some(r => r.roundId === id)) return;
+      state.rounds = state.rounds.filter(r => r.id !== id);
+    });
+
     const res = await fetch('rounds-shared.json', { cache: 'no-store' });
-    if (!res.ok) return;
+    if (!res.ok) { saveState(); return; }
     const shared = await res.json();
-    if (!Array.isArray(shared)) return;
+    if (!Array.isArray(shared)) { saveState(); return; }
+    if (!state.sharedRoundIds) state.sharedRoundIds = [];
+    const sharedIds = new Set(shared.map(sr => sr.id));
+
     shared.forEach(sr => {
       const idx = state.rounds.findIndex(r => r.id === sr.id);
       if (idx === -1) {
@@ -2162,8 +2175,22 @@ async function syncSharedRounds() {
         const keepStudentId = state.rounds[idx].studentId;
         state.rounds[idx] = { ...sr, examFile: keepExamFile, studentId: keepStudentId };
       }
+      if (!state.sharedRoundIds.includes(sr.id)) state.sharedRoundIds.push(sr.id);
     });
+
+    // 공용 파일에서 빠진(원장님이 지운) 회차는 이 브라우저에서도 같이 지움 — 단, 이미 채점 기록이
+    // 있으면 실수로 데이터를 날리지 않도록 지우지 않고 알림만 띄움 (직접 확인 후 지우도록)
+    let skippedWithResults = 0;
+    state.sharedRoundIds.filter(id => !sharedIds.has(id)).forEach(id => {
+      if (state.results.some(r => r.roundId === id)) { skippedWithResults++; return; }
+      state.rounds = state.rounds.filter(r => r.id !== id);
+    });
+    state.sharedRoundIds = state.sharedRoundIds.filter(id => sharedIds.has(id) || state.results.some(r => r.roundId === id));
+
     saveState();
+    if (skippedWithResults > 0) {
+      toast(`공용 목록에서 지워진 회차 ${skippedWithResults}개는 채점 기록이 있어 자동으로 지우지 않았어요. 시험지 탭에서 확인해주세요.`);
+    }
   } catch (e) {
     // 공용 파일이 아직 없거나(첫 배포) 오프라인인 경우 — 조용히 넘어감
   }
