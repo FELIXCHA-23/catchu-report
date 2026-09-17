@@ -223,6 +223,12 @@ function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// 동명이인 구분용으로 이름 뒤에 붙인 숫자(예: "황서윤2")는 학원 관리 화면에서만 필요하고
+// 학부모에게 나가는 리포트/PDF에는 보이면 안 되므로, 리포트를 만들 때만 이 함수로 떼어내서 씀
+function displayName(name) {
+  return String(name || '').replace(/\d+$/, '');
+}
+
 function hasBatchim(str) {
   const c = String(str).trim().slice(-1).charCodeAt(0);
   if (c < 0xAC00 || c > 0xD7A3) return false;
@@ -1426,8 +1432,9 @@ function computeStrengthWatch(typeStats) {
 
 // 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
 function buildComment(student, points, typeStats) {
+  const name = displayName(student.name);
   if (points.length < 2) {
-    return `${josa(student.name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.`;
+    return `${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.`;
   }
   const first = points[0].pct, last = points[points.length - 1].pct;
   const rise = last - first;
@@ -1441,7 +1448,7 @@ function buildComment(student, points, typeStats) {
   const nameList = arr => arr.map(t => t.name).join(', ');
 
   const parts = [];
-  parts.push(`${josa(student.name, '은', '는')} ${points.length}회차 동안 전체 정답률이 ${overallVerb}.`);
+  parts.push(`${josa(name, '은', '는')} ${points.length}회차 동안 전체 정답률이 ${overallVerb}.`);
   if (strengths.length) parts.push(`특히 ${nameList(strengths)} 유형은 ${strengths[0].last}% 수준까지 올라오며 확실히 자리를 잡았습니다.`);
   if (improving.length) parts.push(`${nameList(improving)} 유형도 ${improving.map(t => (t.delta > 0 ? '+' : '') + t.delta + '%p').join(', ')} 상승하며 꾸준히 좋아지는 중이에요.`);
   if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 ${watch.map(t => t.avg + '%').join(', ')} 수준에서 정체되어 있어, 다음 학습에서 가장 집중적으로 다룰 예정입니다.`);
@@ -1474,7 +1481,7 @@ function renderReportTab() {
 
   const data = computeStudentReport(studentId, fromRoundId, toRoundId);
   if (!data || !data.points.length) {
-    out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? data.student.name : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
+    out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? displayName(data.student.name) : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
     return;
   }
   const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, retest } = data;
@@ -1597,7 +1604,7 @@ function renderReportTab() {
           <h2>캐치유테스트 성장 리포트</h2>
         </div>
         <div class="meta">
-          <div class="student-name-big">${escapeHtml(student.name)}</div>
+          <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
           <div>${[student.school, student.grade].filter(Boolean).map(escapeHtml).join(' ')}</div>
           ${student.teacher ? `<div>담임: ${escapeHtml(student.teacher)} ${teacherTitle(student.teacher)}</div>` : ''}
           <div>기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
@@ -1741,7 +1748,7 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
   const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
   return `다음은 수학학원 캐치유테스트에서 한 학생의 최근 학습 데이터 요약입니다. 이 데이터를 바탕으로 학부모님께 보여드릴 "선생님 의견" 문단을 자연스러운 한국어로 3~5문장 작성해주세요. 잘하고 있는 부분과 보완이 필요한 부분을 구체적인 유형명과 함께 언급하고, 앞으로의 지도 계획을 한 문장 포함해주세요. 너무 딱딱하지 않으면서도 전문적인 톤으로 써주세요. 결과는 문단 텍스트만 출력하세요 (따옴표, 마크다운, 제목 없이).
 
-학생: ${student.name}
+학생: ${displayName(student.name)}
 측정 기간: ${period}
 전체 정답률: ${overallPct}%${classAvgOverall !== null ? ` (반 평균 ${classAvgOverall}%)` : ''}
 강점 유형: ${strengths.length ? strengths.map(t => `${t.name}(${t.last}%)`).join(', ') : '없음'}
@@ -1749,6 +1756,103 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
 
 유형별 상세:
 ${typeLines}`;
+}
+
+// 이 요소를 더 쪼갤 수 있으면 쪼갤 자식 목록을 돌려줌 (표는 줄 단위로, 그 외엔 DOM 자식 단위로)
+// — 페이지 넘어갈 때 문항/행 중간이 아니라 항상 "항목과 항목 사이"에서만 끊기게 하기 위함
+function pdfSplittableChildren(el) {
+  if (el.tagName === 'SVG') return [];
+  if (el.tagName === 'TABLE') {
+    const out = [];
+    Array.from(el.children).forEach(c => {
+      if (c.tagName === 'TBODY') Array.from(c.children).forEach(tr => out.push(tr));
+      else out.push(c); // thead 등은 통째로
+    });
+    return out.filter(c => c.offsetHeight > 0);
+  }
+  return Array.from(el.children).filter(c => c.offsetHeight > 0);
+}
+
+// el을 캡처해서 ctx(페이지 커서)에 이어붙임. 한 페이지보다 크면 더 잘게 쪼갤 수 있는 만큼 재귀적으로 쪼개서
+// 각 조각이 페이지 경계에서만 넘어가도록 함 — 정말 더 쪼갤 수 없는 조각만 최후 수단으로 강제 슬라이스함
+async function pdfPlaceElement(pdf, el, ctx) {
+  const canvas = await html2canvas(el, { scale: ctx.scale, backgroundColor: '#ffffff', useCORS: true });
+  const imgH = canvas.height * ctx.contentWidth / canvas.width;
+
+  if (imgH > ctx.pageContentH) {
+    const kids = pdfSplittableChildren(el);
+    if (kids.length > 1) {
+      for (const kid of kids) await pdfPlaceElement(pdf, kid, ctx);
+      return;
+    }
+    // 더 쪼갤 수 없는데도 한 페이지보다 큰 경우에만 어쩔 수 없이 이미지째로 슬라이스
+    if (ctx.pageHasContent) { pdf.addPage(); ctx.y = ctx.marginY; ctx.pageHasContent = false; }
+    let heightLeft = imgH, position = ctx.marginY;
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    pdf.addImage(imgData, 'JPEG', ctx.marginX, position, ctx.contentWidth, imgH, undefined, 'FAST');
+    heightLeft -= ctx.pageContentH;
+    while (heightLeft > 0) {
+      position -= ctx.pageContentH;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', ctx.marginX, position, ctx.contentWidth, imgH, undefined, 'FAST');
+      heightLeft -= ctx.pageContentH;
+    }
+    ctx.y = Infinity;
+    ctx.pageHasContent = true;
+    return;
+  }
+
+  if (ctx.pageHasContent && ctx.y + imgH > ctx.contentBottom) {
+    pdf.addPage();
+    ctx.y = ctx.marginY;
+    ctx.pageHasContent = false;
+  }
+  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  pdf.addImage(imgData, 'JPEG', ctx.marginX, ctx.y, ctx.contentWidth, imgH, undefined, 'FAST');
+  ctx.y += imgH + ctx.gap;
+  ctx.pageHasContent = true;
+}
+
+// 리포트 맨 앞장 — 로고/학원명, 학생 이름, 측정 기간·회차 수, 담당 강사를 보여주는 표지 한 장
+// 학원의 상징색인 빨간색 포인트 라인 + 페이지 대부분을 채우는 큰 테두리 박스로 격식있게 구성
+async function pdfAddCoverPage(pdf, student, points) {
+  const period = points.length ? `${points[0].date} – ${points[points.length - 1].date}` : '';
+  const teacherTxt = student.teacher ? escapeHtml(student.teacher) + ' ' + teacherTitle(student.teacher) : '-';
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed; left:-99999px; top:0;';
+  wrap.innerHTML = `
+    <div style="width:794px; height:1123px; box-sizing:border-box; background:#fff; position:relative; font-family:'Noto Sans KR',sans-serif;">
+      <div style="position:absolute; top:0; left:0; right:0; height:16px; background:#c8102e;"></div>
+      <div style="position:absolute; top:52px; left:52px; right:52px; bottom:52px; border:3px solid #c8102e; box-sizing:border-box;">
+        <div style="height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:60px 48px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <img src="logo.png" style="width:46px;height:46px;object-fit:contain;">
+            <span style="font-weight:900; font-size:25px; letter-spacing:0.02em; color:#0b0b0b;">KASTLE MATH</span>
+          </div>
+          <div style="text-align:center;">
+            <div style="width:70px; height:3px; background:#c8102e; margin:0 auto 30px;"></div>
+            <div style="font-size:46px; font-weight:800; color:#0b0b0b; margin-bottom:16px;">${escapeHtml(displayName(student.name))}</div>
+            <div style="font-family:'Gowun Dodum',sans-serif; font-weight:400; font-size:23px; color:#52514e;">캐치유테스트 분석보고서</div>
+            <div style="width:70px; height:3px; background:#c8102e; margin:30px auto 0;"></div>
+          </div>
+          <div style="width:100%;">
+            <div style="border-top:1px solid #ddddd3; margin-bottom:22px;"></div>
+            <div style="display:flex; justify-content:center; gap:64px; font-size:14px; color:#3a3a3a; text-align:center;">
+              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">측정 기간</div>${escapeHtml(period)} (${points.length}회차)</div>
+              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">담당 강사</div>${teacherTxt}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  try {
+    const canvas = await html2canvas(wrap.firstElementChild, { scale: 2.5, backgroundColor: '#ffffff', useCORS: true });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+  } finally {
+    document.body.removeChild(wrap);
+  }
 }
 
 async function exportReportPDF() {
@@ -1761,6 +1865,12 @@ async function exportReportPDF() {
     status.textContent = 'PDF 기능을 불러오지 못했어요 (인터넷 연결을 확인해주세요).';
     return;
   }
+  const studentId = document.getElementById('reportStudentSel').value;
+  const fromRoundId = document.getElementById('reportFromSel').value;
+  const toRoundId = document.getElementById('reportToSel').value;
+  const data = computeStudentReport(studentId, fromRoundId, toRoundId);
+  if (!data || !data.points.length) { status.textContent = '먼저 리포트를 생성하세요.'; return; }
+
   btn.disabled = true;
   status.style.color = 'var(--muted)';
   status.textContent = 'PDF 생성 중이에요...';
@@ -1768,56 +1878,26 @@ async function exportReportPDF() {
   try {
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4', true);
-    const pageWidth = 210, pageHeight = 297;
     const marginX = 10, marginY = 10, gap = 4;
-    const contentWidth = pageWidth - marginX * 2;
-    const contentBottom = pageHeight - marginY;
-    const pageContentH = pageHeight - marginY * 2;
-    const scale = 3;
+    const ctx = {
+      scale: 3, marginX, marginY, gap,
+      contentWidth: 210 - marginX * 2,
+      contentBottom: 297 - marginY,
+      pageContentH: 297 - marginY * 2,
+      y: marginY, pageHasContent: false,
+    };
 
-    // 카드(섹션) 단위로 따로 캡처해서, 페이지가 넘어갈 때 카드 중간이 아니라
-    // 카드와 카드 사이에서만 끊기도록 함 (내용이 어중간하게 잘리는 문제 방지)
+    await pdfAddCoverPage(pdf, data.student, data.points);
+    pdf.addPage();
+
+    // 카드(섹션) 단위로 따로 캡처해서, 한 페이지에 안 들어가면 카드 안의 항목(문항/행) 단위까지
+    // 재귀적으로 쪼개 붙여서 어중간하게 잘리는 부분 없이 항상 항목 경계에서만 페이지가 넘어가게 함
     const blocks = Array.from(target.children).filter(el => !el.classList.contains('no-print') && el.offsetHeight > 0);
+    for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
 
-    let y = marginY;
-    let pageHasContent = false;
-
-    for (const el of blocks) {
-      const canvas = await html2canvas(el, { scale, backgroundColor: '#ffffff', useCORS: true });
-      const imgH = canvas.height * contentWidth / canvas.width;
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-
-      if (imgH > pageContentH) {
-        // 카드 하나가 한 페이지보다 큰 경우에만 어쩔 수 없이 슬라이스
-        if (pageHasContent) pdf.addPage();
-        let heightLeft = imgH, position = marginY;
-        pdf.addImage(imgData, 'JPEG', marginX, position, contentWidth, imgH, undefined, 'FAST');
-        heightLeft -= pageContentH;
-        while (heightLeft > 0) {
-          position -= pageContentH;
-          pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', marginX, position, contentWidth, imgH, undefined, 'FAST');
-          heightLeft -= pageContentH;
-        }
-        y = Infinity;
-        pageHasContent = true;
-        continue;
-      }
-
-      if (pageHasContent && y + imgH > contentBottom) {
-        pdf.addPage();
-        y = marginY;
-        pageHasContent = false;
-      }
-      pdf.addImage(imgData, 'JPEG', marginX, y, contentWidth, imgH, undefined, 'FAST');
-      y += imgH + gap;
-      pageHasContent = true;
-    }
-    const studentSel = document.getElementById('reportStudentSel');
-    const studentName = (studentSel.options[studentSel.selectedIndex] && studentSel.options[studentSel.selectedIndex].textContent) || '학생';
-    const d = new Date();
-    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    pdf.save(`캐치유테스트_${studentName}_${stamp}.pdf`);
+    const stampD = new Date();
+    const stamp = `${stampD.getFullYear()}${String(stampD.getMonth() + 1).padStart(2, '0')}${String(stampD.getDate()).padStart(2, '0')}`;
+    pdf.save(`캐치유테스트_${displayName(data.student.name)}_${stamp}.pdf`);
     status.style.color = 'var(--good)';
     status.textContent = 'PDF를 저장했어요.';
   } catch (err) {
