@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -16,6 +16,9 @@
   <div class="brand">
     <div class="logo-mark" id="topbarLogo"></div>
     <h1 class="display">캐치유테스트 분석보고서</h1>
+    <select id="currentTeacherSel" style="margin-left:auto;">
+      <option value="">담당 선생님 선택 (전체 보기)</option>
+    </select>
   </div>
   <nav class="tabs" id="tabNav">
     <button class="tab-btn active" data-tab="students">학생 관리</button>
@@ -56,11 +59,7 @@
     </div>
     <div class="card">
       <h2>학생 목록</h2>
-      <div class="inline-form" style="margin-bottom:10px;">
-        <select id="studentTeacherFilter">
-          <option value="">담당 선생님 전체</option>
-        </select>
-      </div>
+      <p class="card-sub">상단의 담당 선생님을 선택하면 그 선생님 학생만 보여요 (선택 안 하면 전체 보기).</p>
       <div id="studentListWrap"></div>
     </div>
   </section>
@@ -172,7 +171,7 @@
       <div class="inline-form">
         <select id="retestRoundSel"></select>
         <select id="retestStudentSel"></select>
-        <input type="date" id="retestDate">
+        <select id="retestDate"></select>
       </div>
       <div id="retestGridWrap"></div>
       <div class="inline-form" style="margin-top:14px;">
@@ -256,6 +255,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

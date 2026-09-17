@@ -14,6 +14,19 @@ const CLASS_TEACHER_MAP = {
 };
 function teacherTitle(name) { return name === '차성빈' ? '원장' : '선생님'; }
 
+// 이 컴퓨터에서 로그인한 선생님이 누구인지 (계산기록/백업 파일에는 안 들어가고, 이 브라우저에만 저장됨)
+const CURRENT_TEACHER_KEY = 'catchu_current_teacher';
+function getCurrentTeacher() { return localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
+function setCurrentTeacher(t) {
+  if (t) localStorage.setItem(CURRENT_TEACHER_KEY, t);
+  else localStorage.removeItem(CURRENT_TEACHER_KEY);
+}
+// 담당 선생님이 선택되어 있으면 그 선생님 학생만 남기고, 선택 안 했으면(전체 보기) 그대로 반환
+function filterByCurrentTeacher(students) {
+  const t = getCurrentTeacher();
+  return t ? students.filter(s => s.teacher === t) : students;
+}
+
 // 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
 function difficultyTierByAccuracy(pct) {
   if (pct >= 90) return { n: 1, label: '하' };
@@ -305,21 +318,9 @@ function switchTab(name) {
 
 /* ================= 학생 관리 ================= */
 
-function populateStudentTeacherFilter() {
-  const sel = document.getElementById('studentTeacherFilter');
-  if (!sel) return;
-  const prev = sel.value;
-  const teachers = Array.from(new Set(state.students.map(s => s.teacher).filter(Boolean)));
-  teachers.sort((a, b) => TEACHER_OPTIONS.indexOf(a) - TEACHER_OPTIONS.indexOf(b));
-  sel.innerHTML = '<option value="">담당 선생님 전체</option>' + teachers.map(t => `<option value="${t}">${t}</option>`).join('');
-  if (teachers.includes(prev)) sel.value = prev;
-}
-
 function renderStudents() {
   const wrap = document.getElementById('studentListWrap');
-  populateStudentTeacherFilter();
-  const teacherFilter = document.getElementById('studentTeacherFilter')?.value || '';
-  const filtered = teacherFilter ? state.students.filter(s => s.teacher === teacherFilter) : state.students;
+  const filtered = filterByCurrentTeacher(state.students);
   if (!state.students.length) {
     wrap.innerHTML = '<div class="empty-state">아직 등록된 학생이 없어요. 위에서 학생을 추가해보세요.</div>';
   } else if (!filtered.length) {
@@ -378,8 +379,6 @@ function resetStudentForm() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('studentTeacherFilter')?.addEventListener('change', renderStudents);
-
   const classSel = document.getElementById('stuClass');
   STANDARD_CLASSES.forEach(c => classSel.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
   const teacherSel = document.getElementById('stuTeacher');
@@ -547,10 +546,16 @@ function resetRoundForm() {
   if (details) details.open = false;
 }
 
-// 회차 번호는 같은 학년 안에서만 매김 (학년마다 시험지가 다르므로 전체를 섞어 세지 않음)
+// "1회차, 2회차..." 순번 대신, 시험지에 인쇄된 것과 같은 "월-주차"로 표기 (그 달의 몇 번째 금요일인지로 계산)
+function dateToWeekLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const month = d.getMonth() + 1;
+  const weekOfMonth = Math.ceil(d.getDate() / 7);
+  return `${month}-${weekOfMonth}주차`;
+}
+
 function roundLabel(round) {
-  const sameGrade = state.rounds.filter(r => r.grade === round.grade).sort((a, b) => a.date.localeCompare(b.date));
-  return (sameGrade.findIndex(r => r.id === round.id) + 1) + '회차';
+  return dateToWeekLabel(round.date);
 }
 
 // 개별시험지(그 학생 전용 회차)는 이름을 같이 표시
@@ -723,9 +728,19 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ================= 채점 입력 ================= */
 
 function populateSelects() {
-  const studentOpts = state.students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`).join('');
-  document.getElementById('reportStudentSel').innerHTML = studentOpts || '<option value="">학생을 먼저 등록하세요</option>';
+  populateReportStudentSel();
   populateScoreGradeSel();
+}
+
+// 상단에서 고른 담당 선생님 학생만 남김 (선택 안 하면 전체 보기)
+function populateReportStudentSel() {
+  const sel = document.getElementById('reportStudentSel');
+  const prev = sel.value;
+  const eligible = filterByCurrentTeacher(state.students);
+  sel.innerHTML = eligible.length
+    ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`).join('')
+    : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
+  if (eligible.some(s => s.id === prev)) sel.value = prev;
 }
 
 // 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N회차"는 하나로 묶여요)
@@ -786,6 +801,7 @@ function populateScoreStudentSelect() {
   } else {
     eligible = round && round.grade ? state.students.filter(s => s.grade === round.grade) : state.students;
   }
+  eligible = filterByCurrentTeacher(eligible);
   sel.innerHTML = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
     : `<option value="">${round && round.grade ? escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
@@ -900,9 +916,12 @@ function populateRetestStudentSelect() {
   const roundId = document.getElementById('retestRoundSel').value;
   const sel = document.getElementById('retestStudentSel');
   const withWrong = state.results.filter(r => r.roundId === roundId && r.wrong.length);
+  const currentTeacher = getCurrentTeacher();
   const opts = withWrong.map(r => {
     const s = state.students.find(x => x.id === r.studentId);
-    return s ? `<option value="${s.id}">${escapeHtml(s.name)} (오답 ${r.wrong.length}개)</option>` : '';
+    if (!s) return '';
+    if (currentTeacher && s.teacher !== currentTeacher) return '';
+    return `<option value="${s.id}">${escapeHtml(s.name)} (오답 ${r.wrong.length}개)</option>`;
   }).join('');
   sel.innerHTML = opts || '<option value="">이 회차에 오답 학생이 없어요</option>';
 }
@@ -913,7 +932,7 @@ function currentRetestStudent() { return state.students.find(s => s.id === docum
 function renderRetestTab() {
   populateRetestRoundSelect();
   populateRetestStudentSelect();
-  if (!document.getElementById('retestDate').value) document.getElementById('retestDate').value = new Date().toISOString().slice(0, 10);
+  populateFridaySelect(document.getElementById('retestDate'), document.getElementById('retestDate').value || undefined);
   renderRetestGrid();
   renderRetestList();
 }
@@ -1817,11 +1836,23 @@ function renderAll() {
   renderRounds();
   populateSelects();
   renderScoreTab();
+  renderRetestTab();
   renderReportTab();
+}
+
+function populateCurrentTeacherSel() {
+  const sel = document.getElementById('currentTeacherSel');
+  sel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  sel.value = getCurrentTeacher();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
+  populateCurrentTeacherSel();
+  document.getElementById('currentTeacherSel').addEventListener('change', e => {
+    setCurrentTeacher(e.target.value);
+    renderAll();
+  });
   await syncSharedRounds();
   renderAll();
 });
