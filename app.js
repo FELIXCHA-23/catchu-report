@@ -37,6 +37,10 @@ function difficultyTierByAccuracy(pct) {
   return { n: 6, label: '최상' };
 }
 
+// 난이도 숫자(1~6)를 라벨로 — 문항별 태그된 난이도 평균처럼 "정답률 기반"이 아닌 값을 표시할 때 씀
+const DIFFICULTY_LABELS_BY_N = ['하', '중하', '중', '중상', '상', '최상'];
+function difficultyLabelByN(n) { return DIFFICULTY_LABELS_BY_N[Math.round(n) - 1] || ''; }
+
 // 회차(시험지) 전체의 정답률을 계산해 난이도로 환산 — 그 회차를 본 모든 학생의 실제 채점 결과 기반
 function computeRoundOverallDifficulty(roundId) {
   const round = state.rounds.find(r => r.id === roundId);
@@ -1394,7 +1398,6 @@ function renderReportTab() {
   const totalQ = points.reduce((a, p) => a + p.total, 0);
   const delta = last.pct - first.pct;
   const grade = displayGradeTier(studentId, overallPct);
-  const gradeCompareTxt = classAvgOverall !== null ? `반 평균은 ${gradeTier(classAvgOverall).label}이에요` : '비교할 반 데이터가 아직 없어요';
   const pctCompareTxt = classAvgOverall !== null
     ? (overallPct - classAvgOverall === 0 ? '반 평균과 같아요' : `반 평균보다 ${overallPct - classAvgOverall > 0 ? '+' : ''}${overallPct - classAvgOverall}%p ${overallPct - classAvgOverall > 0 ? '높아요' : '낮아요'}`)
     : '비교할 반 데이터가 아직 없어요';
@@ -1512,7 +1515,7 @@ function renderReportTab() {
         </div>
         <div class="meta">
           <div class="student-name-big">${escapeHtml(student.name)}</div>
-          <div>${student.grade ? escapeHtml(student.grade) + ' 학생' : '학생'}</div>
+          <div>${[student.school, student.grade].filter(Boolean).map(escapeHtml).join(' ')}</div>
           ${student.teacher ? `<div>담임: ${escapeHtml(student.teacher)} ${teacherTitle(student.teacher)}</div>` : ''}
           <div>기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
         </div>
@@ -1521,8 +1524,7 @@ function renderReportTab() {
     <div class="pill-row">
       <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">${grade.label}</span>
         <div class="pill-value tnum">${grade.n}</div>
-        <div class="pill-compare">${gradeCompareTxt}</div>
-        <div class="pill-caption">1등급 90%+ · 2등급 80%+ · 3등급 70%+ · 4등급 50%+ · 5등급 50%미만</div>
+        <div class="pill-compare">${difficulty ? `시험 난이도 평균 ${difficultyLabelByN(difficulty.avgAll)} (${difficulty.avgAll}/6)` : '난이도 정보 없음'}</div>
         <div class="no-print" style="margin-top:8px;">
           <select id="gradeOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
             <option value="">예상 등급 자동 계산</option>
