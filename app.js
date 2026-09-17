@@ -1903,8 +1903,14 @@ document.addEventListener('DOMContentLoaded', () => {
           // 같은 날짜·학년이어도 진도가 달라 시험지 내용(유형 구성)이 다르면 별개 회차로 취급
           // (같은 파일을 다시 가져올 때만 갱신되도록 유형명 시그니처까지 매칭 키에 포함)
           const topicKey = (r.types || []).map(t => t.name).join('|');
+          // studentId로 못 찾으면 studentName으로도 한 번 더 찾아봄 — 예전에 학생이 아직 없어서
+          // studentId 없이 studentName만 저장된 "고아" 회차를 다시 가져올 때 중복 생성되지 않고 이어붙게 하기 위함
           const idx = studentId
-            ? state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.studentId === studentId)
+            ? (() => {
+                const byId = state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.studentId === studentId);
+                if (byId !== -1) return byId;
+                return state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && x.studentName === r.studentName);
+              })()
             : state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && (x.types || []).map(t => t.name).join('|') === topicKey);
           const payload = { date: r.date, grade: r.grade, total: r.total || 30, types: r.types, title: r.title || undefined, difficulty: r.difficulty || undefined, competency: r.competency || undefined, studentId: studentId || undefined, studentName: r.studentName || undefined };
           if (idx === -1) {
@@ -1917,9 +1923,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         saveState();
         renderRounds(); populateSelects();
-        toast(`회차 ${added}개 추가, ${updated}개 갱신했어요.${unmatchedNames.length ? ' (학생 미발견: ' + unmatchedNames.join(', ') + ')' : ''}`);
+        toast(`시험지 ${added}개 추가, ${updated}개 갱신했어요.${unmatchedNames.length ? ' (학생 미발견: ' + unmatchedNames.join(', ') + ')' : ''}`);
       } catch (err) {
-        alert('올바른 회차 일괄 파일이 아니에요.');
+        alert('올바른 시험지 분석 파일이 아니에요.');
       }
     };
     reader.readAsText(file);

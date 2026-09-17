@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=21">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -124,9 +124,9 @@
       </form>
     </div>
     <div class="card">
-      <h2>회차 일괄 가져오기</h2>
-      <p class="card-sub">Claude에게 여러 시험지를 한 번에 분석해달라고 하면, 회차 여러 개가 담긴 파일을 만들어드려요. 그 파일을 불러오면 전부 한 번에 등록돼요.</p>
-      <label class="btn primary" for="importRoundsBatchFile">⬆ 회차 일괄 가져오기</label>
+      <h2>시험지 분석 파일 가져오기</h2>
+      <p class="card-sub">채팅에 시험지를 올려서 Claude에게 분석해달라고 하면, 유형·난이도가 채워진 파일을 만들어줘요. 그 파일을 여기로 불러오면 새 시험지는 추가되고, 이미 있는 시험지는 내용만 갱신돼요 — 다른 시험지·학생·채점 기록은 전혀 지워지지 않아요.</p>
+      <label class="btn primary" for="importRoundsBatchFile">⬆ 시험지 분석 파일 가져오기</label>
       <input type="file" id="importRoundsBatchFile" accept="application/json" style="display:none;">
     </div>
     <div class="card">
@@ -255,6 +255,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
