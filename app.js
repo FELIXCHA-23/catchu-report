@@ -5,10 +5,10 @@ const TYPE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7', '#e87ba4', '#00
 const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추론역량', '의사소통': '의사소통역량', '연결': '연결역량', '정보처리': '정보처리역량' };
 // 2022 개정 수학과 교육과정의 '교수·학습 방법'에서 각 역량을 기르는 방법으로 제시한 내용을 바탕으로 요약함
 const COMPETENCY_DESCRIPTIONS = {
-  '문제해결': '풀이법이나 답이 하나로 정해지지 않은 문제를 조건 분석 → 계획 → 실행 → 반성의 과정으로 풀어보며 기르는 능력',
+  '문제해결': '풀이법이나 답이 하나로 정해지지 않은 문제를 통해\n조건 분석 → 계획 → 실행 → 반성의 과정으로 풀어보며 기르는 능력',
   '추론': '규칙을 찾고 "왜", "어떻게"를 따져 수학적 사실을 논리적으로 정당화하고 그 과정을 되돌아보며 기르는 능력',
-  '의사소통': '수학 용어·기호·표·그래프를 정확히 쓰고, 자신의 생각과 풀이 전략을 수학적 표현으로 나타내며 기르는 능력',
-  '연결': '영역·학년군 안팎의 개념을 유기적으로 연계해 새 지식을 만들고, 실생활·타 교과와 이어 수학의 쓸모를 깨달으며 기르는 능력',
+  '의사소통': '수학 용어·기호·표·그래프를 정확히 쓰고\n자신의 생각과 풀이 전략을 수학적 표현으로 나타내며 기르는 능력',
+  '연결': '영역·학년군 안팎의 개념을 유기적으로 연계해 새 지식을 만들고\n실생활·타 교과와 이어 수학의 쓸모를 깨달으며 기르는 능력',
   '정보처리': '실생활·수학적 상황의 자료를 탐색·수집·처리해 합리적으로 판단하고, 교구·공학 도구로 추상적 내용을 시각화해 직관적으로 이해하며 기르는 능력',
 };
 const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
@@ -358,7 +358,7 @@ function renderStudents() {
         <td>${escapeHtml(s.class || '-')}</td>
         <td>${escapeHtml(s.teacher || '-')}</td>
         <td class="row-actions">
-          <button class="icon-btn" data-report="${s.id}">리포트</button>
+          <button class="icon-btn" data-report="${s.id}">보고서</button>
           <button class="icon-btn" data-edit-student="${s.id}">수정</button>
           <button class="icon-btn" data-del-student="${s.id}">삭제</button>
         </td>
@@ -1478,12 +1478,9 @@ function buildMainChartSVG(points) {
   </svg>`;
 }
 
-function buildBarRow(pct, classAvg, color) {
-  const marker = classAvg !== null && classAvg !== undefined
-    ? `<div class="bar-marker" style="left:${classAvg}%" title="반 평균 ${classAvg}%"></div>` : '';
+function buildBarRow(pct, color) {
   return `<div class="bar-track">
     <div class="bar-fill" style="width:${pct}%; background:${color}"></div>
-    ${marker}
   </div>`;
 }
 
@@ -1613,15 +1610,13 @@ function renderReportTab() {
     if (t.last === null) return '';
     const isStrength = strengths.includes(t);
     const isWatch = watch.includes(t);
-    const deltaCls = t.delta === null ? '' : t.delta > 0 ? 'up' : t.delta < 0 ? 'down' : 'flat';
-    const deltaTxt = t.delta === null ? '' : (t.delta > 0 ? `+${t.delta}%p` : t.delta < 0 ? `${t.delta}%p` : '±0%p');
     const badge = isStrength ? `<span class="badge good"><span class="dot"></span>강점 유형</span>`
       : isWatch ? `<span class="badge watch"><span class="dot"></span>집중 필요</span>` : '';
     return `<div class="type-card">
       <div class="type-name">${escapeHtml(t.name)}</div>
       ${t.unit ? `<div class="type-unit">${escapeHtml(t.unit)}</div>` : ''}
-      <div class="type-row2"><span class="type-pct tnum">${t.last}%</span>${deltaTxt ? `<span class="type-delta ${deltaCls} tnum">${deltaTxt}</span>` : ''}</div>
-      ${buildBarRow(t.last, t.classAvg, isWatch ? 'var(--warn-dot)' : t.color)}
+      <div class="type-row2"><span class="type-pct tnum">${t.last}%</span></div>
+      ${buildBarRow(t.last, isWatch ? 'var(--warn-dot)' : t.color)}
       ${badge}
     </div>`;
   }).join('');
@@ -1646,14 +1641,14 @@ function renderReportTab() {
       <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
         <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">재시험 정답률 ${retest.overallPct}%</span>
           <div class="pill-value tnum">${retest.overallPct}%</div>
-          <div class="pill-compare">오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환</div>
+          <div class="pill-compare tnum" style="font-size:30px; font-weight:700; color:var(--ink); margin-top:4px;">오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환</div>
         </div>
       </div>
       ${retest.items.map(it => `
         <div class="unit-row">
           <div class="unit-name">${escapeHtml(it.label)}</div>
           <div class="unit-count">오답 ${it.originalWrong}개</div>
-          <div class="unit-bar-wrap">${buildBarRow(it.pct, null, it.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
+          <div class="unit-bar-wrap">${buildBarRow(it.pct, it.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
           <div class="unit-pct tnum">${it.corrected}/${it.originalWrong}</div>
         </div>`).join('')}
     </div>` : '';
@@ -1666,7 +1661,7 @@ function renderReportTab() {
         <div class="unit-row">
           <div class="unit-name">${escapeHtml(u.unit)}</div>
           <div class="unit-count">${u.total}문항</div>
-          <div class="unit-bar-wrap">${buildBarRow(u.pct, null, u.pct < 70 ? 'var(--warn-dot)' : 'var(--accent)')}</div>
+          <div class="unit-bar-wrap">${buildBarRow(u.pct, u.pct < 70 ? 'var(--warn-dot)' : 'var(--accent)')}</div>
           <div class="unit-pct tnum">${u.pct}%</div>
         </div>`).join('')}
     </div>` : '';
@@ -1690,11 +1685,11 @@ function renderReportTab() {
     </div>` : '';
 
   const competencyLegend = `<div class="competency-legend">${Object.keys(COMPETENCY_LABELS).map(c => `
-      <div class="competency-legend-item"><b>${escapeHtml(COMPETENCY_LABELS[c])}</b> — ${escapeHtml(COMPETENCY_DESCRIPTIONS[c])}</div>`).join('')}</div>`;
+      <div class="competency-legend-item"><b>${escapeHtml(COMPETENCY_LABELS[c])}</b> — ${escapeHtml(COMPETENCY_DESCRIPTIONS[c]).replace(/\n/g, '<br>')}</div>`).join('')}</div>`;
   const radarSection = competencyStats.length >= 3 ? `
     <div class="card">
-      <h2>역량 분석</h2>
-      <p class="card-sub no-print">2022 개정 수학과 5대 핵심역량 기준${competencyHasAnyData ? '' : ' · 아직 역량이 태그된 시험지가 없어요'}</p>
+      <h2>핵심역량</h2>
+      <p class="card-sub">2022 개정 수학과목 5대 핵심역량 기준${competencyHasAnyData ? '' : ' · 아직 역량이 태그된 시험지가 없어요'}</p>
       <div class="radar-wrap">${buildRadarSVG(competencyStats)}</div>
       ${competencyLegend}
     </div>` : '';
@@ -1716,12 +1711,12 @@ function renderReportTab() {
   }
 
   out.innerHTML = `
-    <div class="sample-flag no-print">실제 데이터 기반 리포트 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요</div>
+    <div class="sample-flag no-print">실제 데이터 기반 보고서 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요</div>
     <div class="card">
       <div class="masthead">
         <div>
           <div class="brand-line">${logoBlock()}</div>
-          <h2>캐치유테스트 성장 리포트</h2>
+          <h2>캐치유테스트 분석보고서</h2>
         </div>
         <div class="meta">
           <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
@@ -1790,7 +1785,7 @@ function renderReportTab() {
     </div>` : ''}
     <div class="card">
       <h2>유형별 정답률</h2>
-      <p class="card-sub">최근 정답률 (회색 막대는 반 평균)</p>
+      <p class="card-sub">최근 정답률</p>
       <div class="type-grid">${typeCards}</div>
     </div>
     ${retestSection}
@@ -1817,7 +1812,7 @@ function renderReportTab() {
       <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
-    <div class="report-footer">KASTLE MATH · 캐치유테스트 리포트는 매주 결과를 누적하여 4–5주 단위로 발행됩니다</div>
+    <div class="report-footer">캐치유테스트 분석보고서는 매 월말에 발행됩니다</div>
   `;
 
   const gradeOverrideSel = document.getElementById('gradeOverrideSel');
@@ -1892,7 +1887,7 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
 
 학생: ${displayName(student.name)}
 측정 기간: ${period}
-전체 정답률: ${overallPct}%${classAvgOverall !== null ? ` (반 평균 ${classAvgOverall}%)` : ''}
+전체 정답률: ${overallPct}%
 강점 유형: ${strengths.length ? strengths.map(t => `${t.name}(${t.last}%)`).join(', ') : '없음'}
 취약 유형: ${watch.length ? watch.map(t => `${t.name}(${t.avg}%)`).join(', ') : '없음'}
 
@@ -2023,7 +2018,7 @@ async function exportReportPDF() {
   const btn = document.getElementById('pdfExportBtn');
   const status = document.getElementById('pdfExportStatus');
   const target = document.getElementById('reportOutput');
-  if (!target || !target.children.length) { status.textContent = '먼저 리포트를 생성하세요.'; return; }
+  if (!target || !target.children.length) { status.textContent = '먼저 보고서를 생성하세요.'; return; }
   if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
     status.style.color = 'var(--critical)';
     status.textContent = 'PDF 기능을 불러오지 못했어요 (인터넷 연결을 확인해주세요).';
@@ -2033,7 +2028,7 @@ async function exportReportPDF() {
   const fromRoundId = document.getElementById('reportFromSel').value;
   const toRoundId = document.getElementById('reportToSel').value;
   const data = computeStudentReport(studentId, fromRoundId, toRoundId);
-  if (!data || !data.points.length) { status.textContent = '먼저 리포트를 생성하세요.'; return; }
+  if (!data || !data.points.length) { status.textContent = '먼저 보고서를 생성하세요.'; return; }
 
   btn.disabled = true;
   status.style.color = 'var(--muted)';
