@@ -188,20 +188,16 @@ details.manual-fallback[open] summary::before { content: '▾ '; }
 .masthead h2 { font-family: "Gowun Dodum", sans-serif; font-weight: 400; font-size: 24px; margin-top: 8px; }
 .masthead .meta { text-align: right; font-size: 13px; color: var(--ink-soft); line-height: 1.6; }
 .masthead .meta b { color: var(--ink); font-weight: 700; }
+.masthead .meta .student-name-big { font-size: 26px; font-weight: 800; color: var(--ink); line-height: 1.3; }
 
-.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.stat-tile { background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
-.stat-tile .label { font-size: 12px; color: var(--muted); }
-.stat-tile .value { font-size: 26px; font-weight: 700; margin-top: 4px; }
-.stat-tile .value.up { color: var(--good); }
-.stat-tile .value.down { color: var(--critical); }
-.stat-tile .sub { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 
 /* KPI pills (등급/정답률/문항수) */
 .pill-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .pill-tile { background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
 .pill-tag { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; color: #fff; margin-bottom: 10px; }
 .pill-tile .pill-value { font-size: 34px; font-weight: 700; line-height: 1; }
+.pill-tile .pill-value.up { color: var(--good); }
+.pill-tile .pill-value.down { color: var(--critical); }
 .pill-tile .pill-compare { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 .pill-tile .pill-caption { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 
@@ -271,8 +267,6 @@ textarea.teacher-note {
 .bar-track { position: relative; height: 8px; border-radius: 999px; background: var(--line); margin-top: 6px; }
 .bar-fill { height: 100%; border-radius: 999px; }
 .bar-marker { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--ink-soft); }
-.spark { width: 100%; height: 34px; display: block; }
-.spark-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .badge { align-self: flex-start; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 5px; }
 .badge.good { color: var(--good); background: var(--good-bg); }
 .badge.watch { color: var(--warn-ink); background: var(--warn-bg); }
@@ -303,8 +297,6 @@ table.report-table td.watch-cell { color: var(--warn-ink); font-weight: 700; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 @media (max-width: 560px) {
-  .stat-row { grid-template-columns: 1fr 1fr; }
-  .stat-row .stat-tile:last-child { grid-column: 1 / -1; }
   .masthead { flex-direction: column; align-items: flex-start; }
   .masthead .meta { text-align: left; }
 }

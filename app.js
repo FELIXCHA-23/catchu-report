@@ -196,10 +196,11 @@ function loadState() {
       const data = JSON.parse(raw);
       if (!data.teacherNotes) data.teacherNotes = {};
       if (!data.retests) data.retests = [];
+      if (!data.gradeOverrides) data.gradeOverrides = {};
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [] };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {} };
 }
 
 function saveState() {
@@ -1036,6 +1037,13 @@ function gradeTier(pct) {
   return { n: 5, label: '5등급' };
 }
 
+// 선생님이 예상 등급을 직접 수정해둔 게 있으면 그걸 우선 사용
+function displayGradeTier(studentId, pct) {
+  const override = state.gradeOverrides[studentId];
+  if (override) return { n: override, label: `${override}등급` };
+  return gradeTier(pct);
+}
+
 // 학생이 실제로 채점 기록을 가진 회차만, 날짜순으로 반환 (리포트 기간 선택 드롭다운에 사용)
 function studentScoredRounds(studentId) {
   const ascRounds = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
@@ -1132,24 +1140,28 @@ function computeRetestSummary(studentId, points) {
   return { items, overallPct, sumOriginal, sumCorrected: sumOriginal - sumStillWrong };
 }
 
+// 소단원까지 너무 잘게 쪼개지지 않게, 대단원(" - " 앞부분) 기준으로 묶어서 집계
 function computeUnitBreakdown(windowed) {
   const map = {};
   windowed.forEach(x => {
     const wrongSet = new Set(x.result.wrong);
     x.round.types.forEach(t => {
       if (!t.unit || !t.questions.length) return;
+      const major = t.unit.split(' - ')[0].trim();
       const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
-      if (!map[t.unit]) map[t.unit] = { unit: t.unit, total: 0, correct: 0 };
-      map[t.unit].total += t.questions.length;
-      map[t.unit].correct += t.questions.length - wrongInType;
+      if (!map[major]) map[major] = { unit: major, total: 0, correct: 0 };
+      map[major].total += t.questions.length;
+      map[major].correct += t.questions.length - wrongInType;
     });
   });
   return Object.values(map).map(u => ({ ...u, pct: u.total ? Math.round((u.correct / u.total) * 100) : 0 })).sort((a, b) => a.pct - b.pct);
 }
 
 // 역량은 문항 단위(round.competency: {문항번호: 역량})로 집계 — 같은 유형 안에서도 문항마다 다를 수 있음
+// 5개 역량(문제해결/추론/의사소통/연결/정보처리)을 항상 다 채워서, 태그된 게 적어도 축이 줄어들지 않게 함
 function computeCompetencyBreakdown(windowed) {
   const map = {};
+  Object.keys(COMPETENCY_LABELS).forEach(c => { map[c] = { competency: c, total: 0, correct: 0 }; });
   windowed.forEach(x => {
     const compMap = x.round.competency;
     if (!compMap) return;
@@ -1275,26 +1287,6 @@ function buildMainChartSVG(points) {
   </svg>`;
 }
 
-function buildSparkSVG(series, color) {
-  const vals = series.map(v => v === null ? null : v);
-  const known = vals.filter(v => v !== null);
-  if (!known.length) return '<svg class="spark" viewBox="0 0 120 36"></svg>';
-  const n = vals.length;
-  const top = 4, bottom = 32, x0 = 6, x1 = 114;
-  const pts = vals.map((v, i) => {
-    const x = n > 1 ? x0 + i * (x1 - x0) / (n - 1) : (x0 + x1) / 2;
-    const y = v === null ? null : mapY(v, top, bottom);
-    return { x, y };
-  });
-  const known2 = pts.filter(p => p.y !== null);
-  const line = known2.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const last = known2[known2.length - 1];
-  return `<svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
-    <polyline class="spark-line" style="stroke:${color}" points="${line}"/>
-    <circle style="fill:${color}" cx="${last.x}" cy="${last.y}" r="3"/>
-  </svg>`;
-}
-
 function buildBarRow(pct, classAvg, color) {
   const marker = classAvg !== null && classAvg !== undefined
     ? `<div class="bar-marker" style="left:${classAvg}%" title="반 평균 ${classAvg}%"></div>` : '';
@@ -1401,7 +1393,7 @@ function renderReportTab() {
   const first = points[0], last = points[points.length - 1];
   const totalQ = points.reduce((a, p) => a + p.total, 0);
   const delta = last.pct - first.pct;
-  const grade = gradeTier(overallPct);
+  const grade = displayGradeTier(studentId, overallPct);
   const gradeCompareTxt = classAvgOverall !== null ? `반 평균은 ${gradeTier(classAvgOverall).label}이에요` : '비교할 반 데이터가 아직 없어요';
   const pctCompareTxt = classAvgOverall !== null
     ? (overallPct - classAvgOverall === 0 ? '반 평균과 같아요' : `반 평균보다 ${overallPct - classAvgOverall > 0 ? '+' : ''}${overallPct - classAvgOverall}%p ${overallPct - classAvgOverall > 0 ? '높아요' : '낮아요'}`)
@@ -1426,7 +1418,6 @@ function renderReportTab() {
     return `<div class="type-card">
       <div class="type-name">${escapeHtml(t.name)}</div>
       ${t.unit ? `<div class="type-unit">${escapeHtml(t.unit)}</div>` : ''}
-      ${buildSparkSVG(t.series, isWatch ? 'var(--warn-dot)' : t.color)}
       <div class="type-row2"><span class="type-pct tnum">${t.last}%</span>${deltaTxt ? `<span class="type-delta ${deltaCls} tnum">${deltaTxt}</span>` : ''}</div>
       ${buildBarRow(t.last, t.classAvg, isWatch ? 'var(--warn-dot)' : t.color)}
       ${badge}
@@ -1468,7 +1459,7 @@ function renderReportTab() {
   const unitSection = unitBreakdown.length ? `
     <div class="card">
       <h2>단원별 학습성과</h2>
-      <p class="card-sub">2022 개정 교육과정 단원 기준 · 측정 기간 누적</p>
+      <p class="card-sub">2022 개정 교육과정 단원 기준 · 기간 누적</p>
       ${unitBreakdown.map(u => `
         <div class="unit-row">
           <div class="unit-name">${escapeHtml(u.unit)}</div>
@@ -1506,6 +1497,11 @@ function renderReportTab() {
 
   const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);
 
+  // "전체 정답률 추이" 그래프만 선택적으로 더 많은 회차(전체 기간)를 보여줄 수 있게 함 — 나머지 리포트 내용은 선택한 기간 그대로 유지
+  const prevExtendToggle = document.getElementById('reportExtendTrendToggle');
+  const extendChecked = prevExtendToggle ? prevExtendToggle.checked : false;
+  const chartPoints = extendChecked ? computeStudentReport(studentId, null, null).points : points;
+
   out.innerHTML = `
     <div class="sample-flag no-print">실제 데이터 기반 리포트 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요</div>
     <div class="card">
@@ -1515,9 +1511,10 @@ function renderReportTab() {
           <h2>캐치유테스트 성장 리포트</h2>
         </div>
         <div class="meta">
-          <div><b>${escapeHtml(student.name)}</b> 학생 ${student.grade ? '· ' + escapeHtml(student.grade) : ''} ${student.class ? escapeHtml(student.class) : ''}</div>
+          <div class="student-name-big">${escapeHtml(student.name)}</div>
+          <div>${student.grade ? escapeHtml(student.grade) + ' 학생' : '학생'}</div>
           ${student.teacher ? `<div>담임: ${escapeHtml(student.teacher)} ${teacherTitle(student.teacher)}</div>` : ''}
-          <div>측정 기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
+          <div>기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
         </div>
       </div>
     </div>
@@ -1526,6 +1523,16 @@ function renderReportTab() {
         <div class="pill-value tnum">${grade.n}</div>
         <div class="pill-compare">${gradeCompareTxt}</div>
         <div class="pill-caption">1등급 90%+ · 2등급 80%+ · 3등급 70%+ · 4등급 50%+ · 5등급 50%미만</div>
+        <div class="no-print" style="margin-top:8px;">
+          <select id="gradeOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
+            <option value="">예상 등급 자동 계산</option>
+            <option value="1"${state.gradeOverrides[studentId] === 1 ? ' selected' : ''}>1등급으로 수정</option>
+            <option value="2"${state.gradeOverrides[studentId] === 2 ? ' selected' : ''}>2등급으로 수정</option>
+            <option value="3"${state.gradeOverrides[studentId] === 3 ? ' selected' : ''}>3등급으로 수정</option>
+            <option value="4"${state.gradeOverrides[studentId] === 4 ? ' selected' : ''}>4등급으로 수정</option>
+            <option value="5"${state.gradeOverrides[studentId] === 5 ? ' selected' : ''}>5등급으로 수정</option>
+          </select>
+        </div>
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">정답률 ${overallPct}%</span>
         <div class="pill-value tnum">${overallPct}</div>
@@ -1533,13 +1540,16 @@ function renderReportTab() {
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>
         <div class="pill-value tnum">${totalQ}</div>
-        <div class="pill-compare">측정 기간 내 채점된 문항 수</div>
+        <div class="pill-compare">기간 내 채점된 문항 수</div>
       </div>
-      <div class="stat-tile"><div class="label">기간 변화</div><div class="value tnum ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div><div class="sub">${first.label} ${first.pct}% → ${last.label} ${last.pct}%</div></div>
+      <div class="pill-tile"><span class="pill-tag" style="background:${delta > 0 ? 'var(--good)' : delta < 0 ? 'var(--critical)' : 'var(--muted)'}">${delta > 0 ? '상승' : delta < 0 ? '하락' : '변화 없음'}</span>
+        <div class="pill-value tnum ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div>
+        <div class="pill-compare">${first.label} ${first.pct}% → ${last.label} ${last.pct}%</div>
+      </div>
     </div>
     <div class="card">
       <h2>대표 강점 · 취약 유형</h2>
-      <p class="card-sub">측정 기간 기준</p>
+      <p class="card-sub">선택한 기간 기준</p>
       <div class="summary-cols">
         <div class="summary-box good"><h3>대표 강점 유형</h3>${strengthsHtml}</div>
         <div class="summary-box watch"><h3>대표 취약 유형</h3>${watchHtml}</div>
@@ -1548,27 +1558,20 @@ function renderReportTab() {
     <div class="card">
       <h2>전체 정답률 추이</h2>
       <p class="card-sub">회차별 ${points[points.length-1].total}문항 기준</p>
-      <div class="chart-wrap">${buildMainChartSVG(points)}</div>
+      <label class="no-print" style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-bottom:8px;">
+        <input type="checkbox" id="reportExtendTrendToggle"${extendChecked ? ' checked' : ''}> 선택한 기간보다 더 많은 회차(전체 기간)를 그래프에 표시
+      </label>
+      <div class="chart-wrap">${buildMainChartSVG(chartPoints)}</div>
     </div>
     <div class="card">
       <h2>유형별 정답률</h2>
-      <p class="card-sub">위: 회차 흐름 · 아래: 최근 정답률 (회색 막대는 반 평균)</p>
+      <p class="card-sub">최근 정답률 (회색 막대는 반 평균)</p>
       <div class="type-grid">${typeCards}</div>
     </div>
     ${retestSection}
     ${unitSection}
     ${diffSection}
     ${radarSection}
-    <div class="card">
-      <h2>선생님 의견</h2>
-      <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
-      <div class="inline-form no-print" style="margin-bottom:8px;">
-        <button type="button" class="btn ghost" id="aiCommentBtn">🪄 AI로 의견 초안 작성</button>
-        <span id="aiCommentStatus" class="field-hint"></span>
-      </div>
-      <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
-      <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
-    </div>
     <div class="card">
       <h2>회차별 상세 기록</h2>
       <p class="card-sub">유형별 정답률(%)</p>
@@ -1579,8 +1582,34 @@ function renderReportTab() {
         </table>
       </div>
     </div>
+    <div class="card">
+      <h2>선생님 의견</h2>
+      <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
+      <div class="inline-form no-print" style="margin-bottom:8px;">
+        <button type="button" class="btn ghost" id="aiCommentBtn">🪄 AI로 의견 초안 작성</button>
+        <span id="aiCommentStatus" class="field-hint"></span>
+      </div>
+      <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
+      <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
+    </div>
     <div class="report-footer">KASTLE MATH · 캐치유테스트 리포트는 매주 결과를 누적하여 4–5주 단위로 발행됩니다</div>
   `;
+
+  const gradeOverrideSel = document.getElementById('gradeOverrideSel');
+  if (gradeOverrideSel) {
+    gradeOverrideSel.addEventListener('change', () => {
+      const v = gradeOverrideSel.value;
+      if (v) state.gradeOverrides[studentId] = parseInt(v, 10);
+      else delete state.gradeOverrides[studentId];
+      saveState();
+      renderReportTab();
+    });
+  }
+
+  const extendTrendToggle = document.getElementById('reportExtendTrendToggle');
+  if (extendTrendToggle) {
+    extendTrendToggle.addEventListener('change', renderReportTab);
+  }
 
   const noteInput = document.getElementById('teacherNoteInput');
   if (noteInput) {
@@ -1745,6 +1774,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.students || !data.rounds || !data.results) throw new Error('형식 오류');
         if (!data.teacherNotes) data.teacherNotes = {};
         if (!data.retests) data.retests = [];
+        if (!data.gradeOverrides) data.gradeOverrides = {};
         if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
         state = data;
         saveState();
@@ -1770,7 +1800,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [] };
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {} };
     saveState();
     renderAll();
     toast('초기화했어요.');
@@ -1840,6 +1870,7 @@ function seedDemoData() {
     teacherNotes: {
       [studentId]: '민준이는 이번 4주간 차분하게 문제를 풀어가는 흐름을 보였습니다. 수와 연산, 규칙성 유형은 기본기가 탄탄하게 자리 잡았고, 도형과 측정도 꾸준히 좋아지는 중입니다. 다만 문장제·문제해결 유형에서 정체가 이어지고 있어, 다음 학습에서는 문제를 끝까지 읽고 조건을 정리하는 연습을 함께 해보려 합니다.',
     },
+    gradeOverrides: {},
   };
   saveState();
 }
