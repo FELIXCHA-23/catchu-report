@@ -3,6 +3,13 @@
 const STORAGE_KEY = 'catchu_v1';
 const TYPE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7', '#e87ba4', '#008300', '#e34948', '#eda100'];
 const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추론역량', '의사소통': '의사소통역량', '연결': '연결역량', '정보처리': '정보처리역량' };
+const COMPETENCY_DESCRIPTIONS = {
+  '문제해결': '주어진 문제 상황을 이해하고 적절한 전략을 세워 답을 구하는 능력',
+  '추론': '수학적 사실과 원리를 근거로 논리적으로 결론을 이끌어내는 능력',
+  '의사소통': '수학적 아이디어를 이해하고 말·글·기호로 표현하는 능력',
+  '연결': '수학 개념들을 서로 연결하거나 실생활 상황과 연결짓는 능력',
+  '정보처리': '자료와 정보를 수집·정리·해석하여 문제 해결에 활용하는 능력',
+};
 const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
 const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALPHA','MH2-GAMMA','TM1-GAMMA','TM2-GAMMA','TM3-GAMMA','TH1-BETA','TH2-BETA','TH1-ALPHA','SH2-ALPHA','ME-INDV'];
 const TEACHER_OPTIONS = ['차성빈','방희진','문태민','목윤재','오민경'];
@@ -1223,14 +1230,15 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
   // curriculum-unit rollup (optional; only present once types carry a `unit`)
   const unitBreakdown = computeUnitBreakdown(windowed);
 
-  // competency rollup (optional; only present once types carry a `competency`)
+  // competency rollup — 2022개정 5대 역량 5축 고정. 태그된 적 없는 역량은 value:null("데이터 없음")로 구분함
   const compRaw = computeCompetencyBreakdown(windowed);
-  const competencyStats = Object.values(compRaw).map(c => ({ label: COMPETENCY_LABELS[c.competency] || c.competency, value: c.total ? Math.round((c.correct / c.total) * 100) : 0 }));
+  const competencyStats = Object.values(compRaw).map(c => ({ label: COMPETENCY_LABELS[c.competency] || c.competency, value: c.total ? Math.round((c.correct / c.total) * 100) : null }));
+  const competencyHasAnyData = competencyStats.some(c => c.value !== null);
 
   // 재시험 (원래 회차의 오답 문항을 쌍둥이문제로 재검사한 기록) — 메인 정답률과는 별도로 집계
   const retest = computeRetestSummary(studentId, points);
 
-  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, retest };
+  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, competencyHasAnyData, retest };
 }
 
 function computeRetestSummary(studentId, points) {
@@ -1270,18 +1278,18 @@ function computeUnitBreakdown(windowed) {
 }
 
 // 역량은 문항 단위(round.competency: {문항번호: 역량})로 집계 — 같은 유형 안에서도 문항마다 다를 수 있음
-// 실제로 태그된 역량만 집계함 — 한 번도 안 나온 역량을 0%로 억지로 채우면 "거의 다 맞았는데 0%"처럼
-// 안 풀어본 것과 못 푼 것이 구분이 안 돼서 오해를 줌
+// 2022개정 5대 역량을 항상 다 보여주되(레이더는 5축 고정), 한 번도 안 태그된 역량은 total=0으로 남겨둬서
+// "안 풀어본 것"과 "못 푼 것"을 구분함 (호출부에서 total===0이면 0%가 아니라 "데이터 없음"으로 표시)
 function computeCompetencyBreakdown(windowed) {
   const map = {};
+  Object.keys(COMPETENCY_LABELS).forEach(c => { map[c] = { competency: c, total: 0, correct: 0 }; });
   windowed.forEach(x => {
     const compMap = x.round.competency;
     if (!compMap) return;
     const wrongSet = new Set(x.result.wrong);
     for (let q = 1; q <= x.round.total; q++) {
       const c = compMap[q] ?? compMap[String(q)];
-      if (!c) continue;
-      if (!map[c]) map[c] = { competency: c, total: 0, correct: 0 };
+      if (!c || !map[c]) continue;
       map[c].total += 1;
       if (!wrongSet.has(q)) map[c].correct += 1;
     }
@@ -1390,10 +1398,14 @@ function buildBarRow(pct, classAvg, color) {
   </div>`;
 }
 
+// items[i].value가 null이면 "그 역량이 태그된 문항이 아직 없다"는 뜻 — 0%(못 품)로 오해되지 않도록
+// 폴리곤 정점은 나머지 역량들의 평균 위치에 두고(모양이 이상하게 찌그러지지 않게), 라벨은 %가 아니라 "데이터 없음"으로 표시함
 function buildRadarSVG(items, classItems) {
   const n = items.length;
   if (n < 3) return '';
   const cx = 150, cy = 128, R = 66;
+  const known = items.filter(it => it.value !== null && it.value !== undefined);
+  const fallback = known.length ? Math.round(known.reduce((a, it) => a + it.value, 0) / known.length) : 50;
   const angleFor = i => -Math.PI / 2 + i * (2 * Math.PI / n);
   const pointAt = (i, frac) => {
     const a = angleFor(i);
@@ -1405,19 +1417,29 @@ function buildRadarSVG(items, classItems) {
     const [x, y] = pointAt(i, 1);
     return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`;
   }).join('');
-  const studentPts = items.map((it, i) => pointAt(i, Math.max(0, Math.min(1, it.value / 100))).join(',')).join(' ');
-  const classPts = classItems ? classItems.map((it, i) => pointAt(i, Math.max(0, Math.min(1, it.value / 100))).join(',')).join(' ') : '';
+  const studentPts = items.map((it, i) => pointAt(i, Math.max(0, Math.min(1, (it.value ?? fallback) / 100))).join(',')).join(' ');
+  const classPts = classItems ? classItems.map((it, i) => pointAt(i, Math.max(0, Math.min(1, (it.value ?? fallback) / 100))).join(',')).join(' ') : '';
+  const dots = items.map((it, i) => {
+    const noData = it.value === null || it.value === undefined;
+    const [x, y] = pointAt(i, Math.max(0, Math.min(1, (it.value ?? fallback) / 100)));
+    return noData
+      ? `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--surface-card)" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 1.5"/>`
+      : `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--accent)"/>`;
+  }).join('');
   const labels = items.map((it, i) => {
     const [x, y] = pointAt(i, 1.32);
     const anchor = Math.abs(x - cx) < 4 ? 'middle' : (x > cx ? 'start' : 'end');
     const shortLabel = (it.label || '').replace(/역량$/, '');
+    const valueTxt = (it.value === null || it.value === undefined) ? '데이터 없음' : `${it.value}%`;
+    const valueFill = (it.value === null || it.value === undefined) ? 'var(--muted)' : 'var(--ink-soft)';
     return `<text x="${x}" y="${y}" text-anchor="${anchor}" class="axis-label" font-size="11.5" font-weight="700" fill="var(--ink-soft)">${escapeHtml(shortLabel)}</text>
-      <text x="${x}" y="${y + 13}" text-anchor="${anchor}" class="axis-label" font-size="11">${it.value}%</text>`;
+      <text x="${x}" y="${y + 13}" text-anchor="${anchor}" class="axis-label" font-size="11" fill="${valueFill}">${valueTxt}</text>`;
   }).join('');
   return `<svg viewBox="0 0 300 270" role="img" aria-label="역량별 성취도 레이더 차트">
     ${rings}${axes}
     ${classPts ? `<polygon points="${classPts}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ''}
     <polygon points="${studentPts}" fill="var(--accent-fill)" stroke="var(--accent)" stroke-width="2"/>
+    ${dots}
     ${labels}
   </svg>`;
 }
@@ -1484,7 +1506,7 @@ function renderReportTab() {
     out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? displayName(data.student.name) : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
     return;
   }
-  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, retest } = data;
+  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, competencyHasAnyData, retest } = data;
   const first = points[0], last = points[points.length - 1];
   const totalQ = points.reduce((a, p) => a + p.total, 0);
   const delta = last.pct - first.pct;
@@ -1581,11 +1603,14 @@ function renderReportTab() {
       }</p>` : ''}
     </div>` : '';
 
+  const competencyLegend = `<div class="competency-legend">${Object.keys(COMPETENCY_LABELS).map(c => `
+      <div class="competency-legend-item"><b>${escapeHtml(COMPETENCY_LABELS[c])}</b> — ${escapeHtml(COMPETENCY_DESCRIPTIONS[c])}</div>`).join('')}</div>`;
   const radarSection = competencyStats.length >= 3 ? `
     <div class="card">
       <h2>역량 분석</h2>
-      <p class="card-sub no-print">2022 개정 수학과 핵심역량 기준 · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <p class="card-sub no-print">2022 개정 수학과 5대 핵심역량 기준${competencyHasAnyData ? '' : ' · 아직 역량이 태그된 시험지가 없어요'}</p>
       <div class="radar-wrap">${buildRadarSVG(competencyStats)}</div>
+      ${competencyLegend}
     </div>` : '';
 
   const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);
@@ -1612,8 +1637,8 @@ function renderReportTab() {
       </div>
     </div>
     <div class="pill-row">
-      <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">${grade.label}</span>
-        <div class="pill-value tnum">${grade.n}</div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">예상 등급</span>
+        <div class="pill-value tnum" style="font-size:21px;">${grade.n}등급 예상</div>
         <div class="no-print" style="margin-top:8px;">
           <select id="gradeOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
             <option value="">예상 등급 자동 계산</option>
