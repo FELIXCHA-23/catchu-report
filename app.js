@@ -1651,7 +1651,7 @@ function renderReportTab() {
       </div>
       ${retest.items.map(it => `
         <div class="unit-row">
-          <div class="unit-name">${escapeHtml(it.label)} <span class="type-unit-caption">${it.auto ? '(재시험 미채점 · 자동 정답 처리)' : `(${escapeHtml(it.date)})`}</span></div>
+          <div class="unit-name">${escapeHtml(it.label)}</div>
           <div class="unit-count">오답 ${it.originalWrong}개</div>
           <div class="unit-bar-wrap">${buildBarRow(it.pct, null, it.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
           <div class="unit-pct tnum">${it.corrected}/${it.originalWrong}</div>
@@ -1701,10 +1701,19 @@ function renderReportTab() {
 
   const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);
 
-  // "전체 정답률 추이" 그래프만 선택적으로 더 많은 회차(전체 기간)를 보여줄 수 있게 함 — 나머지 리포트 내용은 선택한 기간 그대로 유지
+  // "전체 정답률 추이" 그래프는 선택한 기간 그대로 항상 보여주고, 체크하면 원하는 기간을 직접 골라
+  // 추이 그래프를 하나 더 "추가"로 붙일 수 있게 함 (기존 그래프를 대체하지 않음)
+  const allScoredRounds = studentScoredRounds(studentId);
   const prevExtendToggle = document.getElementById('reportExtendTrendToggle');
   const extendChecked = prevExtendToggle ? prevExtendToggle.checked : false;
-  const chartPoints = extendChecked ? computeStudentReport(studentId, null, null).points : points;
+  let extendPoints = [], extendFromId = null, extendToId = null;
+  if (extendChecked && allScoredRounds.length) {
+    const prevFromSel = document.getElementById('reportExtendFromSel');
+    const prevToSel = document.getElementById('reportExtendToSel');
+    extendFromId = (prevFromSel && allScoredRounds.some(x => x.round.id === prevFromSel.value)) ? prevFromSel.value : allScoredRounds[0].round.id;
+    extendToId = (prevToSel && allScoredRounds.some(x => x.round.id === prevToSel.value)) ? prevToSel.value : allScoredRounds[allScoredRounds.length - 1].round.id;
+    extendPoints = computeStudentReport(studentId, extendFromId, extendToId).points;
+  }
 
   out.innerHTML = `
     <div class="sample-flag no-print">실제 데이터 기반 리포트 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요</div>
@@ -1763,11 +1772,22 @@ function renderReportTab() {
     <div class="card">
       <h2>전체 정답률 추이</h2>
       <p class="card-sub">회차별 ${points[points.length-1].total}문항 기준</p>
-      <label class="no-print" style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-bottom:8px;">
-        <input type="checkbox" id="reportExtendTrendToggle"${extendChecked ? ' checked' : ''}> 선택한 기간보다 더 많은 회차(전체 기간)를 그래프에 표시
+      <div class="chart-wrap">${buildMainChartSVG(points)}</div>
+      <label class="no-print" style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-top:10px;">
+        <input type="checkbox" id="reportExtendTrendToggle"${extendChecked ? ' checked' : ''}> 다른 기간의 추이 그래프 추가로 보기
       </label>
-      <div class="chart-wrap">${buildMainChartSVG(chartPoints)}</div>
     </div>
+    ${extendChecked ? `<div class="card">
+      <h2>추가 추이 그래프</h2>
+      <p class="card-sub">${extendPoints.length ? `${escapeHtml(extendPoints[0].label)} – ${escapeHtml(extendPoints[extendPoints.length - 1].label)} 기준` : '채점 기록이 없어요'}</p>
+      <div class="inline-form no-print" style="margin-bottom:10px;">
+        <select id="reportExtendFromSel"></select>
+        <span class="field-hint">부터</span>
+        <select id="reportExtendToSel"></select>
+        <span class="field-hint">까지</span>
+      </div>
+      <div class="chart-wrap">${buildMainChartSVG(extendPoints)}</div>
+    </div>` : ''}
     <div class="card">
       <h2>유형별 정답률</h2>
       <p class="card-sub">최근 정답률 (회색 막대는 반 평균)</p>
@@ -1814,6 +1834,18 @@ function renderReportTab() {
   const extendTrendToggle = document.getElementById('reportExtendTrendToggle');
   if (extendTrendToggle) {
     extendTrendToggle.addEventListener('change', renderReportTab);
+  }
+
+  const extendFromSel = document.getElementById('reportExtendFromSel');
+  const extendToSel = document.getElementById('reportExtendToSel');
+  if (extendFromSel && extendToSel) {
+    const opts = allScoredRounds.map(x => `<option value="${x.round.id}">${escapeHtml(x.label)} (${shortDate(x.round.date)})</option>`).join('');
+    extendFromSel.innerHTML = opts;
+    extendToSel.innerHTML = opts;
+    extendFromSel.value = extendFromId;
+    extendToSel.value = extendToId;
+    extendFromSel.addEventListener('change', renderReportTab);
+    extendToSel.addEventListener('change', renderReportTab);
   }
 
   const noteInput = document.getElementById('teacherNoteInput');
@@ -2027,9 +2059,12 @@ async function exportReportPDF() {
     const blocks = Array.from(target.children).filter(el => !el.classList.contains('no-print') && el.offsetHeight > 0);
     for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
 
-    // 파일명 맨 앞에 기준 주차(리포트에 포함된 마지막 회차)를 "9월3주차" 형식으로 붙임
-    const lastLabel = data.points.length ? data.points[data.points.length - 1].label.replace('-', '월') : '';
-    pdf.save(`캐치유월간리포트_${lastLabel ? lastLabel + '_' : ''}${displayName(data.student.name)}.pdf`);
+    // 파일명 맨 앞에 "발행월"을 붙임 — 리포트에 포함된 마지막 회차가 속한 달 기준
+    // (예: 8월4주차~9월4주차 리포트는 9월, 9월3주차~10월3주차 리포트는 10월)
+    const lastPoint = data.points[data.points.length - 1];
+    const lastRound = lastPoint ? state.rounds.find(r => r.id === lastPoint.roundId) : null;
+    const reportMonth = lastRound ? new Date(lastRound.date + 'T00:00:00').getMonth() + 1 : '';
+    pdf.save(`${reportMonth ? reportMonth + '월' : ''}캐치유리포트_${displayName(data.student.name)}.pdf`);
     status.style.color = 'var(--good)';
     status.textContent = 'PDF를 저장했어요.';
   } catch (err) {
