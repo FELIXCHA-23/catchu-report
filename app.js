@@ -305,12 +305,27 @@ function switchTab(name) {
 
 /* ================= 학생 관리 ================= */
 
+function populateStudentTeacherFilter() {
+  const sel = document.getElementById('studentTeacherFilter');
+  if (!sel) return;
+  const prev = sel.value;
+  const teachers = Array.from(new Set(state.students.map(s => s.teacher).filter(Boolean)));
+  teachers.sort((a, b) => TEACHER_OPTIONS.indexOf(a) - TEACHER_OPTIONS.indexOf(b));
+  sel.innerHTML = '<option value="">담당 선생님 전체</option>' + teachers.map(t => `<option value="${t}">${t}</option>`).join('');
+  if (teachers.includes(prev)) sel.value = prev;
+}
+
 function renderStudents() {
   const wrap = document.getElementById('studentListWrap');
+  populateStudentTeacherFilter();
+  const teacherFilter = document.getElementById('studentTeacherFilter')?.value || '';
+  const filtered = teacherFilter ? state.students.filter(s => s.teacher === teacherFilter) : state.students;
   if (!state.students.length) {
     wrap.innerHTML = '<div class="empty-state">아직 등록된 학생이 없어요. 위에서 학생을 추가해보세요.</div>';
+  } else if (!filtered.length) {
+    wrap.innerHTML = '<div class="empty-state">해당 선생님 담당 학생이 없어요.</div>';
   } else {
-    const rows = state.students.map(s => `
+    const rows = filtered.map(s => `
       <tr>
         <td>${escapeHtml(s.name)}${s.school ? `<br><span class="type-unit-caption">${escapeHtml(s.school)}</span>` : ''}</td>
         <td>${escapeHtml(s.grade || '-')}</td>
@@ -363,6 +378,8 @@ function resetStudentForm() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('studentTeacherFilter')?.addEventListener('change', renderStudents);
+
   const classSel = document.getElementById('stuClass');
   STANDARD_CLASSES.forEach(c => classSel.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`));
   const teacherSel = document.getElementById('stuTeacher');
@@ -521,6 +538,7 @@ function resetRoundForm() {
   populateFridaySelect(document.getElementById('roundDate'));
   document.getElementById('roundGrade').value = '';
   document.getElementById('roundTotal').value = 30;
+  document.getElementById('roundTitle').value = '';
   document.getElementById('typeRows').innerHTML = '';
   addTypeRow();
   updateCoverageHint();
@@ -542,8 +560,9 @@ function roundStudentTag(round) {
   return s ? ` · ${escapeHtml(s.name)} 개별` : (round.studentName ? ` · ${escapeHtml(round.studentName)} 개별` : ' · 개별시험지');
 }
 
-// 같은 날짜·학년에 진도가 다른 시험지가 여러 개일 수 있어, 첫 유형명을 같이 보여줘 구분되게 함
+// 같은 날짜·학년에 진도가 다른 시험지가 여러 개일 수 있어, 이름(또는 첫 유형명)을 같이 보여줘 구분되게 함
 function roundTopicHint(round) {
+  if (round.title) return ` · ${escapeHtml(round.title)}`;
   if (!round.types || !round.types.length) return '';
   return ` · ${escapeHtml(round.types[0].name)}${round.types.length > 1 ? ' 외' : ''}`;
 }
@@ -574,6 +593,7 @@ function renderRounds() {
       return `
       <tr>
         <td>${escapeHtml(r.grade || '-')} ${roundLabel(r)}${roundStudentTag(r)}</td>
+        <td>${r.title ? escapeHtml(r.title) : '<span class="field-hint">—</span>'}</td>
         <td>${shortDate(r.date)}</td>
         <td>${r.total}문항</td>
         <td>${diffBadge}</td>
@@ -585,7 +605,7 @@ function renderRounds() {
         </td>
       </tr>`;
     }).join('');
-    wrap.innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>학년·회차</th><th>날짜</th><th>문항수</th><th>전체 난이도</th><th>유형</th><th>시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    wrap.innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>학년·회차</th><th>이름</th><th>날짜</th><th>문항수</th><th>전체 난이도</th><th>유형</th><th>시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   wrap.querySelectorAll('[data-del-round]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.delRound;
@@ -603,6 +623,7 @@ function renderRounds() {
     populateFridaySelect(document.getElementById('roundDate'), r.date);
     document.getElementById('roundGrade').value = r.grade || '';
     document.getElementById('roundTotal').value = r.total;
+    document.getElementById('roundTitle').value = r.title || '';
     document.getElementById('typeRows').innerHTML = '';
     r.types.forEach(t => addTypeRow(t.name, rangeToString(t.questions), t.unit || '', majorityCompetency(r, t)));
     updateCoverageHint();
@@ -621,6 +642,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('examFileInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
+    const titleInput = document.getElementById('roundTitle');
+    if (titleInput && !titleInput.value.trim()) titleInput.value = file.name.replace(/\.[^.]+$/, '');
     if (file.size > MAX_EXAM_FILE_BYTES) {
       pendingExamFile = { name: file.name, dataUrl: null, size: file.size };
       renderExamFileInfo();
@@ -665,6 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const date = document.getElementById('roundDate').value;
     const grade = document.getElementById('roundGrade').value;
     const total = parseInt(document.getElementById('roundTotal').value, 10) || 30;
+    const title = document.getElementById('roundTitle').value.trim();
     if (!date) { toast('날짜를 선택해주세요.'); return; }
     if (!grade) { toast('학년을 선택해주세요.'); return; }
     const types = readTypeRows();
@@ -681,11 +705,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (editingRoundId) {
       const r = state.rounds.find(x => x.id === editingRoundId);
-      r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = pendingExamFile || null;
+      r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = pendingExamFile || null; r.title = title || undefined;
       if (pendingDifficulty) r.difficulty = pendingDifficulty;
       if (mergedCompetency) r.competency = mergedCompetency;
     } else {
-      state.rounds.push({ id: uid(), date, grade, total, types, examFile: pendingExamFile || null, difficulty: pendingDifficulty || undefined, competency: mergedCompetency || undefined });
+      state.rounds.push({ id: uid(), date, grade, total, types, title: title || undefined, examFile: pendingExamFile || null, difficulty: pendingDifficulty || undefined, competency: mergedCompetency || undefined });
     }
     saveState();
     pendingDifficulty = null;
@@ -744,7 +768,7 @@ function populateScoreExamSel() {
   const prev = sel.value;
   const rounds = state.rounds.filter(r => r.grade === grade && r.date === date);
   sel.innerHTML = rounds.length
-    ? rounds.map(r => `<option value="${r.id}">${escapeHtml(r.types[0] ? r.types[0].name : '시험지')}${r.types.length > 1 ? ' 외' : ''}${roundStudentTag(r)}</option>`).join('')
+    ? rounds.map(r => `<option value="${r.id}">${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
     : '<option value="">시험지를 먼저 등록하세요</option>';
   if (rounds.some(r => r.id === prev)) sel.value = prev;
   populateScoreStudentSelect();
@@ -1851,7 +1875,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const idx = studentId
             ? state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.studentId === studentId)
             : state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && (x.types || []).map(t => t.name).join('|') === topicKey);
-          const payload = { date: r.date, grade: r.grade, total: r.total || 30, types: r.types, difficulty: r.difficulty || undefined, competency: r.competency || undefined, studentId: studentId || undefined, studentName: r.studentName || undefined };
+          const payload = { date: r.date, grade: r.grade, total: r.total || 30, types: r.types, title: r.title || undefined, difficulty: r.difficulty || undefined, competency: r.competency || undefined, studentId: studentId || undefined, studentName: r.studentName || undefined };
           if (idx === -1) {
             state.rounds.push({ id: uid(), ...payload });
             added++;

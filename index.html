@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="style.css?v=16">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -56,6 +56,11 @@
     </div>
     <div class="card">
       <h2>학생 목록</h2>
+      <div class="inline-form" style="margin-bottom:10px;">
+        <select id="studentTeacherFilter">
+          <option value="">담당 선생님 전체</option>
+        </select>
+      </div>
       <div id="studentListWrap"></div>
     </div>
   </section>
@@ -64,13 +69,13 @@
   <section class="tab-panel" id="panel-rounds">
     <div class="card">
       <h2>새 회차 등록</h2>
-      <p class="card-sub">캐치유테스트는 매주 금요일에 봐요. 학년마다 시험지가 다르니, 학년을 선택하고 그 학년의 시험지를 업로드하세요. (같은 날짜에 학년별로 회차를 각각 등록하면 돼요)</p>
+      <p class="card-sub">캐치유테스트는 매주 금요일에 봐요. 학년마다 시험지가 다르니, 학년을 선택하고 그 학년의 시험지를 업로드하세요. 같은 학년에 다른 시험지의 경우, 추가 업로드 하면 됩니다.</p>
       <form id="roundForm">
         <div class="inline-form">
           <select id="roundDate" required></select>
           <select id="roundGrade" required>
             <option value="" disabled selected>학년 선택</option>
-            <option value="초1">초1</option><option value="초2">초2</option><option value="초3">초3</option>
+            <option value="초3">초3</option>
             <option value="초4">초4</option><option value="초5">초5</option><option value="초6">초6</option>
             <option value="중1">중1</option><option value="중2">중2</option><option value="중3">중3</option>
             <option value="고1">고1</option><option value="고2">고2</option><option value="고3">고3</option>
@@ -86,21 +91,17 @@
           <img id="examThumb" class="exam-thumb" style="display:none;" alt="시험지 미리보기">
         </div>
 
+        <div class="inline-form" style="margin-top:10px;">
+          <input type="text" id="roundTitle" placeholder="예: 8월3주차 고1" style="min-width:260px;">
+          <span class="field-hint">시험지 이름 (업로드하면 파일명으로 자동 입력, 직접 수정 가능)</span>
+        </div>
+
         <div class="ai-import-box">
           <p class="card-sub" style="margin:0;">시험지를 업로드한 뒤 버튼을 누르면 AI가 문항별 유형 · 2022 개정 교육과정 단원 · 핵심역량 · 난이도를 자동으로 분석해요.</p>
           <div class="inline-form">
             <button type="button" class="btn primary" id="aiAnalyzeBtn">🪄 AI로 자동 분석</button>
             <span id="aiAnalyzeStatus" class="field-hint"></span>
           </div>
-          <details class="manual-fallback" style="margin-top:2px;">
-            <summary>API 키 설정</summary>
-            <p class="card-sub" style="margin:8px 0;">console.anthropic.com에서 발급받은 API 키를 입력하세요. 이 컴퓨터에만 저장되고, 백업 파일에는 포함되지 않아요.</p>
-            <div class="inline-form">
-              <input type="password" id="apiKeyInput" placeholder="sk-ant-..." style="min-width:260px;">
-              <button type="button" class="btn ghost" id="saveApiKeyBtn">저장</button>
-              <span id="apiKeyStatus" class="field-hint"></span>
-            </div>
-          </details>
           <details class="manual-fallback">
             <summary>API 키가 없어요 (Claude 채팅으로 대신 분석)</summary>
             <p class="card-sub" style="margin:8px 0;">
@@ -238,12 +239,21 @@
       <p class="card-sub">모든 학생·회차·채점 기록을 삭제합니다. 되돌릴 수 없어요.</p>
       <button type="button" class="btn danger" id="resetBtn">전체 데이터 초기화</button>
     </div>
+    <div class="card">
+      <h2>API 키 설정</h2>
+      <p class="card-sub">console.anthropic.com에서 발급받은 API 키를 입력하면, 회차·시험지 탭에서 "AI로 자동 분석" 버튼으로 문항을 바로 분석할 수 있어요. 이 컴퓨터에만 저장되고, 백업 파일에는 포함되지 않아요.</p>
+      <div class="inline-form">
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-..." style="min-width:260px;">
+        <button type="button" class="btn ghost" id="saveApiKeyBtn">저장</button>
+        <span id="apiKeyStatus" class="field-hint"></span>
+      </div>
+    </div>
   </section>
 
 </main>
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=14"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
