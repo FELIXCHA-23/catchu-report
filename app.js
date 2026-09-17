@@ -1639,9 +1639,10 @@ function renderReportTab() {
       <h2>재시험 결과</h2>
       <p class="card-sub">오답 문항을 쌍둥이문제로 다시 본 기록 · 메인 정답률과 별도로 집계돼요</p>
       <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
-        <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">재시험 정답률 ${retest.overallPct}%</span>
+        <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">재시험 정답률</span>
           <div class="pill-value tnum">${retest.overallPct}%</div>
-          <div class="pill-compare tnum" style="font-size:30px; font-weight:700; color:var(--ink); margin-top:4px;">오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환</div>
+          <div class="pill-compare tnum" style="font-size:30px; font-weight:700; color:var(--ink); margin-top:4px;">오답 재시험 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 (${retest.sumOriginal - retest.sumCorrected}문제 개별첨삭완료)</div>
+          <div class="pill-caption">모든 오답 문항은 개별적으로 관리되며, 끝까지 추적 관리합니다.</div>
         </div>
       </div>
       ${retest.items.map(it => `
