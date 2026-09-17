@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -189,12 +189,10 @@
       <h2>리포트 생성</h2>
       <div class="inline-form">
         <select id="reportStudentSel"></select>
-        <select id="reportWindowSel">
-          <option value="4">최근 4회차</option>
-          <option value="5" selected>최근 5회차</option>
-          <option value="8">최근 8회차</option>
-          <option value="999">전체 기간</option>
-        </select>
+        <select id="reportFromSel"></select>
+        <span class="field-hint">부터</span>
+        <select id="reportToSel"></select>
+        <span class="field-hint">까지</span>
         <button type="button" class="btn primary" id="pdfExportBtn">⬇ PDF로 저장</button>
         <span id="pdfExportStatus" class="field-hint"></span>
       </div>
@@ -244,6 +242,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

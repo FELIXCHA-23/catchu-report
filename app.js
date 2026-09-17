@@ -931,14 +931,24 @@ function gradeTier(pct) {
   return { n: 5, label: '5등급' };
 }
 
-function computeStudentReport(studentId, windowN) {
-  const student = state.students.find(s => s.id === studentId);
-  if (!student) return null;
+// 학생이 실제로 채점 기록을 가진 회차만, 날짜순으로 반환 (리포트 기간 선택 드롭다운에 사용)
+function studentScoredRounds(studentId) {
   const ascRounds = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
-  const withResult = ascRounds
+  return ascRounds
     .map(r => ({ round: r, label: roundLabel(r), result: state.results.find(x => x.studentId === studentId && x.roundId === r.id) }))
     .filter(x => x.result);
-  const windowed = windowN >= 999 ? withResult : withResult.slice(-windowN);
+}
+
+function computeStudentReport(studentId, fromRoundId, toRoundId) {
+  const student = state.students.find(s => s.id === studentId);
+  if (!student) return null;
+  const withResult = studentScoredRounds(studentId);
+  let fromIdx = fromRoundId ? withResult.findIndex(x => x.round.id === fromRoundId) : 0;
+  let toIdx = toRoundId ? withResult.findIndex(x => x.round.id === toRoundId) : withResult.length - 1;
+  if (fromIdx === -1) fromIdx = 0;
+  if (toIdx === -1) toIdx = withResult.length - 1;
+  if (fromIdx > toIdx) { const t = fromIdx; fromIdx = toIdx; toIdx = t; }
+  const windowed = withResult.slice(fromIdx, toIdx + 1);
   const roundIds = windowed.map(x => x.round.id);
 
   const points = windowed.map(x => {
@@ -1254,13 +1264,30 @@ function buildComment(student, points, typeStats) {
   return parts.join(' ');
 }
 
+// 선택된 학생이 채점 기록을 가진 회차들로 시작/종료 드롭다운을 채움 (가능하면 기존 선택 유지)
+function populateReportRoundSelects() {
+  const studentId = document.getElementById('reportStudentSel').value;
+  const fromSel = document.getElementById('reportFromSel');
+  const toSel = document.getElementById('reportToSel');
+  const rounds = studentId ? studentScoredRounds(studentId) : [];
+  const opts = rounds.map(x => `<option value="${x.round.id}">${escapeHtml(x.label)} (${shortDate(x.round.date)})</option>`).join('');
+  const prevFrom = fromSel.value, prevTo = toSel.value;
+  fromSel.innerHTML = opts;
+  toSel.innerHTML = opts;
+  if (!rounds.length) return;
+  fromSel.value = rounds.some(x => x.round.id === prevFrom) ? prevFrom : rounds[0].round.id;
+  toSel.value = rounds.some(x => x.round.id === prevTo) ? prevTo : rounds[rounds.length - 1].round.id;
+}
+
 function renderReportTab() {
   const out = document.getElementById('reportOutput');
   const studentId = document.getElementById('reportStudentSel').value;
-  const windowN = parseInt(document.getElementById('reportWindowSel').value, 10);
+  populateReportRoundSelects();
   if (!studentId) { out.innerHTML = '<div class="card empty-state">학생을 먼저 등록하고 채점을 입력하세요.</div>'; return; }
+  const fromRoundId = document.getElementById('reportFromSel').value;
+  const toRoundId = document.getElementById('reportToSel').value;
 
-  const data = computeStudentReport(studentId, windowN);
+  const data = computeStudentReport(studentId, fromRoundId, toRoundId);
   if (!data || !data.points.length) {
     out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? data.student.name : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
     return;
@@ -1583,7 +1610,8 @@ async function exportReportPDF() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reportStudentSel').addEventListener('change', renderReportTab);
-  document.getElementById('reportWindowSel').addEventListener('change', renderReportTab);
+  document.getElementById('reportFromSel').addEventListener('change', renderReportTab);
+  document.getElementById('reportToSel').addEventListener('change', renderReportTab);
   document.getElementById('pdfExportBtn').addEventListener('click', exportReportPDF);
 });
 
