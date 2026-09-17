@@ -558,11 +558,14 @@ function roundLabel(round) {
   return dateToWeekLabel(round.date);
 }
 
-// 개별시험지(그 학생 전용 회차)는 이름을 같이 표시
+// 개별시험지(그 학생 전용 회차)는 이름을 같이 표시. 아직 학생이 배정 안 됐으면(공용으로 막 들어온 경우) "미지정"으로 표시
 function roundStudentTag(round) {
-  if (!round.studentId) return '';
-  const s = state.students.find(x => x.id === round.studentId);
-  return s ? ` · ${escapeHtml(s.name)} 개별` : (round.studentName ? ` · ${escapeHtml(round.studentName)} 개별` : ' · 개별시험지');
+  if (round.studentId) {
+    const s = state.students.find(x => x.id === round.studentId);
+    return s ? ` · ${escapeHtml(s.name)} 개별` : ' · 개별(학생 삭제됨)';
+  }
+  if (round.individual) return ' · 개별시험지 (학생 미지정 — 채점할 때 선택)';
+  return round.studentName ? ` · ${escapeHtml(round.studentName)} 개별` : '';
 }
 
 // 같은 날짜·학년에 진도가 다른 시험지가 여러 개일 수 있어, 이름(또는 첫 유형명)을 같이 보여줘 구분되게 함
@@ -885,11 +888,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('saveScoreBtn').addEventListener('click', () => {
     const round = currentScoreRound(), student = currentScoreStudent();
     if (!round || !student) { toast('회차와 학생을 선택해주세요.'); return; }
+    // 개별시험지인데 아직 이 학생으로 배정되지 않았으면(처음 채점하는 거면) 지금 배정을 확정함
+    if (round.individual && !round.studentId) round.studentId = student.id;
     const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
     const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
     if (existing) existing.wrong = wrong;
     else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
     saveState();
+    renderRounds(); populateSelects();
     toast(`${student.name} 학생의 채점을 저장했어요.`);
   });
 });
@@ -1871,8 +1877,11 @@ async function syncSharedRounds() {
       if (idx === -1) {
         state.rounds.push({ ...sr });
       } else {
+        // examFile과, 개별시험지를 이 컴퓨터에서 이미 어느 학생에게 배정했는지(studentId)는
+        // 이 컴퓨터에서만 의미 있는 정보라 공용 파일 동기화로 덮어쓰지 않고 그대로 유지함
         const keepExamFile = state.rounds[idx].examFile;
-        state.rounds[idx] = { ...sr, examFile: keepExamFile };
+        const keepStudentId = state.rounds[idx].studentId;
+        state.rounds[idx] = { ...sr, examFile: keepExamFile, studentId: keepStudentId };
       }
     });
     saveState();
@@ -1894,25 +1903,33 @@ document.addEventListener('DOMContentLoaded', () => {
         let added = 0, updated = 0, unmatchedNames = [];
         list.forEach(r => {
           if (!r.date || !r.grade || !Array.isArray(r.types)) return;
-          let studentId = null;
-          if (r.studentName) {
+          const topicKey = (r.types || []).map(t => t.name).join('|');
+          let idx, studentId;
+
+          if (r.individual) {
+            // 개별시험지(학생 맞춤형): 이름 전체를 안 쓰고 성 등 힌트만 있음 — 실제 어느 학생 건지는
+            // 선생님이 채점할 때 직접 고름. 한번 배정되면(studentId) 다시 가져와도 배정이 유지됨.
+            idx = state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.individual && (x.studentName || '') === (r.studentName || '') && x.title === r.title);
+            studentId = idx !== -1 ? state.rounds[idx].studentId : undefined;
+          } else if (r.studentName) {
+            // (예전 방식 호환) 풀네임이 와 있으면 그대로 자동 매칭
             const matched = state.students.find(s => s.name === r.studentName);
             if (matched) studentId = matched.id;
             else unmatchedNames.push(r.studentName);
+            idx = studentId
+              ? (() => {
+                  const byId = state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.studentId === studentId);
+                  if (byId !== -1) return byId;
+                  return state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && x.studentName === r.studentName);
+                })()
+              : -1;
+          } else {
+            // 같은 날짜·학년이어도 진도가 달라 시험지 내용(유형 구성)이 다르면 별개 회차로 취급
+            // (같은 파일을 다시 가져올 때만 갱신되도록 유형명 시그니처까지 매칭 키에 포함)
+            idx = state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && !x.individual && (x.types || []).map(t => t.name).join('|') === topicKey);
           }
-          // 같은 날짜·학년이어도 진도가 달라 시험지 내용(유형 구성)이 다르면 별개 회차로 취급
-          // (같은 파일을 다시 가져올 때만 갱신되도록 유형명 시그니처까지 매칭 키에 포함)
-          const topicKey = (r.types || []).map(t => t.name).join('|');
-          // studentId로 못 찾으면 studentName으로도 한 번 더 찾아봄 — 예전에 학생이 아직 없어서
-          // studentId 없이 studentName만 저장된 "고아" 회차를 다시 가져올 때 중복 생성되지 않고 이어붙게 하기 위함
-          const idx = studentId
-            ? (() => {
-                const byId = state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && x.studentId === studentId);
-                if (byId !== -1) return byId;
-                return state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && x.studentName === r.studentName);
-              })()
-            : state.rounds.findIndex(x => x.date === r.date && x.grade === r.grade && !x.studentId && (x.types || []).map(t => t.name).join('|') === topicKey);
-          const payload = { date: r.date, grade: r.grade, total: r.total || 30, types: r.types, title: r.title || undefined, difficulty: r.difficulty || undefined, competency: r.competency || undefined, studentId: studentId || undefined, studentName: r.studentName || undefined };
+
+          const payload = { date: r.date, grade: r.grade, total: r.total || 30, types: r.types, title: r.title || undefined, difficulty: r.difficulty || undefined, competency: r.competency || undefined, individual: r.individual || undefined, studentId: studentId || undefined, studentName: r.studentName || undefined };
           if (idx === -1) {
             state.rounds.push({ id: uid(), ...payload });
             added++;
@@ -1935,17 +1952,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function exportSharedRounds() {
   if (!state.rounds.length) { toast('내보낼 회차가 없어요.'); return; }
-  const payload = state.rounds.map(r => {
-    const { examFile, ...rest } = r;
-    return rest;
-  });
+  // 이름 전체가 들어간 예전 방식 개별시험지는 공용(GitHub) 파일에 절대 포함하지 않음 — 개인정보라서
+  const legacyFullName = state.rounds.filter(r => r.studentName && !r.individual);
+  const payload = state.rounds
+    .filter(r => !(r.studentName && !r.individual))
+    .map(r => {
+      // studentId는 이 컴퓨터에서만 의미 있는 값이라 공용 파일에는 빼고, 받는 쪽에서 각자 학생을 고르게 함
+      const { examFile, studentId, ...rest } = r;
+      return rest;
+    });
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'rounds-shared.json';
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  toast('공용 회차 파일을 내보냈어요. Claude에게 전달해서 GitHub에 반영해달라고 하세요.');
+  toast(`공용 회차 파일을 내보냈어요.${legacyFullName.length ? ' (이름 전체가 들어간 개별시험지 ' + legacyFullName.length + '개는 제외됐어요)' : ''} Claude에게 전달해서 GitHub에 반영해달라고 하세요.`);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
