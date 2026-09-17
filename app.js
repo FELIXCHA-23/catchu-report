@@ -1264,6 +1264,15 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
   // 달라 붙어서 너무 잘게 쪼개지고, 대단원까지만 묶으면 반대로 너무 뭉뚱그려져서 중단원 단위로 묶음
   const groupKeys = [];
   windowed.forEach(x => x.round.types.forEach(t => { const key = typeGroupKey(t); if (!groupKeys.includes(key)) groupKeys.push(key); }));
+  // 항상 "단원 순서대로" 보이도록 정렬 — 대단원이 먼저 기준이 되고(같은 대단원끼리는 반드시 붙어서 나오고),
+  // 그 안에서는 중단원이 교육과정상 처음 나간 날짜 순. 복습 주차에 새 소단원이 섞여 들어와도 순서가 안 흔들림
+  const majorOrder = buildUnitOrderMap(t => t.unit ? t.unit.split(' - ')[0].trim() : null);
+  const typeOrder = buildUnitOrderMap(typeGroupKey);
+  groupKeys.sort((a, b) => {
+    const majorCmp = (majorOrder[a.split(' - ')[0]] || '9999').localeCompare(majorOrder[b.split(' - ')[0]] || '9999');
+    if (majorCmp !== 0) return majorCmp;
+    return (typeOrder[a] || '9999').localeCompare(typeOrder[b] || '9999');
+  });
 
   const typeStats = groupKeys.map((key, i) => {
     const series = windowed.map(x => {
@@ -1348,6 +1357,20 @@ function typeGroupLabel(groupKey) {
   return parts.length >= 2 ? { title: parts[1], caption: parts[0] } : { title: parts[0], caption: '' };
 }
 
+// 이 학원 전체 회차(이 학생 것만이 아니라 전부)를 날짜순으로 훑어서, keyFn으로 묶었을 때 그 묶음이
+// "처음 나온 날짜"를 기록함 — 이 날짜 순으로 정렬하면 복습 주차가 있어도 항상 원래 교육과정이 나간
+// 순서(단원 순서)대로 보이고, 유형별 정답률 · 단원별 학습성과 · 회차별 상세 기록이 서로 같은 순서를 씀
+function buildUnitOrderMap(keyFn) {
+  const map = {};
+  [...state.rounds].sort((a, b) => a.date.localeCompare(b.date)).forEach(r => {
+    r.types.forEach(t => {
+      const key = keyFn(t);
+      if (key && !(key in map)) map[key] = r.date;
+    });
+  });
+  return map;
+}
+
 // 소단원까지 너무 잘게 쪼개지지 않게, 대단원(" - " 앞부분) 기준으로 묶어서 집계
 function computeUnitBreakdown(windowed) {
   const map = {};
@@ -1362,7 +1385,8 @@ function computeUnitBreakdown(windowed) {
       map[major].correct += t.questions.length - wrongInType;
     });
   });
-  return Object.values(map).map(u => ({ ...u, pct: u.total ? Math.round((u.correct / u.total) * 100) : 0 })).sort((a, b) => a.pct - b.pct);
+  const unitOrder = buildUnitOrderMap(t => t.unit ? t.unit.split(' - ')[0].trim() : null);
+  return Object.values(map).map(u => ({ ...u, pct: u.total ? Math.round((u.correct / u.total) * 100) : 0 })).sort((a, b) => (unitOrder[a.unit] || '9999').localeCompare(unitOrder[b.unit] || '9999'));
 }
 
 // 역량은 문항 단위(round.competency: {문항번호: 역량})로 집계 — 같은 유형 안에서도 문항마다 다를 수 있음
