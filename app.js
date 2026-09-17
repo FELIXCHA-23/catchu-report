@@ -305,7 +305,7 @@ function parseRange(str) {
 
 function rangeToString(arr) {
   if (!arr || !arr.length) return '';
-  const sorted = [...arr].sort((a, b) => a - b);
+  const sorted = [...new Set(arr)].sort((a, b) => a - b);
   const parts = [];
   let start = sorted[0], prev = sorted[0];
   for (let i = 1; i <= sorted.length; i++) {
@@ -1014,17 +1014,9 @@ document.addEventListener('DOMContentLoaded', () => {
     renderStudentResetPanel();
   });
 
-  document.getElementById('quickWrongInput').addEventListener('input', () => {
-    const round = currentScoreRound();
-    if (!round) return;
-    const wrong = new Set(parseRange(document.getElementById('quickWrongInput').value));
-    document.querySelectorAll('.qbtn').forEach(b => {
-      const q = parseInt(b.dataset.q, 10);
-      b.classList.toggle('wrong', wrong.has(q));
-    });
-    updateScoreSummary();
-  });
-
+  // (주의) 예전엔 여기에 'input' 이벤트로 타이핑할 때마다 그리드 전체를 현재 입력값 기준으로
+  // 다시 그리는 실시간 미리보기가 있었는데, 그게 "번호 하나 입력 → Enter" 누적 입력과 충돌해서
+  // 다음 번호를 타이핑하는 순간 방금 Enter로 찍은 이전 번호가 지워지는 버그가 있었음 — 그래서 제거함.
   // 빠른입력 칸에 문항 번호를 쓰고 Enter를 누르면 그 문항을 바로 오답으로 지정하고 즉시 저장함
   // (Enter마다 저장하는 방식이라 번호 하나만 딱 입력해도 되고, 기존에 표시된 오답은 그대로 유지됨)
   document.getElementById('quickWrongInput').addEventListener('keydown', e => {
@@ -1060,7 +1052,7 @@ function saveCurrentScore(silent) {
   if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
   // 개별시험지인데 아직 이 학생으로 배정되지 않았으면(처음 채점하는 거면) 지금 배정을 확정함
   if (round.individual && !round.studentId) round.studentId = student.id;
-  const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+  const wrong = [...new Set(Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
   const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
   if (existing) existing.wrong = wrong;
   else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
@@ -1178,7 +1170,7 @@ function renderRetestList() {
 function saveCurrentRetest(silent) {
   const round = currentRetestRound(), student = currentRetestStudent();
   if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
-  const stillWrong = Array.from(document.querySelectorAll('#retestGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+  const stillWrong = [...new Set(Array.from(document.querySelectorAll('#retestGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
   const date = document.getElementById('retestDate').value || new Date().toISOString().slice(0, 10);
   const existing = state.retests.find(rt => rt.studentId === student.id && rt.roundId === round.id);
   if (existing) { existing.date = date; existing.stillWrong = stillWrong; }
