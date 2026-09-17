@@ -160,7 +160,7 @@
       </div>
       <div id="scoreGridWrap"></div>
       <div class="inline-form" style="margin-top:10px;">
-        <input type="text" id="quickWrongInput" placeholder="빠른 입력: 틀린 문항 번호 (예: 3,7,15) — 입력하면 바로 반영돼요">
+        <input type="text" id="quickWrongInput" placeholder="오답 번호 + Enter">
       </div>
       <div class="inline-form" style="margin-top:14px;">
         <button type="button" class="btn primary" id="saveScoreBtn">채점 저장</button>
@@ -185,13 +185,13 @@
       <h2>재시험 채점</h2>
       <p class="card-sub">원래 회차에서 틀렸던 문항만 쌍둥이문제로 다시 봅니다. 여전히 틀린 문항만 클릭하세요.</p>
       <div class="inline-form">
-        <select id="retestRoundSel"></select>
         <select id="retestStudentSel"></select>
+        <select id="retestRoundSel"></select>
         <select id="retestDate"></select>
       </div>
       <div id="retestGridWrap"></div>
       <div class="inline-form" style="margin-top:10px;">
-        <input type="text" id="retestQuickWrongInput" placeholder="여전히 틀린 문항 번호 입력 후 Enter — 누를 때마다 바로 저장돼요">
+        <input type="text" id="retestQuickWrongInput" placeholder="틀린 번호 + Enter">
       </div>
       <div class="inline-form" style="margin-top:14px;">
         <button type="button" class="btn primary" id="saveRetestBtn">재시험 결과 저장</button>
@@ -274,6 +274,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=52"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>

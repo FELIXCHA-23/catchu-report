@@ -1077,41 +1077,40 @@ function saveCurrentScore(silent) {
 // 재시험은 새 유형표가 필요 없음 — 원래 회차에서 틀린 문항 번호를 그대로 재사용해서
 // "쌍둥이문제를 다시 풀었을 때도 틀렸는지"만 기록. 유형·단원·난이도·역량은 원래 회차 것을 그대로 물려받음.
 
-function roundsWithWrongForAnyStudent() {
-  const roundIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.roundId));
-  return [...state.rounds].filter(r => roundIdsWithWrong.has(r.id)).sort((a, b) => b.date.localeCompare(a.date));
-}
-
-function populateRetestRoundSelect() {
-  const sel = document.getElementById('retestRoundSel');
-  const rounds = roundsWithWrongForAnyStudent();
-  sel.innerHTML = rounds.length
-    ? rounds.map(r => `<option value="${r.id}">${escapeHtml(r.grade || '')} · ${roundLabel(r)} (${shortDate(r.date)})</option>`).join('')
-    : '<option value="">오답이 있는 회차가 없어요</option>';
-}
-
-// 이름 가나다순으로 정렬해서 목록 순서가 매번 안정적이게 함 — <select>는 첫 옵션이 기본 선택되므로
-// 자연히 정렬된 목록의 맨 처음 학생이 바로 선택된 상태로 열림
+// 학생을 먼저 고르고, 그 학생이 오답을 가진 회차만 골라서 재시험을 채점하는 흐름 — 이름 가나다순 정렬로
+// 목록 순서가 매번 안정적이게 함(<select>는 첫 옵션이 기본 선택되므로 맨 처음 학생이 바로 선택됨)
 function populateRetestStudentSelect() {
-  const roundId = document.getElementById('retestRoundSel').value;
   const sel = document.getElementById('retestStudentSel');
   const currentTeacher = getCurrentTeacher();
+  const studentIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.studentId));
+  const students = state.students
+    .filter(s => studentIdsWithWrong.has(s.id) && (!currentTeacher || s.teacher === currentTeacher))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  sel.innerHTML = students.length
+    ? students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
+    : '<option value="">오답이 있는 학생이 없어요</option>';
+}
+
+// 선택된 학생이 오답을 가진 회차만 최신순으로 보여줌
+function populateRetestRoundSelect() {
+  const studentId = document.getElementById('retestStudentSel').value;
+  const sel = document.getElementById('retestRoundSel');
   const withWrong = state.results
-    .filter(r => r.roundId === roundId && r.wrong.length)
-    .map(r => ({ r, s: state.students.find(x => x.id === r.studentId) }))
-    .filter(({ s }) => s && (!currentTeacher || s.teacher === currentTeacher))
-    .sort((a, b) => a.s.name.localeCompare(b.s.name, 'ko'));
+    .filter(r => r.studentId === studentId && r.wrong.length)
+    .map(r => ({ r, round: state.rounds.find(x => x.id === r.roundId) }))
+    .filter(x => x.round)
+    .sort((a, b) => b.round.date.localeCompare(a.round.date));
   sel.innerHTML = withWrong.length
-    ? withWrong.map(({ r, s }) => `<option value="${s.id}">${escapeHtml(s.name)} (오답 ${r.wrong.length}개)</option>`).join('')
-    : '<option value="">이 회차에 오답 학생이 없어요</option>';
+    ? withWrong.map(({ r, round }) => `<option value="${round.id}">${escapeHtml(round.grade || '')} · ${roundLabel(round)} (${shortDate(round.date)}) · 오답 ${r.wrong.length}개</option>`).join('')
+    : '<option value="">오답이 있는 회차가 없어요</option>';
 }
 
 function currentRetestRound() { return state.rounds.find(r => r.id === document.getElementById('retestRoundSel').value); }
 function currentRetestStudent() { return state.students.find(s => s.id === document.getElementById('retestStudentSel').value); }
 
 function renderRetestTab() {
-  populateRetestRoundSelect();
   populateRetestStudentSelect();
+  populateRetestRoundSelect();
   populateFridaySelect(document.getElementById('retestDate'), document.getElementById('retestDate').value || undefined);
   renderRetestGrid();
   renderRetestList();
@@ -1191,8 +1190,8 @@ function saveCurrentRetest(silent) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('retestRoundSel').addEventListener('change', () => { populateRetestStudentSelect(); renderRetestGrid(); });
-  document.getElementById('retestStudentSel').addEventListener('change', renderRetestGrid);
+  document.getElementById('retestStudentSel').addEventListener('change', () => { populateRetestRoundSelect(); renderRetestGrid(); });
+  document.getElementById('retestRoundSel').addEventListener('change', renderRetestGrid);
   document.getElementById('saveRetestBtn').addEventListener('click', () => saveCurrentRetest());
 
   // 여전히 틀린 문항 번호를 쓰고 Enter를 누르면 바로 그 문항을 체크하고 즉시 저장함
