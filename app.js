@@ -1638,11 +1638,10 @@ function renderReportTab() {
     <div class="card">
       <h2>재시험 결과</h2>
       <p class="card-sub">오답 문항을 쌍둥이문제로 다시 본 기록 · 메인 정답률과 별도로 집계돼요</p>
+      <p class="card-sub">재시험에서의 재오답을 포함한 모든 오답 문항은 개별첨삭이 완료되었으며, 끝까지 추적 관리합니다.</p>
       <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
         <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">재시험 정답률</span>
-          <div class="pill-value tnum">${retest.overallPct}%</div>
-          <div class="pill-compare tnum" style="font-size:30px; font-weight:700; color:var(--ink); margin-top:4px;">오답 재시험 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 (${retest.sumOriginal - retest.sumCorrected}문제 개별첨삭완료)</div>
-          <div class="pill-caption">모든 오답 문항은 개별적으로 관리되며, 끝까지 추적 관리합니다.</div>
+          <div class="pill-value tnum">${retest.overallPct}%(${retest.sumCorrected}/${retest.sumOriginal})</div>
         </div>
       </div>
       ${retest.items.map(it => `
@@ -1813,7 +1812,6 @@ function renderReportTab() {
       <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
-    <div class="report-footer">캐치유테스트 분석보고서는 매 월말에 발행됩니다</div>
   `;
 
   const gradeOverrideSel = document.getElementById('gradeOverrideSel');
