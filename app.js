@@ -836,7 +836,61 @@ function typeForQuestion(round, q) {
   return null;
 }
 
+// 현재 선택된 학생의 저장된 채점 기록을 회차별로(또는 한 번에 전부) 지울 수 있는 패널
+function renderStudentResetPanel() {
+  const wrap = document.getElementById('studentResetWrap');
+  if (!wrap) return;
+  const student = currentScoreStudent();
+  if (!student) { wrap.innerHTML = '<div class="empty-state">학생을 먼저 선택하세요.</div>'; return; }
+  const myResults = state.results
+    .filter(r => r.studentId === student.id)
+    .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
+    .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
+  if (!myResults.length) {
+    wrap.innerHTML = `<div class="empty-state">${escapeHtml(student.name)} 학생의 채점 기록이 아직 없어요.</div>`;
+    return;
+  }
+  const rows = myResults.map(({ result, round }) => {
+    const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
+    return `<tr>
+      <td>${label}</td>
+      <td>오답 ${result.wrong.length}개</td>
+      <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}">취소</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="inline-form" style="margin-top:10px;">
+      <button type="button" class="btn danger" id="clearAllResultsBtn">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
+    </div>
+  `;
+  wrap.querySelectorAll('[data-clear-result]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.clearResult;
+    const result = state.results.find(r => r.id === id);
+    if (!result) return;
+    const round = state.rounds.find(x => x.id === result.roundId);
+    if (!confirm(`${student.name} 학생의 ${round ? roundLabel(round) : '이'} 채점 기록을 지울까요?`)) return;
+    state.results = state.results.filter(r => r.id !== id);
+    state.retests = state.retests.filter(rt => !(rt.studentId === student.id && rt.roundId === result.roundId));
+    saveState();
+    renderScoreTab();
+    toast('채점 기록을 지웠어요.');
+  }));
+  const clearAllBtn = document.getElementById('clearAllResultsBtn');
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', () => {
+      if (!confirm(`${student.name} 학생의 채점 기록을 전부 지울까요? 되돌릴 수 없어요.`)) return;
+      state.results = state.results.filter(r => r.studentId !== student.id);
+      state.retests = state.retests.filter(rt => rt.studentId !== student.id);
+      saveState();
+      renderScoreTab();
+      toast('전체 채점 기록을 지웠어요.');
+    });
+  }
+}
+
 function renderScoreTab() {
+  renderStudentResetPanel();
   const round = currentScoreRound();
   const wrap = document.getElementById('scoreGridWrap');
   if (!round) {
@@ -1524,7 +1578,6 @@ function renderReportTab() {
     <div class="pill-row">
       <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">${grade.label}</span>
         <div class="pill-value tnum">${grade.n}</div>
-        <div class="pill-compare">${difficulty ? `시험 난이도 평균 ${difficultyLabelByN(difficulty.avgAll)} (${difficulty.avgAll}/6)` : '난이도 정보 없음'}</div>
         <div class="no-print" style="margin-top:8px;">
           <select id="gradeOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
             <option value="">예상 등급 자동 계산</option>
@@ -1543,6 +1596,10 @@ function renderReportTab() {
       <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>
         <div class="pill-value tnum">${totalQ}</div>
         <div class="pill-compare">기간 내 채점된 문항 수</div>
+      </div>
+      <div class="pill-tile"><span class="pill-tag" style="background:${!difficulty ? 'var(--muted)' : difficulty.avgAll <= 2 ? 'var(--good)' : difficulty.avgAll <= 4 ? 'var(--type-2)' : 'var(--critical)'}">시험 난이도</span>
+        <div class="pill-value tnum">${difficulty ? difficultyLabelByN(difficulty.avgAll) : '—'}</div>
+        <div class="pill-compare">${difficulty ? `평균 ${difficulty.avgAll} / 6` : '난이도 정보 없음'}</div>
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:${delta > 0 ? 'var(--good)' : delta < 0 ? 'var(--critical)' : 'var(--muted)'}">${delta > 0 ? '상승' : delta < 0 ? '하락' : '변화 없음'}</span>
         <div class="pill-value tnum ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div>
