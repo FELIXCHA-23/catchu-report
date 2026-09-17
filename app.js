@@ -1259,15 +1259,15 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     return { label: x.label, date: shortDate(x.round.date), pct, correct, total: x.round.total, roundId: x.round.id };
   });
 
-  // 유형명이 아니라 소단원(unit의 " - " 뒷부분) 기준으로 묶음 — 같은 소단원이어도 주차마다
-  // AI가 유형명을 다르게 붙이는 경우가 많아(예: "접선의 방정식" / "접선의 기울기와 방정식") 유형명 기준으로
-  // 묶으면 사실상 같은 내용이 여러 카드로 쪼개져 리포트가 너무 잘게 나뉘고 PDF도 이상하게 분배됨
+  // 유형명이 아니라 대단원(unit의 " - " 앞부분) 기준으로 묶음 — 소단원 단위로 묶어봤을 때도
+  // 주차마다 AI가 유형명을 조금씩 다르게 붙여서(예: "접선의 방정식" / "접선의 기울기와 방정식" /
+  // "접선의 활용") 여전히 카드가 너무 잘게 쪼개졌어서, 확실히 덜 쪼개지도록 대단원까지 올려서 묶음
   const groupNames = [];
-  windowed.forEach(x => x.round.types.forEach(t => { const key = subUnitKey(t); if (!groupNames.includes(key)) groupNames.push(key); }));
+  windowed.forEach(x => x.round.types.forEach(t => { const key = typeGroupKey(t); if (!groupNames.includes(key)) groupNames.push(key); }));
 
   const typeStats = groupNames.map((name, i) => {
     const series = windowed.map(x => {
-      const matching = x.round.types.filter(tt => subUnitKey(tt) === name);
+      const matching = x.round.types.filter(tt => typeGroupKey(tt) === name);
       const questions = matching.flatMap(tt => tt.questions);
       if (!questions.length) return null;
       const wrongSet = new Set(x.result.wrong);
@@ -1280,11 +1280,8 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     const first = vals.length ? vals[0] : null;
     const last = vals.length ? vals[vals.length - 1] : null;
     const delta = (first !== null && last !== null) ? last - first : null;
-    // 카드 아래 캡션에는 소단원명(=카드 제목)과 안 겹치게 대단원명만 보여줌
-    const fullUnit = windowed.map(x => x.round.types.find(tt => subUnitKey(tt) === name)).filter(Boolean).map(t => t.unit).filter(Boolean)[0] || '';
-    const unit = fullUnit.includes(' - ') ? fullUnit.split(' - ')[0].trim() : '';
     const classAvg = computeClassAverageByType(roundIds, name, studentId);
-    return { name, unit, color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
+    return { name, unit: '', color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
   });
 
   // weighted overall accuracy across the window (more correct than averaging per-round %)
@@ -1331,12 +1328,14 @@ function computeRetestSummary(studentId, points) {
   return { items, overallPct, sumOriginal, sumCorrected: sumOriginal - sumStillWrong };
 }
 
-// 유형(type)을 소단원 단위로 묶기 위한 키 — unit이 "대단원 - 소단원" 형식이면 소단원 부분만,
-// 아니면(단원 미지정) 유형명을 그대로 씀
-function subUnitKey(type) {
+// 유형(type)을 대단원 단위로 묶기 위한 키 — unit이 "대단원 - 소단원" 형식이면 대단원 부분만,
+// 아니면(단원 미지정) 유형명을 그대로 씀. 소단원까지 내려가면 주차마다 유형명이 조금씩 달라 붙어서
+// (예: "접선의 방정식" / "접선의 기울기와 방정식" / "접선의 활용") 여전히 카드가 너무 잘게 쪼개졌던 문제가
+// 있어서, 확실히 덜 쪼개지도록 대단원까지 올려서 묶음
+function typeGroupKey(type) {
   if (type.unit) {
-    const parts = type.unit.split(' - ');
-    return parts.length > 1 ? parts.slice(1).join(' - ').trim() : type.unit.trim();
+    const major = type.unit.split(' - ')[0].trim();
+    if (major) return major;
   }
   return type.name;
 }
@@ -1395,7 +1394,7 @@ function computeClassAverageByType(roundIds, groupKey, excludeStudentId) {
   state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
     const round = state.rounds.find(x => x.id === r.roundId);
     if (!round) return;
-    const questions = round.types.filter(tt => subUnitKey(tt) === groupKey).flatMap(tt => tt.questions);
+    const questions = round.types.filter(tt => typeGroupKey(tt) === groupKey).flatMap(tt => tt.questions);
     if (!questions.length) return;
     const wrongSet = new Set(r.wrong);
     const wrongInType = questions.filter(q => wrongSet.has(q)).length;
@@ -1593,9 +1592,6 @@ function renderReportTab() {
   const totalQ = points.reduce((a, p) => a + p.total, 0);
   const delta = last.pct - first.pct;
   const grade = displayGradeTier(studentId, overallPct);
-  const pctCompareTxt = classAvgOverall !== null
-    ? (overallPct - classAvgOverall === 0 ? '반 평균과 같아요' : `반 평균보다 ${overallPct - classAvgOverall > 0 ? '+' : ''}${overallPct - classAvgOverall}%p ${overallPct - classAvgOverall > 0 ? '높아요' : '낮아요'}`)
-    : '비교할 반 데이터가 아직 없어요';
 
   const { strengths, watch } = computeStrengthWatch(typeStats);
   const strengthsHtml = strengths.length
@@ -1734,7 +1730,6 @@ function renderReportTab() {
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">정답률</span>
         <div class="pill-value tnum">${overallPct}%</div>
-        <div class="pill-compare">${pctCompareTxt}</div>
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>
         <div class="pill-value tnum">${totalQ}</div>
@@ -1746,7 +1741,7 @@ function renderReportTab() {
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:${delta > 0 ? 'var(--good)' : delta < 0 ? 'var(--critical)' : 'var(--muted)'}">${delta > 0 ? '상승' : delta < 0 ? '하락' : '변화 없음'}</span>
         <div class="pill-value tnum ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div>
-        <div class="pill-compare">${first.label} ${first.pct}% → ${last.label} ${last.pct}%</div>
+        <div class="pill-compare"><span style="white-space:nowrap;">${first.label} ${first.pct}%</span><br><span style="white-space:nowrap;">→ ${last.label} ${last.pct}%</span></div>
       </div>
     </div>
     <div class="card">
