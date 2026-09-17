@@ -836,41 +836,68 @@ function typeForQuestion(round, q) {
   return null;
 }
 
+// "학생별 채점 현황"에 지금 추가되어 보이는 학생 목록 (반/학생 드롭다운으로 고를 때마다 여기에 쌓임 — 새로고침하면 비워짐)
+let resetPanelStudentIds = [];
+
+function populateResetClassSel() {
+  const sel = document.getElementById('resetClassSel');
+  if (!sel) return;
+  const prev = sel.value;
+  const classes = Array.from(new Set(filterByCurrentTeacher(state.students).map(s => s.class).filter(Boolean))).sort();
+  sel.innerHTML = '<option value="">반 선택</option>' + classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  if (classes.includes(prev)) sel.value = prev;
+  populateResetStudentSel();
+}
+
+function populateResetStudentSel() {
+  const classSel = document.getElementById('resetClassSel');
+  const sel = document.getElementById('resetStudentSel');
+  if (!sel) return;
+  const cls = classSel ? classSel.value : '';
+  const eligible = filterByCurrentTeacher(state.students).filter(s => !cls || s.class === cls);
+  sel.innerHTML = '<option value="">학생 선택(고르면 추가됨)</option>' + eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+}
+
 // 학생별로 지금까지 채점된 시험지 현황을 보여주고, 회차별로(또는 학생 전체) 지울 수 있는 패널
+// 반/학생 드롭다운에서 고를 때마다 그 학생이 아래 목록에 추가됨 (전체 학생을 한꺼번에 보여주지 않음)
 function renderStudentResetPanel() {
   const wrap = document.getElementById('studentResetWrap');
   if (!wrap) return;
-  const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
-  const studentsWithResults = filterByCurrentTeacher(state.students)
-    .filter(s => state.results.some(r => r.studentId === s.id))
-    .sort((a, b) => (order.indexOf(a.grade) - order.indexOf(b.grade)) || a.name.localeCompare(b.name, 'ko'));
+  populateResetClassSel();
 
-  if (!studentsWithResults.length) {
-    wrap.innerHTML = '<div class="empty-state">아직 채점된 기록이 없어요.</div>';
+  // 담당 선생님을 바꾸는 등으로 더 이상 대상이 아닌 학생은 목록에서 빠짐
+  const allowedIds = new Set(filterByCurrentTeacher(state.students).map(s => s.id));
+  resetPanelStudentIds = resetPanelStudentIds.filter(id => allowedIds.has(id));
+
+  if (!resetPanelStudentIds.length) {
+    wrap.innerHTML = '<div class="empty-state">위에서 반과 학생을 선택하면 여기에 추가돼요.</div>';
     return;
   }
 
-  const currentStudentId = document.getElementById('scoreStudentSel')?.value;
-
-  wrap.innerHTML = studentsWithResults.map(student => {
+  wrap.innerHTML = resetPanelStudentIds.map(studentId => {
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) return '';
     const myResults = state.results
       .filter(r => r.studentId === student.id)
       .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
       .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
-    const rows = myResults.map(({ result, round }) => {
+    const rows = myResults.length ? myResults.map(({ result, round }) => {
       const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
+      const wrongTxt = result.wrong.length ? `오답 ${result.wrong.length}개 (${escapeHtml(rangeToString(result.wrong))})` : '전부 정답';
       return `<tr>
         <td>${label}</td>
-        <td>오답 ${result.wrong.length}개</td>
+        <td>${wrongTxt}</td>
         <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
       </tr>`;
-    }).join('');
-    return `<details class="manual-fallback"${student.id === currentStudentId ? ' open' : ''}>
-      <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</summary>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="inline-form" style="margin:10px 0;">
+    }).join('') : `<tr><td colspan="3">채점 기록이 없어요.</td></tr>`;
+    return `<details class="manual-fallback" open>
+      <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''}${student.class ? ' · ' + escapeHtml(student.class) : ''} (${myResults.length}개 회차 채점됨)
+        <button type="button" class="icon-btn" data-remove-from-list="${student.id}" style="float:right;">목록에서 빼기</button>
+      </summary>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${myResults.length ? `<div class="inline-form" style="margin:10px 0;">
         <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
-      </div>
+      </div>` : ''}
     </details>`;
   }).join('');
 
@@ -897,6 +924,12 @@ function renderStudentResetPanel() {
     saveState();
     renderScoreTab();
     toast('전체 채점 기록을 지웠어요.');
+  }));
+
+  wrap.querySelectorAll('[data-remove-from-list]').forEach(b => b.addEventListener('click', e => {
+    e.preventDefault();
+    resetPanelStudentIds = resetPanelStudentIds.filter(id => id !== b.dataset.removeFromList);
+    renderStudentResetPanel();
   }));
 }
 
@@ -949,6 +982,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreRoundGroupSel').addEventListener('change', () => { populateScoreExamSel(); renderScoreTab(); });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', renderScoreTab);
+
+  document.getElementById('resetClassSel').addEventListener('change', populateResetStudentSel);
+  document.getElementById('resetStudentSel').addEventListener('change', e => {
+    const id = e.target.value;
+    if (id && !resetPanelStudentIds.includes(id)) resetPanelStudentIds.push(id);
+    e.target.value = '';
+    renderStudentResetPanel();
+  });
 
   document.getElementById('quickWrongInput').addEventListener('input', () => {
     const round = currentScoreRound();
@@ -1064,11 +1105,12 @@ function renderRetestList() {
     const originalCount = result ? result.wrong.length : rt.stillWrong.length;
     const corrected = originalCount - rt.stillWrong.length;
     const pct = originalCount ? Math.round((corrected / originalCount) * 100) : 0;
+    const stillWrongTxt = rt.stillWrong.length ? `아직 틀림: ${escapeHtml(rangeToString(rt.stillWrong))}` : '전부 정답 전환';
     return `<tr>
       <td>${s ? escapeHtml(s.name) : '(삭제된 학생)'}</td>
       <td>${roundLabelById(rt.roundId)}</td>
       <td>${shortDate(rt.date)}</td>
-      <td class="tnum">${corrected} / ${originalCount} (${pct}%)</td>
+      <td class="tnum">${corrected} / ${originalCount} (${pct}%)<br><span class="field-hint">${stillWrongTxt}</span></td>
       <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
     </tr>`;
   }).join('');
