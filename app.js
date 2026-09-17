@@ -112,7 +112,7 @@ function extractJson(text, stopReason) {
 }
 
 const EXAM_ANALYSIS_PROMPT_TEMPLATE = total => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다.
-시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 판단해주세요.
+시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 "대단원 - 중단원 - 소단원" 3단계로 판단해주세요 (예: "도함수의 활용 - 접선의 방정식과 평균값 정리 - 접선의 기울기"). 대단원·중단원은 교과서의 큰 챕터/절 단위로 크게 잡고, 소단원에 문항의 구체적인 개념을 적으세요.
 유형은 너무 잘게 쪼개지 말고 굵직하게 묶어주세요 — 같은 단원 안에서는 유형이 2~3개를 넘지 않도록 통합해주세요 (예: "원의 접선의 방정식(1)", "(2)", "(3)"처럼 세분화된 소유형들은 "원의 접선의 방정식" 하나로 합치는 식).
 또한 문항 하나하나마다(전체 문항 각각에 대해) 다음 두 가지를 판단해주세요:
 - 난이도: 문항별 정답률이 시험지에 표시되어 있다면 그 정답률을 기준으로 아래 표에 따라 매겨주세요. 정답률 정보가 없다면(신규 시험지 등) 문제 내용을 보고 합리적으로 추정해주세요.
@@ -128,7 +128,7 @@ const EXAM_ANALYSIS_PROMPT_TEMPLATE = total => `다음은 초·중·고 수학 �
 {
   "total": ${total},
   "types": [
-    { "name": "유형명", "unit": "2022개정 단원명", "questions": [1,2,3] }
+    { "name": "유형명", "unit": "대단원 - 중단원 - 소단원", "questions": [1,2,3] }
   ],
   "difficulty": { "1": 2, "2": 3 },
   "competency": { "1": "문제해결", "2": "추론" }
@@ -1259,15 +1259,14 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     return { label: x.label, date: shortDate(x.round.date), pct, correct, total: x.round.total, roundId: x.round.id };
   });
 
-  // 유형명이 아니라 대단원(unit의 " - " 앞부분) 기준으로 묶음 — 소단원 단위로 묶어봤을 때도
-  // 주차마다 AI가 유형명을 조금씩 다르게 붙여서(예: "접선의 방정식" / "접선의 기울기와 방정식" /
-  // "접선의 활용") 여전히 카드가 너무 잘게 쪼개졌어서, 확실히 덜 쪼개지도록 대단원까지 올려서 묶음
-  const groupNames = [];
-  windowed.forEach(x => x.round.types.forEach(t => { const key = typeGroupKey(t); if (!groupNames.includes(key)) groupNames.push(key); }));
+  // 유형명이 아니라 중단원 기준으로 묶음 (typeGroupKey) — 유형명 그대로 묶으면 주차마다 이름이 조금씩
+  // 달라 붙어서 너무 잘게 쪼개지고, 대단원까지만 묶으면 반대로 너무 뭉뚱그려져서 중단원 단위로 묶음
+  const groupKeys = [];
+  windowed.forEach(x => x.round.types.forEach(t => { const key = typeGroupKey(t); if (!groupKeys.includes(key)) groupKeys.push(key); }));
 
-  const typeStats = groupNames.map((name, i) => {
+  const typeStats = groupKeys.map((key, i) => {
     const series = windowed.map(x => {
-      const matching = x.round.types.filter(tt => typeGroupKey(tt) === name);
+      const matching = x.round.types.filter(tt => typeGroupKey(tt) === key);
       const questions = matching.flatMap(tt => tt.questions);
       if (!questions.length) return null;
       const wrongSet = new Set(x.result.wrong);
@@ -1280,8 +1279,9 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     const first = vals.length ? vals[0] : null;
     const last = vals.length ? vals[vals.length - 1] : null;
     const delta = (first !== null && last !== null) ? last - first : null;
-    const classAvg = computeClassAverageByType(roundIds, name, studentId);
-    return { name, unit: '', color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
+    const classAvg = computeClassAverageByType(roundIds, key, studentId);
+    const { title, caption } = typeGroupLabel(key);
+    return { name: title, unit: caption, color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
   });
 
   // weighted overall accuracy across the window (more correct than averaging per-round %)
@@ -1328,16 +1328,23 @@ function computeRetestSummary(studentId, points) {
   return { items, overallPct, sumOriginal, sumCorrected: sumOriginal - sumStillWrong };
 }
 
-// 유형(type)을 대단원 단위로 묶기 위한 키 — unit이 "대단원 - 소단원" 형식이면 대단원 부분만,
-// 아니면(단원 미지정) 유형명을 그대로 씀. 소단원까지 내려가면 주차마다 유형명이 조금씩 달라 붙어서
-// (예: "접선의 방정식" / "접선의 기울기와 방정식" / "접선의 활용") 여전히 카드가 너무 잘게 쪼개졌던 문제가
-// 있어서, 확실히 덜 쪼개지도록 대단원까지 올려서 묶음
+// 유형(type)을 중단원 단위로 묶기 위한 키 — unit이 "대단원 - 중단원 - 소단원"(3단계)이면 대단원+중단원까지,
+// 옛날 방식인 "대단원 - 소단원"(2단계)나 단원 미지정이면 있는 만큼만 씀.
+// 소단원(또는 유형명) 그대로 묶으면 주차마다 이름이 조금씩 달라 붙어서(예: "접선의 방정식" / "접선의 기울기와
+// 방정식") 카드가 너무 잘게 쪼개지고, 대단원까지만 묶으면 반대로 너무 뭉뚱그려져서 중단원 단위로 묶음
 function typeGroupKey(type) {
   if (type.unit) {
-    const major = type.unit.split(' - ')[0].trim();
-    if (major) return major;
+    const parts = type.unit.split(' - ').map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 3) return parts.slice(0, 2).join(' - ');
+    if (parts.length >= 1) return parts[0];
   }
   return type.name;
+}
+
+// 그룹 키에서 카드 제목(중단원, 없으면 대단원)과 캡션(대단원, 중단원이 있을 때만)을 분리함
+function typeGroupLabel(groupKey) {
+  const parts = groupKey.split(' - ');
+  return parts.length >= 2 ? { title: parts[1], caption: parts[0] } : { title: parts[0], caption: '' };
 }
 
 // 소단원까지 너무 잘게 쪼개지지 않게, 대단원(" - " 앞부분) 기준으로 묶어서 집계
