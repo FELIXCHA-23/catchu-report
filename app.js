@@ -836,38 +836,49 @@ function typeForQuestion(round, q) {
   return null;
 }
 
-// 현재 선택된 학생의 저장된 채점 기록을 회차별로(또는 한 번에 전부) 지울 수 있는 패널
+// 학생별로 지금까지 채점된 시험지 현황을 보여주고, 회차별로(또는 학생 전체) 지울 수 있는 패널
 function renderStudentResetPanel() {
   const wrap = document.getElementById('studentResetWrap');
   if (!wrap) return;
-  const student = currentScoreStudent();
-  if (!student) { wrap.innerHTML = '<div class="empty-state">학생을 먼저 선택하세요.</div>'; return; }
-  const myResults = state.results
-    .filter(r => r.studentId === student.id)
-    .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
-    .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
-  if (!myResults.length) {
-    wrap.innerHTML = `<div class="empty-state">${escapeHtml(student.name)} 학생의 채점 기록이 아직 없어요.</div>`;
+  const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
+  const studentsWithResults = filterByCurrentTeacher(state.students)
+    .filter(s => state.results.some(r => r.studentId === s.id))
+    .sort((a, b) => (order.indexOf(a.grade) - order.indexOf(b.grade)) || a.name.localeCompare(b.name, 'ko'));
+
+  if (!studentsWithResults.length) {
+    wrap.innerHTML = '<div class="empty-state">아직 채점된 기록이 없어요.</div>';
     return;
   }
-  const rows = myResults.map(({ result, round }) => {
-    const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
-    return `<tr>
-      <td>${label}</td>
-      <td>오답 ${result.wrong.length}개</td>
-      <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}">취소</button></td>
-    </tr>`;
+
+  const currentStudentId = document.getElementById('scoreStudentSel')?.value;
+
+  wrap.innerHTML = studentsWithResults.map(student => {
+    const myResults = state.results
+      .filter(r => r.studentId === student.id)
+      .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
+      .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
+    const rows = myResults.map(({ result, round }) => {
+      const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
+      return `<tr>
+        <td>${label}</td>
+        <td>오답 ${result.wrong.length}개</td>
+        <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
+      </tr>`;
+    }).join('');
+    return `<details class="manual-fallback"${student.id === currentStudentId ? ' open' : ''}>
+      <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</summary>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="inline-form" style="margin:10px 0;">
+        <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
+      </div>
+    </details>`;
   }).join('');
-  wrap.innerHTML = `
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="inline-form" style="margin-top:10px;">
-      <button type="button" class="btn danger" id="clearAllResultsBtn">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
-    </div>
-  `;
+
   wrap.querySelectorAll('[data-clear-result]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.clearResult;
+    const student = state.students.find(s => s.id === b.dataset.owner);
     const result = state.results.find(r => r.id === id);
-    if (!result) return;
+    if (!result || !student) return;
     const round = state.rounds.find(x => x.id === result.roundId);
     if (!confirm(`${student.name} 학생의 ${round ? roundLabel(round) : '이'} 채점 기록을 지울까요?`)) return;
     state.results = state.results.filter(r => r.id !== id);
@@ -876,17 +887,17 @@ function renderStudentResetPanel() {
     renderScoreTab();
     toast('채점 기록을 지웠어요.');
   }));
-  const clearAllBtn = document.getElementById('clearAllResultsBtn');
-  if (clearAllBtn) {
-    clearAllBtn.addEventListener('click', () => {
-      if (!confirm(`${student.name} 학생의 채점 기록을 전부 지울까요? 되돌릴 수 없어요.`)) return;
-      state.results = state.results.filter(r => r.studentId !== student.id);
-      state.retests = state.retests.filter(rt => rt.studentId !== student.id);
-      saveState();
-      renderScoreTab();
-      toast('전체 채점 기록을 지웠어요.');
-    });
-  }
+
+  wrap.querySelectorAll('[data-clear-all]').forEach(b => b.addEventListener('click', () => {
+    const student = state.students.find(s => s.id === b.dataset.clearAll);
+    if (!student) return;
+    if (!confirm(`${student.name} 학생의 채점 기록을 전부 지울까요? 되돌릴 수 없어요.`)) return;
+    state.results = state.results.filter(r => r.studentId !== student.id);
+    state.retests = state.retests.filter(rt => rt.studentId !== student.id);
+    saveState();
+    renderScoreTab();
+    toast('전체 채점 기록을 지웠어요.');
+  }));
 }
 
 function renderScoreTab() {
@@ -1166,17 +1177,12 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
 
   // competency rollup (optional; only present once types carry a `competency`)
   const compRaw = computeCompetencyBreakdown(windowed);
-  const classCompMap = computeClassCompetencyBreakdown(roundIds, studentId);
   const competencyStats = Object.values(compRaw).map(c => ({ label: COMPETENCY_LABELS[c.competency] || c.competency, value: c.total ? Math.round((c.correct / c.total) * 100) : 0 }));
-  const competencyClassStats = Object.values(compRaw).map(c => {
-    const cc = classCompMap[c.competency];
-    return { label: COMPETENCY_LABELS[c.competency] || c.competency, value: cc && cc.total ? Math.round((cc.correct / cc.total) * 100) : 0 };
-  });
 
   // 재시험 (원래 회차의 오답 문항을 쌍둥이문제로 재검사한 기록) — 메인 정답률과는 별도로 집계
   const retest = computeRetestSummary(studentId, points);
 
-  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, competencyClassStats, retest };
+  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, retest };
 }
 
 function computeRetestSummary(studentId, points) {
@@ -1216,33 +1222,15 @@ function computeUnitBreakdown(windowed) {
 }
 
 // 역량은 문항 단위(round.competency: {문항번호: 역량})로 집계 — 같은 유형 안에서도 문항마다 다를 수 있음
-// 5개 역량(문제해결/추론/의사소통/연결/정보처리)을 항상 다 채워서, 태그된 게 적어도 축이 줄어들지 않게 함
+// 실제로 태그된 역량만 집계함 — 한 번도 안 나온 역량을 0%로 억지로 채우면 "거의 다 맞았는데 0%"처럼
+// 안 풀어본 것과 못 푼 것이 구분이 안 돼서 오해를 줌
 function computeCompetencyBreakdown(windowed) {
   const map = {};
-  Object.keys(COMPETENCY_LABELS).forEach(c => { map[c] = { competency: c, total: 0, correct: 0 }; });
   windowed.forEach(x => {
     const compMap = x.round.competency;
     if (!compMap) return;
     const wrongSet = new Set(x.result.wrong);
     for (let q = 1; q <= x.round.total; q++) {
-      const c = compMap[q] ?? compMap[String(q)];
-      if (!c) continue;
-      if (!map[c]) map[c] = { competency: c, total: 0, correct: 0 };
-      map[c].total += 1;
-      if (!wrongSet.has(q)) map[c].correct += 1;
-    }
-  });
-  return map;
-}
-
-function computeClassCompetencyBreakdown(roundIds, excludeStudentId) {
-  const map = {};
-  state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
-    const round = state.rounds.find(x => x.id === r.roundId);
-    const compMap = round && round.competency;
-    if (!compMap) return;
-    const wrongSet = new Set(r.wrong);
-    for (let q = 1; q <= round.total; q++) {
       const c = compMap[q] ?? compMap[String(q)];
       if (!c) continue;
       if (!map[c]) map[c] = { competency: c, total: 0, correct: 0 };
@@ -1447,7 +1435,7 @@ function renderReportTab() {
     out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? data.student.name : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
     return;
   }
-  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, competencyClassStats, retest } = data;
+  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, retest } = data;
   const first = points[0], last = points[points.length - 1];
   const totalQ = points.reduce((a, p) => a + p.total, 0);
   const delta = last.pct - first.pct;
@@ -1548,8 +1536,7 @@ function renderReportTab() {
     <div class="card">
       <h2>역량 분석</h2>
       <p class="card-sub no-print">2022 개정 수학과 핵심역량 기준 · 시험지 분석 시 태그된 경우에만 표시돼요</p>
-      <div class="radar-wrap">${buildRadarSVG(competencyStats, competencyClassStats)}</div>
-      <div class="radar-legend"><span><span class="swatch" style="background:var(--accent)"></span>${escapeHtml(student.name)}</span><span><span class="swatch" style="background:var(--muted); border-top:1px dashed var(--muted)"></span>반 평균</span></div>
+      <div class="radar-wrap">${buildRadarSVG(competencyStats)}</div>
     </div>` : '';
 
   const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);

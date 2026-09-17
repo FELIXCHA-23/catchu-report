@@ -230,8 +230,6 @@ details.manual-fallback[open] summary::before { content: '▾ '; }
 /* 역량 레이더 */
 .radar-wrap { display: flex; justify-content: center; }
 .radar-wrap svg { max-width: 360px; width: 100%; height: auto; }
-.radar-legend { display: flex; gap: 16px; justify-content: center; font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
-.radar-legend .swatch { display: inline-block; width: 14px; height: 2px; margin-right: 5px; vertical-align: middle; }
 
 /* 선생님 의견 */
 textarea.teacher-note {
