@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -207,7 +207,9 @@
   <section class="tab-panel" id="panel-data">
     <div class="card">
       <h2>백업 · 이전</h2>
-      <p class="card-sub">이 프로그램의 데이터는 <b>이 컴퓨터의 이 브라우저</b>에만 저장돼요. 다른 컴퓨터로 옮기거나 백업하려면 내보내기 파일을 사용하세요.</p>
+      <p class="card-sub">이 프로그램의 데이터는 <b>이 컴퓨터의 이 브라우저</b>에만 저장돼요. 다른 컴퓨터로 옮기거나 백업하려면 내보내기 파일을 사용하세요.<br>
+        <b>내보내기/가져오기에 포함되는 것:</b> 학생 명단(이름·학교·학년·반·담당 선생님), 회차·시험지 정보, <b>학생별 채점 기록(누가 몇 회차에서 몇 번을 틀렸는지)</b>, 재시험 기록, 선생님이 작성한 리포트 의견 — 즉 이 화면에 있는 데이터 전부예요.<br>
+        <b>가져오기는 지금 있는 데이터를 전부 덮어써요</b> (병합이 아니라 완전히 교체). API 키는 포함되지 않아요.</p>
       <div class="inline-form">
         <button type="button" class="btn primary" id="exportBtn">⬇ 데이터 내보내기 (백업 파일)</button>
         <label class="btn ghost" for="importFile">⬆ 데이터 가져오기 (전체 덮어쓰기)</label>
@@ -254,6 +256,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
