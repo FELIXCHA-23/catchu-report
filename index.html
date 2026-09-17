@@ -6,7 +6,7 @@
 <title>캐치유테스트 리포트 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -198,6 +198,12 @@
       </div>
     </div>
     <div class="card">
+      <h2>공용 회차 공유 (관리자용)</h2>
+      <p class="card-sub">회차(날짜·학년·문항 유형·단원·난이도·역량)만 따로 내보내서 모든 선생님 컴퓨터에 자동으로 뿌릴 수 있어요. 시험지 원본 이미지는 포함되지 않아요.
+        내보낸 파일을 Claude에게 전달해서 GitHub에 올려달라고 하면, 다음부터 모든 선생님 화면에 이번 회차가 자동으로 나타나요 (각자 등록할 필요 없음).</p>
+      <button type="button" class="btn primary" id="exportRoundsBtn">⬇ 공용 회차 내보내기</button>
+    </div>
+    <div class="card">
       <h2>예시 데이터</h2>
       <p class="card-sub">프로그램이 처음이라면 예시 데이터를 불러와 기능을 먼저 살펴보세요. (기존 데이터가 있으면 백업 후 사용하세요)</p>
       <button type="button" class="btn ghost" id="seedBtn">예시 데이터 불러오기</button>
@@ -213,6 +219,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

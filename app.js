@@ -1440,8 +1440,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const d = new Date();
-    const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    a.href = url; a.download = `catchu_backup_${stamp}.json`;
+    const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    a.href = url; a.download = `${stamp}학생누적채점데이터.json`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     toast('백업 파일을 내보냈어요.');
@@ -1569,7 +1569,52 @@ function renderAll() {
   renderReportTab();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
+  await syncSharedRounds();
   renderAll();
+});
+
+/* ================= 공용 회차 공유 (관리자가 내보내고, 모든 선생님 컴퓨터가 자동으로 읽어옴) ================= */
+
+// 회차 정의(날짜/학년/유형/단원/난이도/역량)만 공유 — 시험지 원본 이미지, 학생·채점 데이터는 이 파일에 안 들어감
+async function syncSharedRounds() {
+  try {
+    const res = await fetch('rounds-shared.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const shared = await res.json();
+    if (!Array.isArray(shared)) return;
+    shared.forEach(sr => {
+      const idx = state.rounds.findIndex(r => r.id === sr.id);
+      if (idx === -1) {
+        state.rounds.push({ ...sr });
+      } else {
+        const keepExamFile = state.rounds[idx].examFile;
+        state.rounds[idx] = { ...sr, examFile: keepExamFile };
+      }
+    });
+    saveState();
+  } catch (e) {
+    // 공용 파일이 아직 없거나(첫 배포) 오프라인인 경우 — 조용히 넘어감
+  }
+}
+
+function exportSharedRounds() {
+  if (!state.rounds.length) { toast('내보낼 회차가 없어요.'); return; }
+  const payload = state.rounds.map(r => {
+    const { examFile, ...rest } = r;
+    return rest;
+  });
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'rounds-shared.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('공용 회차 파일을 내보냈어요. Claude에게 전달해서 GitHub에 반영해달라고 하세요.');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('exportRoundsBtn');
+  if (btn) btn.addEventListener('click', exportSharedRounds);
 });
