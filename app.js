@@ -586,6 +586,18 @@ function populateRoundGradeFilter() {
   if (grades.includes(prev)) sel.value = prev;
 }
 
+// 유형 목록을 대단원별로 묶어서 대단원명은 한 번만 보여주고, 그 아래 유형들만 나열 (같은 단원 반복 표기 방지)
+function renderTypesByUnit(types) {
+  const groups = [];
+  (types || []).forEach(t => {
+    const major = t.unit ? t.unit.split(' - ')[0].trim() : '(단원 미지정)';
+    let g = groups.find(g => g.major === major);
+    if (!g) { g = { major, names: [] }; groups.push(g); }
+    g.names.push(t.name);
+  });
+  return groups.map(g => `<div class="unit-group"><b>${escapeHtml(g.major)}</b><br>${g.names.map(escapeHtml).join(', ')}</div>`).join('');
+}
+
 function renderRounds() {
   const wrap = document.getElementById('roundListWrap');
   populateRoundGradeFilter();
@@ -605,7 +617,7 @@ function renderRounds() {
         <td>${shortDate(r.date)}</td>
         <td>${r.total}문항</td>
         <td>${diffBadge}</td>
-        <td>${r.types.map(t => escapeHtml(t.name) + (t.unit ? ` <span class="type-unit-caption">(${escapeHtml(t.unit)})</span>` : '')).join(', ')}</td>
+        <td>${renderTypesByUnit(r.types)}</td>
         <td>${r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—'}</td>
         <td class="row-actions">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
@@ -746,11 +758,11 @@ function populateReportStudentSel() {
   if (eligible.some(s => s.id === prev)) sel.value = prev;
 }
 
-// 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N회차"는 하나로 묶여요)
+// 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N-M주차"는 하나로 묶여요)
 function scoreRoundGroups(grade) {
   const rounds = state.rounds.filter(r => r.grade === grade);
   const dates = Array.from(new Set(rounds.map(r => r.date))).sort((a, b) => a.localeCompare(b));
-  return dates.map((date, i) => ({ date, n: i + 1, rounds: rounds.filter(r => r.date === date) }));
+  return dates.map(date => ({ date, label: dateToWeekLabel(date), rounds: rounds.filter(r => r.date === date) }));
 }
 
 function populateScoreGradeSel() {
@@ -772,7 +784,7 @@ function populateScoreRoundGroupSel() {
   const prev = sel.value;
   const groups = grade ? scoreRoundGroups(grade) : [];
   sel.innerHTML = groups.length
-    ? [...groups].reverse().map(g => `<option value="${g.date}">${g.n}회차 (${shortDate(g.date)})</option>`).join('')
+    ? [...groups].reverse().map(g => `<option value="${g.date}">${g.label} (${shortDate(g.date)})</option>`).join('')
     : '<option value="">회차가 없어요</option>';
   if (groups.some(g => g.date === prev)) sel.value = prev;
   populateScoreExamSel();
