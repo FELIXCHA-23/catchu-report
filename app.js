@@ -353,7 +353,7 @@ function renderStudents() {
     const rows = filtered.map(s => `
       <tr>
         <td>${escapeHtml(s.name)}${s.school ? `<br><span class="type-unit-caption">${escapeHtml(s.school)}</span>` : ''}</td>
-        <td>${escapeHtml(s.grade || '-')}</td>
+        <td>${escapeHtml(s.grade || '-')}${s.examGrade ? `<br><span class="type-unit-caption">시험 ${escapeHtml(s.examGrade)}</span>` : ''}</td>
         <td>${escapeHtml(s.class || '-')}</td>
         <td>${escapeHtml(s.teacher || '-')}</td>
         <td class="row-actions">
@@ -388,6 +388,7 @@ function renderStudents() {
     document.getElementById('stuClass').value = s.class || '';
     document.getElementById('stuTeacher').value = s.teacher || '';
     document.getElementById('stuSchool').value = s.school || '';
+    document.getElementById('stuExamGrade').value = s.examGrade || '';
     document.getElementById('stuSubmitBtn').textContent = '학생 수정 저장';
     document.getElementById('stuCancelBtn').style.display = '';
     document.getElementById('stuName').focus();
@@ -419,12 +420,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const cls = document.getElementById('stuClass').value.trim();
     const teacher = document.getElementById('stuTeacher').value.trim();
     const school = document.getElementById('stuSchool').value.trim();
+    const examGrade = document.getElementById('stuExamGrade').value.trim();
     if (editingStudentId) {
       const s = state.students.find(x => x.id === editingStudentId);
-      s.name = name; s.grade = grade; s.class = cls; s.teacher = teacher; s.school = school;
+      s.name = name; s.grade = grade; s.class = cls; s.teacher = teacher; s.school = school; s.examGrade = examGrade || undefined;
       toast('학생 정보를 수정했어요.');
     } else {
-      state.students.push({ id: uid(), name, grade, class: cls, teacher, school });
+      state.students.push({ id: uid(), name, grade, class: cls, teacher, school, examGrade: examGrade || undefined });
       toast('학생을 추가했어요.');
     }
     saveState();
@@ -838,7 +840,8 @@ function populateScoreStudentSelect() {
   if (round && round.studentId) {
     eligible = state.students.filter(s => s.id === round.studentId);
   } else {
-    eligible = round && round.grade ? state.students.filter(s => s.grade === round.grade) : state.students;
+    // 시험 응시 학년(examGrade)이 따로 설정된 학생은(예: 중3인데 고1 시험지를 보는 경우) 그 학년 기준으로 매칭
+    eligible = round && round.grade ? state.students.filter(s => (s.examGrade || s.grade) === round.grade) : state.students;
   }
   eligible = filterByCurrentTeacher(eligible);
   sel.innerHTML = eligible.length
@@ -1021,26 +1024,52 @@ document.addEventListener('DOMContentLoaded', () => {
     updateScoreSummary();
   });
 
+  // 빠른입력 칸에 문항 번호를 쓰고 Enter를 누르면 그 문항을 바로 오답으로 지정하고 즉시 저장함
+  // (Enter마다 저장하는 방식이라 번호 하나만 딱 입력해도 되고, 기존에 표시된 오답은 그대로 유지됨)
+  document.getElementById('quickWrongInput').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const round = currentScoreRound(), student = currentScoreStudent();
+    if (!round || !student) { toast('학년 · 회차 · 학생을 먼저 선택해주세요.'); return; }
+    const nums = parseRange(e.target.value);
+    if (!nums.length) { e.target.value = ''; return; }
+    nums.forEach(q => {
+      if (q < 1 || q > round.total) return;
+      const btn = document.querySelector(`#scoreGridWrap .qbtn[data-q="${q}"]`);
+      if (btn) btn.classList.add('wrong');
+    });
+    e.target.value = '';
+    updateScoreSummary();
+    saveCurrentScore(true);
+  });
+
   document.getElementById('clearScoreBtn').addEventListener('click', () => {
     document.querySelectorAll('.qbtn.wrong').forEach(b => b.classList.remove('wrong'));
     document.getElementById('quickWrongInput').value = '';
     updateScoreSummary();
   });
 
-  document.getElementById('saveScoreBtn').addEventListener('click', () => {
-    const round = currentScoreRound(), student = currentScoreStudent();
-    if (!round || !student) { toast('회차와 학생을 선택해주세요.'); return; }
-    // 개별시험지인데 아직 이 학생으로 배정되지 않았으면(처음 채점하는 거면) 지금 배정을 확정함
-    if (round.individual && !round.studentId) round.studentId = student.id;
-    const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
-    const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
-    if (existing) existing.wrong = wrong;
-    else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
-    saveState();
-    renderRounds(); populateSelects();
-    toast(`${student.name} 학생의 채점을 저장했어요.`);
-  });
+  document.getElementById('saveScoreBtn').addEventListener('click', () => saveCurrentScore());
 });
+
+// 채점 그리드의 현재 상태를 저장 — "채점 저장" 버튼과 빠른입력 Enter 저장이 공용으로 씀.
+// silent가 true면 토스트를 안 띄움(Enter를 연달아 눌러도 알림이 스팸처럼 뜨지 않게)
+function saveCurrentScore(silent) {
+  const round = currentScoreRound(), student = currentScoreStudent();
+  if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
+  // 개별시험지인데 아직 이 학생으로 배정되지 않았으면(처음 채점하는 거면) 지금 배정을 확정함
+  if (round.individual && !round.studentId) round.studentId = student.id;
+  const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+  const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
+  if (existing) existing.wrong = wrong;
+  else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
+  saveState();
+  renderRounds(); populateSelects();
+  // 학생별 채점 현황 패널을 바로 갱신해서, 저장 후 시간차 없이 곧바로 반영되게 함
+  renderStudentResetPanel();
+  if (!silent) toast(`${student.name} 학생의 채점을 저장했어요.`);
+  return true;
+}
 
 /* ================= 재시험 ================= */
 
@@ -1060,18 +1089,20 @@ function populateRetestRoundSelect() {
     : '<option value="">오답이 있는 회차가 없어요</option>';
 }
 
+// 이름 가나다순으로 정렬해서 목록 순서가 매번 안정적이게 함 — <select>는 첫 옵션이 기본 선택되므로
+// 자연히 정렬된 목록의 맨 처음 학생이 바로 선택된 상태로 열림
 function populateRetestStudentSelect() {
   const roundId = document.getElementById('retestRoundSel').value;
   const sel = document.getElementById('retestStudentSel');
-  const withWrong = state.results.filter(r => r.roundId === roundId && r.wrong.length);
   const currentTeacher = getCurrentTeacher();
-  const opts = withWrong.map(r => {
-    const s = state.students.find(x => x.id === r.studentId);
-    if (!s) return '';
-    if (currentTeacher && s.teacher !== currentTeacher) return '';
-    return `<option value="${s.id}">${escapeHtml(s.name)} (오답 ${r.wrong.length}개)</option>`;
-  }).join('');
-  sel.innerHTML = opts || '<option value="">이 회차에 오답 학생이 없어요</option>';
+  const withWrong = state.results
+    .filter(r => r.roundId === roundId && r.wrong.length)
+    .map(r => ({ r, s: state.students.find(x => x.id === r.studentId) }))
+    .filter(({ s }) => s && (!currentTeacher || s.teacher === currentTeacher))
+    .sort((a, b) => a.s.name.localeCompare(b.s.name, 'ko'));
+  sel.innerHTML = withWrong.length
+    ? withWrong.map(({ r, s }) => `<option value="${s.id}">${escapeHtml(s.name)} (오답 ${r.wrong.length}개)</option>`).join('')
+    : '<option value="">이 회차에 오답 학생이 없어요</option>';
 }
 
 function currentRetestRound() { return state.rounds.find(r => r.id === document.getElementById('retestRoundSel').value); }
@@ -1142,18 +1173,45 @@ function renderRetestList() {
   }));
 }
 
+// 재시험 결과 저장 — "재시험 결과 저장" 버튼과 빠른입력 Enter 저장이 공용으로 씀.
+// 같은 학생 · 같은 회차 기록이 이미 있으면 새로 쌓지 않고 그 기록을 덮어씀(중복 방지)
+function saveCurrentRetest(silent) {
+  const round = currentRetestRound(), student = currentRetestStudent();
+  if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
+  const stillWrong = Array.from(document.querySelectorAll('#retestGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+  const date = document.getElementById('retestDate').value || new Date().toISOString().slice(0, 10);
+  const existing = state.retests.find(rt => rt.studentId === student.id && rt.roundId === round.id);
+  if (existing) { existing.date = date; existing.stillWrong = stillWrong; }
+  else state.retests.push({ id: uid(), studentId: student.id, roundId: round.id, date, stillWrong });
+  saveState();
+  renderRetestList();
+  if (!silent) toast(`${student.name} 학생의 재시험 결과를 저장했어요.`);
+  return true;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('retestRoundSel').addEventListener('change', () => { populateRetestStudentSelect(); renderRetestGrid(); });
   document.getElementById('retestStudentSel').addEventListener('change', renderRetestGrid);
-  document.getElementById('saveRetestBtn').addEventListener('click', () => {
+  document.getElementById('saveRetestBtn').addEventListener('click', () => saveCurrentRetest());
+
+  // 여전히 틀린 문항 번호를 쓰고 Enter를 누르면 바로 그 문항을 체크하고 즉시 저장함
+  document.getElementById('retestQuickWrongInput').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
     const round = currentRetestRound(), student = currentRetestStudent();
-    if (!round || !student) { toast('회차와 학생을 선택해주세요.'); return; }
-    const stillWrong = Array.from(document.querySelectorAll('#retestGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
-    const date = document.getElementById('retestDate').value || new Date().toISOString().slice(0, 10);
-    state.retests.push({ id: uid(), studentId: student.id, roundId: round.id, date, stillWrong });
-    saveState();
-    renderRetestList();
-    toast(`${student.name} 학생의 재시험 결과를 저장했어요.`);
+    if (!round || !student) { toast('회차와 학생을 먼저 선택해주세요.'); return; }
+    const nums = parseRange(e.target.value);
+    if (!nums.length) { e.target.value = ''; return; }
+    let unknown = [];
+    nums.forEach(q => {
+      const btn = document.querySelector(`#retestGridWrap .qbtn[data-q="${q}"]`);
+      if (btn) btn.classList.add('wrong');
+      else unknown.push(q);
+    });
+    e.target.value = '';
+    updateRetestSummary();
+    saveCurrentRetest(true);
+    if (unknown.length) toast(`${unknown.join(',')}번은 원래 오답 문항이 아니라 반영 안 됐어요.`);
   });
 });
 
@@ -1256,16 +1314,18 @@ function computeRetestSummary(studentId, points) {
   const items = [];
   let sumOriginal = 0, sumStillWrong = 0;
   points.forEach(p => {
-    const attempts = state.retests.filter(rt => rt.studentId === studentId && rt.roundId === p.roundId).sort((a, b) => a.date.localeCompare(b.date));
-    if (!attempts.length) return;
     const result = state.results.find(r => r.studentId === studentId && r.roundId === p.roundId);
     const originalWrong = result ? result.wrong.length : 0;
     if (!originalWrong) return;
-    const latest = attempts[attempts.length - 1];
-    const corrected = originalWrong - latest.stillWrong.length;
+    const attempts = state.retests.filter(rt => rt.studentId === studentId && rt.roundId === p.roundId).sort((a, b) => a.date.localeCompare(b.date));
+    // 재시험을 따로 채점 안 한(기록이 없는) 회차는 전부 맞은 것으로 자동 처리함
+    const auto = !attempts.length;
+    const stillWrongCount = auto ? 0 : attempts[attempts.length - 1].stillWrong.length;
+    const date = auto ? null : attempts[attempts.length - 1].date;
+    const corrected = originalWrong - stillWrongCount;
     sumOriginal += originalWrong;
-    sumStillWrong += latest.stillWrong.length;
-    items.push({ label: p.label, date: latest.date, attempts: attempts.length, originalWrong, corrected, stillWrong: latest.stillWrong.length, pct: Math.round((corrected / originalWrong) * 100) });
+    sumStillWrong += stillWrongCount;
+    items.push({ label: p.label, date, attempts: attempts.length, originalWrong, corrected, stillWrong: stillWrongCount, pct: Math.round((corrected / originalWrong) * 100), auto });
   });
   const overallPct = sumOriginal ? Math.round(((sumOriginal - sumStillWrong) / sumOriginal) * 100) : null;
   return { items, overallPct, sumOriginal, sumCorrected: sumOriginal - sumStillWrong };
@@ -1587,7 +1647,7 @@ function renderReportTab() {
       </div>
       ${retest.items.map(it => `
         <div class="unit-row">
-          <div class="unit-name">${escapeHtml(it.label)} <span class="type-unit-caption">(${escapeHtml(it.date)})</span></div>
+          <div class="unit-name">${escapeHtml(it.label)} <span class="type-unit-caption">${it.auto ? '(재시험 미채점 · 자동 정답 처리)' : `(${escapeHtml(it.date)})`}</span></div>
           <div class="unit-count">오답 ${it.originalWrong}개</div>
           <div class="unit-bar-wrap">${buildBarRow(it.pct, null, it.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
           <div class="unit-pct tnum">${it.corrected}/${it.originalWrong}</div>
@@ -1672,8 +1732,8 @@ function renderReportTab() {
           </select>
         </div>
       </div>
-      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">정답률 ${overallPct}%</span>
-        <div class="pill-value tnum">${overallPct}</div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">정답률</span>
+        <div class="pill-value tnum">${overallPct}%</div>
         <div class="pill-compare">${pctCompareTxt}</div>
       </div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>

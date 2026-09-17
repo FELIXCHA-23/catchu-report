@@ -53,6 +53,13 @@
           <option value="">담당 선생님 선택</option>
         </select>
         <input type="text" id="stuSchool" placeholder="학교 (선택)">
+        <select id="stuExamGrade" title="시험지는 학년과 다른 학년 걸 보는 경우에만 선택(예: 중3인데 고1 시험지)">
+          <option value="">시험 학년: 본인 학년과 동일</option>
+          <option value="초1">시험 학년: 초1</option><option value="초2">시험 학년: 초2</option><option value="초3">시험 학년: 초3</option>
+          <option value="초4">시험 학년: 초4</option><option value="초5">시험 학년: 초5</option><option value="초6">시험 학년: 초6</option>
+          <option value="중1">시험 학년: 중1</option><option value="중2">시험 학년: 중2</option><option value="중3">시험 학년: 중3</option>
+          <option value="고1">시험 학년: 고1</option><option value="고2">시험 학년: 고2</option><option value="고3">시험 학년: 고3</option>
+        </select>
         <button type="submit" class="btn primary" id="stuSubmitBtn">학생 추가</button>
         <button type="button" class="btn ghost" id="stuCancelBtn" style="display:none;">취소</button>
       </form>
@@ -183,6 +190,9 @@
         <select id="retestDate"></select>
       </div>
       <div id="retestGridWrap"></div>
+      <div class="inline-form" style="margin-top:10px;">
+        <input type="text" id="retestQuickWrongInput" placeholder="여전히 틀린 문항 번호 입력 후 Enter — 누를 때마다 바로 저장돼요">
+      </div>
       <div class="inline-form" style="margin-top:14px;">
         <button type="button" class="btn primary" id="saveRetestBtn">재시험 결과 저장</button>
         <span id="retestSummary" class="field-hint"></span>
@@ -264,6 +274,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=40"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>
