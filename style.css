@@ -180,6 +180,9 @@ details.manual-fallback[open] summary::before { content: '▾ '; }
   color: var(--ink-soft);
 }
 .qbtn.wrong { background: var(--critical-bg); color: var(--critical); border-color: var(--critical); }
+/* 재시험 버튼: 재시험지 번호(1,2,3…)를 크게, 원본 문항 번호는 괄호로 작게 아래에 */
+.qbtn.qbtn-retest { flex-direction: column; gap: 1px; line-height: 1.1; }
+.qbtn-retest .qbtn-orig { font-size: 9px; font-weight: 500; opacity: 0.65; }
 .type-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; font-size: 12px; color: var(--ink-soft); }
 .type-legend .legend-item { display: flex; align-items: center; gap: 5px; }
 
