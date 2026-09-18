@@ -794,7 +794,13 @@ function populateScoreGradeSel() {
   const sel = document.getElementById('scoreGradeSel');
   const prev = sel.value;
   const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
-  const grades = Array.from(new Set(state.rounds.map(r => r.grade).filter(Boolean)));
+  const roundGrades = Array.from(new Set(state.rounds.map(r => r.grade).filter(Boolean)));
+  // 담당 선생님이 선택돼 있으면, 그 선생님 학생 중 아무도 없는 학년은 다운드롭에서 아예 뺌
+  // (시험 응시 학년이 따로 설정된 학생은 examGrade 기준으로 매칭 — 위 채점 대상 매칭 로직과 동일)
+  const myStudents = filterByCurrentTeacher(state.students);
+  const grades = getCurrentTeacher()
+    ? roundGrades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g))
+    : roundGrades;
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   sel.innerHTML = grades.length
     ? grades.map(g => `<option value="${g}">${g}</option>`).join('')
@@ -1436,8 +1442,10 @@ function computeDifficultyBreakdown(windowed) {
 
 function mapY(v, top, bottom) { return top + (100 - v) / 100 * (bottom - top); }
 
-function buildMainChartSVG(points) {
-  const top = 30, bottom = 224, x0 = 44, x1 = 620, w = 640, h = 262;
+// plotH: 그래프 그림 영역(0%~100% 축)의 세로 폭. PDF 내보낼 때 선생님 의견 길이에 맞춰
+// 이 값을 줄여서 그래프를 플렉서블하게 납작하게 그릴 수 있음 (기본값 194 = 기존과 동일한 모양)
+function buildMainChartSVG(points, plotH = 194) {
+  const top = 30, bottom = top + plotH, x0 = 44, x1 = 620, w = 640, h = bottom + 38;
   if (points.length === 0) return '';
   if (points.length === 1) {
     const p = points[0];
@@ -1463,15 +1471,15 @@ function buildMainChartSVG(points) {
 
   let weekLabels = '';
   points.forEach((p, i) => {
-    weekLabels += `<text class="week-label" x="${xs[i]}" y="246" text-anchor="middle">${escapeHtml(p.label)}<tspan x="${xs[i]}" dy="13">${escapeHtml(p.date)}</tspan></text>`;
+    weekLabels += `<text class="week-label" x="${xs[i]}" y="${bottom + 22}" text-anchor="middle">${escapeHtml(p.label)}<tspan x="${xs[i]}" dy="13">${escapeHtml(p.date)}</tspan></text>`;
   });
 
   return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="전체 정답률 추이">
-    <line class="gridline" x1="${x0}" y1="30" x2="${x1}" y2="30"/><text class="axis-label" x="${x0-6}" y="34" text-anchor="end">100%</text>
-    <line class="gridline" x1="${x0}" y1="78.5" x2="${x1}" y2="78.5"/><text class="axis-label" x="${x0-6}" y="82.5" text-anchor="end">75%</text>
-    <line class="gridline" x1="${x0}" y1="127" x2="${x1}" y2="127"/><text class="axis-label" x="${x0-6}" y="131" text-anchor="end">50%</text>
-    <line class="gridline" x1="${x0}" y1="175.5" x2="${x1}" y2="175.5"/><text class="axis-label" x="${x0-6}" y="179.5" text-anchor="end">25%</text>
-    <line class="gridline" x1="${x0}" y1="224" x2="${x1}" y2="224" stroke="var(--baseline)"/><text class="axis-label" x="${x0-6}" y="228" text-anchor="end">0%</text>
+    <line class="gridline" x1="${x0}" y1="${mapY(100,top,bottom)}" x2="${x1}" y2="${mapY(100,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(100,top,bottom)+4}" text-anchor="end">100%</text>
+    <line class="gridline" x1="${x0}" y1="${mapY(75,top,bottom)}" x2="${x1}" y2="${mapY(75,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(75,top,bottom)+4}" text-anchor="end">75%</text>
+    <line class="gridline" x1="${x0}" y1="${mapY(50,top,bottom)}" x2="${x1}" y2="${mapY(50,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(50,top,bottom)+4}" text-anchor="end">50%</text>
+    <line class="gridline" x1="${x0}" y1="${mapY(25,top,bottom)}" x2="${x1}" y2="${mapY(25,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(25,top,bottom)+4}" text-anchor="end">25%</text>
+    <line class="gridline" x1="${x0}" y1="${bottom}" x2="${x1}" y2="${bottom}" stroke="var(--baseline)"/><text class="axis-label" x="${x0-6}" y="${bottom+4}" text-anchor="end">0%</text>
     <path class="area-fill" d="${areaPts}"/>
     <path class="trend-line" d="M${linePts}"/>
     ${dots}
@@ -1787,13 +1795,23 @@ function renderReportTab() {
         <div class="summary-box watch"><h3>대표 취약 유형</h3>${watchHtml}</div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="trendChartCard">
       <h2>전체 정답률 추이</h2>
       <p class="card-sub">회차별 ${points[points.length-1].total}문항 기준</p>
-      <div class="chart-wrap">${buildMainChartSVG(points)}</div>
+      <div class="chart-wrap" id="trendChartWrap">${buildMainChartSVG(points)}</div>
       <label class="no-print" style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-top:10px;">
         <input type="checkbox" id="reportExtendTrendToggle"${extendChecked ? ' checked' : ''}> 다른 기간의 추이 그래프 추가로 보기
       </label>
+    </div>
+    <div class="card" id="teacherNoteCard">
+      <h2>선생님 의견</h2>
+      <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
+      <div class="inline-form no-print" style="margin-bottom:8px;">
+        <button type="button" class="btn ghost" id="aiCommentBtn">🪄 AI로 의견 초안 작성</button>
+        <span id="aiCommentStatus" class="field-hint"></span>
+      </div>
+      <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
+      <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
     ${extendChecked ? `<div class="card">
       <h2>추가 추이 그래프</h2>
@@ -1824,16 +1842,6 @@ function renderReportTab() {
           <tbody>${totalRow}${tableRows}</tbody>
         </table>
       </div>
-    </div>
-    <div class="card">
-      <h2>선생님 의견</h2>
-      <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
-      <div class="inline-form no-print" style="margin-bottom:8px;">
-        <button type="button" class="btn ghost" id="aiCommentBtn">🪄 AI로 의견 초안 작성</button>
-        <span id="aiCommentStatus" class="field-hint"></span>
-      </div>
-      <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
-      <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
   `;
 
@@ -2083,7 +2091,43 @@ async function exportReportPDF() {
     // 카드(섹션) 단위로 따로 캡처해서, 한 페이지에 안 들어가면 카드 안의 항목(문항/행) 단위까지
     // 재귀적으로 쪼개 붙여서 어중간하게 잘리는 부분 없이 항상 항목 경계에서만 페이지가 넘어가게 함
     const blocks = Array.from(target.children).filter(el => !el.classList.contains('no-print') && el.offsetHeight > 0);
-    for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
+
+    // 첫 페이지(마스트헤드~전체 정답률 추이~선생님 의견)가 한 장에 다 들어가도록,
+    // 선생님 의견이 길어서 넘칠 것 같으면 그래프(전체 정답률 추이)를 세로로 납작하게 줄여서 맞춤
+    const chartCard = target.querySelector('#trendChartCard');
+    const chartWrap = target.querySelector('#trendChartWrap');
+    const noteCard = target.querySelector('#teacherNoteCard');
+    const chartIdx = blocks.indexOf(chartCard);
+    const noteIdx = blocks.indexOf(noteCard);
+    let restoreChart = null;
+    if (chartCard && chartWrap && noteCard && chartIdx !== -1 && noteIdx === chartIdx + 1) {
+      const refWidthPx = chartCard.getBoundingClientRect().width || 1;
+      const mmPerPx = ctx.contentWidth / refWidthPx;
+      let sumMM = 0;
+      for (let i = 0; i <= noteIdx; i++) {
+        if (i > 0) sumMM += ctx.gap;
+        sumMM += blocks[i].getBoundingClientRect().height * mmPerPx;
+      }
+      const overflow = sumMM - ctx.pageContentH;
+      if (overflow > 0) {
+        const chartMM = chartCard.getBoundingClientRect().height * mmPerPx;
+        const originalPlotH = 194, minPlotH = 70;
+        // 그래프 카드 전체 높이(chartMM) 중 overflow만큼 줄여야 하므로, 같은 비율을 그래프의
+        // 그림 영역 높이(plotH)에도 적용해서 새 plotH를 구함 — plotH만 바꾸면 카드 높이가 거의 그 비율대로 줄어듦
+        const shrinkRatio = Math.max(0, (chartMM - overflow) / chartMM);
+        const newPlotH = Math.max(minPlotH, Math.round(originalPlotH * shrinkRatio));
+        if (newPlotH < originalPlotH) {
+          restoreChart = chartWrap.innerHTML;
+          chartWrap.innerHTML = buildMainChartSVG(data.points, newPlotH);
+        }
+      }
+    }
+
+    try {
+      for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
+    } finally {
+      if (restoreChart !== null) chartWrap.innerHTML = restoreChart;
+    }
 
     // 파일명 맨 앞에 "발행월"을 붙임 — 리포트에 포함된 마지막 회차가 속한 달 기준
     // (예: 8월4주차~9월4주차 리포트는 9월, 9월3주차~10월3주차 리포트는 10월)
