@@ -1119,36 +1119,52 @@ function updateRetestSummary() {
   summary.textContent = `정답 전환 ${corrected} / ${total} (${Math.round((corrected / total) * 100)}%)`;
 }
 
+// 학생별 채점 현황과 같은 형태 — 재시험 기록이 있는 학생을 반 순서대로 묶고, 학생 한 명의 재시험은
+// 하나의 접이식 카드 안에 전부 모아서 보여줌 (기록이 여러 회차에 걸쳐 있어도 학생별로 흩어지지 않게)
 function renderRetestList() {
   const wrap = document.getElementById('retestListWrap');
-  if (!state.retests.length) { wrap.innerHTML = '<div class="empty-state">아직 재시험 기록이 없어요.</div>'; return; }
   const roundLabelById = id => { const r = state.rounds.find(x => x.id === id); return r ? roundLabel(r) : '(삭제된 회차)'; };
-  // 반 순서(같은 반끼리 먼저) → 학생 이름 → 최근 재시험일 순으로 정렬 (학생별 채점 현황과 같은 방식)
-  const sorted = [...state.retests].sort((a, b) => {
-    const sa = state.students.find(x => x.id === a.studentId), sb = state.students.find(x => x.id === b.studentId);
-    const classCmp = classSortKey(sa?.class) - classSortKey(sb?.class);
-    if (classCmp !== 0) return classCmp;
-    const nameCmp = (sa?.name || '').localeCompare(sb?.name || '', 'ko');
-    if (nameCmp !== 0) return nameCmp;
-    return b.date.localeCompare(a.date);
+
+  const retestStudentIds = new Set(state.retests.map(rt => rt.studentId));
+  const students = filterByCurrentTeacher(state.students)
+    .filter(s => retestStudentIds.has(s.id))
+    .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
+
+  if (!students.length) { wrap.innerHTML = '<div class="empty-state">아직 재시험 기록이 없어요.</div>'; return; }
+
+  const groups = [];
+  students.forEach(s => {
+    const cls = s.class || '(반 미지정)';
+    let g = groups.find(g => g.cls === cls);
+    if (!g) { g = { cls, students: [] }; groups.push(g); }
+    g.students.push(s);
   });
-  const rows = sorted.map(rt => {
-    const s = state.students.find(x => x.id === rt.studentId);
-    const result = state.results.find(r => r.studentId === rt.studentId && r.roundId === rt.roundId);
-    const originalCount = result ? result.wrong.length : rt.stillWrong.length;
-    const corrected = originalCount - rt.stillWrong.length;
-    const pct = originalCount ? Math.round((corrected / originalCount) * 100) : 0;
-    const stillWrongTxt = rt.stillWrong.length ? `아직 틀림: ${escapeHtml(rangeToString(rt.stillWrong))}` : '전부 정답 전환';
-    return `<tr>
-      <td>${s ? escapeHtml(s.class || '-') : '-'}</td>
-      <td>${s ? escapeHtml(s.name) : '(삭제된 학생)'}</td>
-      <td>${roundLabelById(rt.roundId)}</td>
-      <td>${shortDate(rt.date)}</td>
-      <td class="tnum">${corrected} / ${originalCount} (${pct}%)<br><span class="field-hint">${stillWrongTxt}</span></td>
-      <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
-    </tr>`;
-  }).join('');
-  wrap.innerHTML = `<table class="data-table"><thead><tr><th>반</th><th>학생</th><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  wrap.innerHTML = groups.map(g => `
+    <div class="reset-class-group">
+      <h3 class="reset-class-title">${escapeHtml(g.cls)}</h3>
+      ${g.students.map(student => {
+        const myRetests = state.retests.filter(rt => rt.studentId === student.id).sort((a, b) => b.date.localeCompare(a.date));
+        const rows = myRetests.map(rt => {
+          const result = state.results.find(r => r.studentId === rt.studentId && r.roundId === rt.roundId);
+          const originalCount = result ? result.wrong.length : rt.stillWrong.length;
+          const corrected = originalCount - rt.stillWrong.length;
+          const pct = originalCount ? Math.round((corrected / originalCount) * 100) : 0;
+          const stillWrongTxt = rt.stillWrong.length ? `아직 틀림: ${escapeHtml(rangeToString(rt.stillWrong))}` : '전부 정답 전환';
+          return `<tr>
+            <td>${roundLabelById(rt.roundId)}</td>
+            <td>${shortDate(rt.date)}</td>
+            <td class="tnum">${corrected} / ${originalCount} (${pct}%)<br><span class="field-hint">${stillWrongTxt}</span></td>
+            <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
+          </tr>`;
+        }).join('');
+        return `<details class="manual-fallback">
+          <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (재시험 ${myRetests.length}건)</summary>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+        </details>`;
+      }).join('')}
+    </div>`).join('');
+
   wrap.querySelectorAll('[data-del-retest]').forEach(b => b.addEventListener('click', () => {
     if (!confirm('이 재시험 기록을 삭제할까요?')) return;
     state.retests = state.retests.filter(rt => rt.id !== b.dataset.delRetest);
