@@ -101,6 +101,8 @@ input[type=text], input[type=date], input[type=number], select {
 }
 /* select는 flex row 안에서 줄어들면 선택된 글자가 잘려 보여서(특히 시험지 이름), 줄어들지 않고 필요하면 다음 줄로 넘어가게 함 */
 select { flex-shrink: 0; max-width: 100%; }
+/* 재시험 탭 두 번째 드롭다운(회차 선택) — "학년 · N주차 (날짜) · 오답 N개"가 다 들어가야 해서 기본 min-width보다 훨씬 넓게 */
+#retestRoundSel { min-width: 300px; }
 input:focus, select:focus, button:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
@@ -155,6 +157,11 @@ details.manual-fallback[open] summary::before { content: '▾ '; }
   font-size: 12.5px; font-weight: 700; color: var(--accent); text-transform: uppercase;
   letter-spacing: 0.03em; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--line);
 }
+/* 완료 표시된 학생 — 진행중 목록과 뚜렷이 구분되도록 위에 굵은 구분선 + 톤 다운 */
+.reset-done-section { margin-top: 24px; padding-top: 16px; border-top: 2px solid var(--line); }
+.reset-done-title { color: var(--good); }
+details.manual-fallback.is-done summary { color: var(--muted); }
+details.manual-fallback.is-done { opacity: 0.75; }
 
 /* type rows (round editor) */
 .type-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }

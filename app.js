@@ -215,10 +215,11 @@ function loadState() {
       if (!data.retests) data.retests = [];
       if (!data.gradeOverrides) data.gradeOverrides = {};
       if (!data.sharedRoundIds) data.sharedRoundIds = [];
+      if (!data.studentDone) data.studentDone = {};
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [] };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [], studentDone: {} };
 }
 
 function saveState() {
@@ -871,55 +872,75 @@ function classSortKey(cls) {
 }
 
 // 학생별로 지금까지 채점된 시험지 현황을 보여주고, 회차별로(또는 학생 전체) 지울 수 있는 패널.
-// 위에서 채점을 저장하면 그 학생이 자동으로 여기 나타남(따로 고를 필요 없음) — 반 순서대로 묶어서 보여줌
+// 위에서 채점을 저장하면 그 학생이 자동으로 여기 나타남(따로 고를 필요 없음) — 반 순서대로 묶어서 보여줌.
+// "완료" 버튼을 누른 학생은 진행중 목록에서 빠져서 맨 아래 완료 섹션으로 따로 모여, 아직 관리가
+// 안 끝난 학생과 한눈에 구분됨(state.studentDone에 학생 id별로 표시 여부를 저장 — 회차와 무관한 수동 플래그).
 function renderStudentResetPanel() {
   const wrap = document.getElementById('studentResetWrap');
   if (!wrap) return;
+  if (!state.studentDone) state.studentDone = {};
 
   const scoredStudentIds = new Set(state.results.map(r => r.studentId));
-  const students = filterByCurrentTeacher(state.students)
+  const allStudents = filterByCurrentTeacher(state.students)
     .filter(s => scoredStudentIds.has(s.id))
     .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
 
-  if (!students.length) {
+  if (!allStudents.length) {
     wrap.innerHTML = '<div class="empty-state">위에서 채점을 저장하면 여기에 자동으로 나타나요.</div>';
     return;
   }
 
-  const groups = [];
-  students.forEach(s => {
-    const cls = s.class || '(반 미지정)';
-    let g = groups.find(g => g.cls === cls);
-    if (!g) { g = { cls, students: [] }; groups.push(g); }
-    g.students.push(s);
-  });
+  const groupByClass = list => {
+    const groups = [];
+    list.forEach(s => {
+      const cls = s.class || '(반 미지정)';
+      let g = groups.find(g => g.cls === cls);
+      if (!g) { g = { cls, students: [] }; groups.push(g); }
+      g.students.push(s);
+    });
+    return groups;
+  };
 
-  wrap.innerHTML = groups.map(g => `
+  const studentCardHTML = (student, done) => {
+    const myResults = state.results
+      .filter(r => r.studentId === student.id)
+      .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
+      .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
+    const rows = myResults.length ? myResults.map(({ result, round }) => {
+      const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
+      const wrongTxt = result.wrong.length ? `오답 ${result.wrong.length}개 (${escapeHtml(rangeToString(result.wrong))})` : '전부 정답';
+      return `<tr>
+        <td>${label}</td>
+        <td>${wrongTxt}</td>
+        <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="3">채점 기록이 없어요.</td></tr>`;
+    return `<details class="manual-fallback${done ? ' is-done' : ''}">
+      <summary>${done ? '✅ ' : ''}${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</summary>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="inline-form" style="margin:10px 0;">
+        ${myResults.length ? `<button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>` : ''}
+        <button type="button" class="btn ${done ? 'ghost' : 'primary'}" data-toggle-done="${student.id}">${done ? '완료 취소' : '완료 표시'}</button>
+      </div>
+    </details>`;
+  };
+
+  const activeStudents = allStudents.filter(s => !state.studentDone[s.id]);
+  const doneStudents = allStudents.filter(s => state.studentDone[s.id]);
+
+  const activeHTML = groupByClass(activeStudents).map(g => `
     <div class="reset-class-group">
       <h3 class="reset-class-title">${escapeHtml(g.cls)}</h3>
-      ${g.students.map(student => {
-        const myResults = state.results
-          .filter(r => r.studentId === student.id)
-          .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
-          .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
-        const rows = myResults.length ? myResults.map(({ result, round }) => {
-          const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
-          const wrongTxt = result.wrong.length ? `오답 ${result.wrong.length}개 (${escapeHtml(rangeToString(result.wrong))})` : '전부 정답';
-          return `<tr>
-            <td>${label}</td>
-            <td>${wrongTxt}</td>
-            <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
-          </tr>`;
-        }).join('') : `<tr><td colspan="3">채점 기록이 없어요.</td></tr>`;
-        return `<details class="manual-fallback">
-          <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</summary>
-          <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-          ${myResults.length ? `<div class="inline-form" style="margin:10px 0;">
-            <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
-          </div>` : ''}
-        </details>`;
-      }).join('')}
-    </div>`).join('');
+      ${g.students.map(s => studentCardHTML(s, false)).join('')}
+    </div>`).join('') || '<div class="empty-state">진행 중인 학생이 없어요 — 전부 완료 표시됐어요.</div>';
+
+  const doneHTML = doneStudents.length ? `
+    <div class="reset-done-section">
+      <h3 class="reset-class-title reset-done-title">완료 (${doneStudents.length}명)</h3>
+      ${doneStudents.map(s => studentCardHTML(s, true)).join('')}
+    </div>` : '';
+
+  wrap.innerHTML = activeHTML + doneHTML;
 
   wrap.querySelectorAll('[data-clear-result]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.clearResult;
@@ -945,6 +966,16 @@ function renderStudentResetPanel() {
     renderScoreTab();
     toast('전체 채점 기록을 지웠어요.');
   }));
+
+  wrap.querySelectorAll('[data-toggle-done]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.toggleDone;
+    const student = state.students.find(s => s.id === id);
+    if (!student) return;
+    state.studentDone[id] = !state.studentDone[id];
+    saveState();
+    renderStudentResetPanel();
+    toast(state.studentDone[id] ? `${student.name} 학생을 완료로 표시했어요.` : `${student.name} 학생을 다시 진행중으로 옮겼어요.`);
+  }));
 }
 
 function renderScoreTab() {
@@ -968,10 +999,13 @@ function renderScoreTab() {
   const legend = round.types.map((t, i) => `<span class="legend-item"><span class="type-swatch" style="background:${TYPE_COLORS[i % TYPE_COLORS.length]}"></span>${escapeHtml(t.name)}</span>`).join('');
 
   wrap.innerHTML = `<div class="score-grid">${btns}</div><div class="type-legend">${legend}</div>`;
+  // "채점 저장" 버튼을 안 눌러도, 번호 하나 클릭할 때마다 바로바로 저장해서 다른 회차/학생으로
+  // 넘어가도 방금 클릭한 게 날아가지 않게 함(빠른입력 Enter 저장과 동일한 방식)
   wrap.querySelectorAll('.qbtn').forEach(b => b.addEventListener('click', () => {
     b.classList.toggle('wrong');
     syncQuickInputFromGrid();
     updateScoreSummary();
+    saveCurrentScore(true);
   }));
   document.getElementById('quickWrongInput').value = rangeToString(Array.from(wrongSet));
   updateScoreSummary();
@@ -2199,6 +2233,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.teacherNotes) data.teacherNotes = {};
         if (!data.retests) data.retests = [];
         if (!data.gradeOverrides) data.gradeOverrides = {};
+        if (!data.studentDone) data.studentDone = {};
         if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
         state = data;
         saveState();
@@ -2224,7 +2259,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {} };
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, studentDone: {} };
     saveState();
     renderAll();
     toast('초기화했어요.');
@@ -2295,6 +2330,7 @@ function seedDemoData() {
       [studentId]: '민준이는 이번 4주간 차분하게 문제를 풀어가는 흐름을 보였습니다. 수와 연산, 규칙성 유형은 기본기가 탄탄하게 자리 잡았고, 도형과 측정도 꾸준히 좋아지는 중입니다. 다만 문장제·문제해결 유형에서 정체가 이어지고 있어, 다음 학습에서는 문제를 끝까지 읽고 조건을 정리하는 연습을 함께 해보려 합니다.',
     },
     gradeOverrides: {},
+    studentDone: {},
   };
   saveState();
 }
