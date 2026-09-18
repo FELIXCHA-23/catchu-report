@@ -566,7 +566,6 @@ function resetRoundForm() {
   document.getElementById('roundTotal').value = 30;
   document.getElementById('roundTitle').value = '';
   document.getElementById('typeRows').innerHTML = '';
-  addTypeRow();
   updateCoverageHint();
   renderExamFileInfo();
   const details = document.getElementById('manualFallback');
@@ -681,7 +680,6 @@ function renderRounds() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  addTypeRow('', '');
   document.getElementById('addTypeRowBtn').addEventListener('click', () => addTypeRow());
   document.getElementById('roundTotal').addEventListener('input', updateCoverageHint);
   document.getElementById('roundGradeFilter').addEventListener('change', renderRounds);
