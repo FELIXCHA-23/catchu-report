@@ -148,6 +148,14 @@ details.manual-fallback summary::-webkit-details-marker { display: none; }
 details.manual-fallback summary::before { content: '▸ '; }
 details.manual-fallback[open] summary::before { content: '▾ '; }
 
+/* 학생별 채점 현황 — 반별 그룹 */
+.reset-class-group { margin-top: 16px; }
+.reset-class-group:first-child { margin-top: 0; }
+.reset-class-title {
+  font-size: 12.5px; font-weight: 700; color: var(--accent); text-transform: uppercase;
+  letter-spacing: 0.03em; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+
 /* type rows (round editor) */
 .type-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .type-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

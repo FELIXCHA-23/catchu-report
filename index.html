@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=50">
+<link rel="stylesheet" href="style.css?v=55">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -41,7 +41,7 @@
         <input type="text" id="stuName" placeholder="이름 (예: 차성빈)" required>
         <select id="stuGrade" required>
           <option value="" disabled selected>학년 선택</option>
-          <option value="초1">초1</option><option value="초2">초2</option><option value="초3">초3</option>
+          <option value="초3">초3</option>
           <option value="초4">초4</option><option value="초5">초5</option><option value="초6">초6</option>
           <option value="중1">중1</option><option value="중2">중2</option><option value="중3">중3</option>
           <option value="고1">고1</option><option value="고2">고2</option><option value="고3">고3</option>
@@ -55,7 +55,7 @@
         <input type="text" id="stuSchool" placeholder="학교 (선택)">
         <select id="stuExamGrade" title="시험지는 학년과 다른 학년 걸 보는 경우에만 선택(예: 중3인데 고1 시험지)">
           <option value="">시험 학년: 본인 학년과 동일</option>
-          <option value="초1">시험 학년: 초1</option><option value="초2">시험 학년: 초2</option><option value="초3">시험 학년: 초3</option>
+          <option value="초3">시험 학년: 초3</option>
           <option value="초4">시험 학년: 초4</option><option value="초5">시험 학년: 초5</option><option value="초6">시험 학년: 초6</option>
           <option value="중1">시험 학년: 중1</option><option value="중2">시험 학년: 중2</option><option value="중3">시험 학년: 중3</option>
           <option value="고1">시험 학년: 고1</option><option value="고2">시험 학년: 고2</option><option value="고3">시험 학년: 고3</option>
@@ -170,11 +170,7 @@
     </div>
     <div class="card">
       <h2>학생별 채점 현황</h2>
-      <p class="card-sub">반을 고르고 학생을 선택하면 아래에 하나씩 추가돼요. 펼쳐서 회차별로 취소하거나, 학생 전체를 한 번에 초기화할 수 있어요. (재시험 기록도 함께 지워져요)</p>
-      <div class="inline-form">
-        <select id="resetClassSel"><option value="">반 선택</option></select>
-        <select id="resetStudentSel"><option value="">학생 선택(고르면 추가됨)</option></select>
-      </div>
+      <p class="card-sub">위에서 채점을 저장하면 그 학생이 반별로 자동으로 아래에 나타나요. 펼쳐서 회차별로 취소하거나, 학생 전체를 한 번에 초기화할 수 있어요. (재시험 기록도 함께 지워져요)</p>
       <div id="studentResetWrap" style="margin-top:12px;"></div>
     </div>
   </section>
@@ -274,6 +270,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=54"></script>
+<script src="app.js?v=55"></script>
 </body>
 </html>

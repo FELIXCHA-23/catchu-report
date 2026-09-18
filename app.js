@@ -859,70 +859,63 @@ function typeForQuestion(round, q) {
   return null;
 }
 
-// "학생별 채점 현황"에 지금 추가되어 보이는 학생 목록 (반/학생 드롭다운으로 고를 때마다 여기에 쌓임 — 새로고침하면 비워짐)
-let resetPanelStudentIds = [];
-
-function populateResetClassSel() {
-  const sel = document.getElementById('resetClassSel');
-  if (!sel) return;
-  const prev = sel.value;
-  const classes = Array.from(new Set(filterByCurrentTeacher(state.students).map(s => s.class).filter(Boolean))).sort();
-  sel.innerHTML = '<option value="">반 선택</option>' + classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-  if (classes.includes(prev)) sel.value = prev;
-  populateResetStudentSel();
+// 반 정렬 순서 — STANDARD_CLASSES에 정의된 순서를 그대로 씀(대략 학년 진행 순서를 따름).
+// 목록에 없는 반(개별시험지 등)은 맨 뒤로 보냄
+function classSortKey(cls) {
+  const idx = STANDARD_CLASSES.indexOf(cls);
+  return idx === -1 ? STANDARD_CLASSES.length : idx;
 }
 
-function populateResetStudentSel() {
-  const classSel = document.getElementById('resetClassSel');
-  const sel = document.getElementById('resetStudentSel');
-  if (!sel) return;
-  const cls = classSel ? classSel.value : '';
-  const eligible = filterByCurrentTeacher(state.students).filter(s => !cls || s.class === cls);
-  sel.innerHTML = '<option value="">학생 선택(고르면 추가됨)</option>' + eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
-}
-
-// 학생별로 지금까지 채점된 시험지 현황을 보여주고, 회차별로(또는 학생 전체) 지울 수 있는 패널
-// 반/학생 드롭다운에서 고를 때마다 그 학생이 아래 목록에 추가됨 (전체 학생을 한꺼번에 보여주지 않음)
+// 학생별로 지금까지 채점된 시험지 현황을 보여주고, 회차별로(또는 학생 전체) 지울 수 있는 패널.
+// 위에서 채점을 저장하면 그 학생이 자동으로 여기 나타남(따로 고를 필요 없음) — 반 순서대로 묶어서 보여줌
 function renderStudentResetPanel() {
   const wrap = document.getElementById('studentResetWrap');
   if (!wrap) return;
-  populateResetClassSel();
 
-  // 담당 선생님을 바꾸는 등으로 더 이상 대상이 아닌 학생은 목록에서 빠짐
-  const allowedIds = new Set(filterByCurrentTeacher(state.students).map(s => s.id));
-  resetPanelStudentIds = resetPanelStudentIds.filter(id => allowedIds.has(id));
+  const scoredStudentIds = new Set(state.results.map(r => r.studentId));
+  const students = filterByCurrentTeacher(state.students)
+    .filter(s => scoredStudentIds.has(s.id))
+    .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
 
-  if (!resetPanelStudentIds.length) {
-    wrap.innerHTML = '<div class="empty-state">위에서 반과 학생을 선택하면 여기에 추가돼요.</div>';
+  if (!students.length) {
+    wrap.innerHTML = '<div class="empty-state">위에서 채점을 저장하면 여기에 자동으로 나타나요.</div>';
     return;
   }
 
-  wrap.innerHTML = resetPanelStudentIds.map(studentId => {
-    const student = state.students.find(s => s.id === studentId);
-    if (!student) return '';
-    const myResults = state.results
-      .filter(r => r.studentId === student.id)
-      .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
-      .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
-    const rows = myResults.length ? myResults.map(({ result, round }) => {
-      const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
-      const wrongTxt = result.wrong.length ? `오답 ${result.wrong.length}개 (${escapeHtml(rangeToString(result.wrong))})` : '전부 정답';
-      return `<tr>
-        <td>${label}</td>
-        <td>${wrongTxt}</td>
-        <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
-      </tr>`;
-    }).join('') : `<tr><td colspan="3">채점 기록이 없어요.</td></tr>`;
-    return `<details class="manual-fallback" open>
-      <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''}${student.class ? ' · ' + escapeHtml(student.class) : ''} (${myResults.length}개 회차 채점됨)
-        <button type="button" class="icon-btn" data-remove-from-list="${student.id}" style="float:right;">목록에서 빼기</button>
-      </summary>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${myResults.length ? `<div class="inline-form" style="margin:10px 0;">
-        <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
-      </div>` : ''}
-    </details>`;
-  }).join('');
+  const groups = [];
+  students.forEach(s => {
+    const cls = s.class || '(반 미지정)';
+    let g = groups.find(g => g.cls === cls);
+    if (!g) { g = { cls, students: [] }; groups.push(g); }
+    g.students.push(s);
+  });
+
+  wrap.innerHTML = groups.map(g => `
+    <div class="reset-class-group">
+      <h3 class="reset-class-title">${escapeHtml(g.cls)}</h3>
+      ${g.students.map(student => {
+        const myResults = state.results
+          .filter(r => r.studentId === student.id)
+          .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
+          .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
+        const rows = myResults.length ? myResults.map(({ result, round }) => {
+          const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
+          const wrongTxt = result.wrong.length ? `오답 ${result.wrong.length}개 (${escapeHtml(rangeToString(result.wrong))})` : '전부 정답';
+          return `<tr>
+            <td>${label}</td>
+            <td>${wrongTxt}</td>
+            <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
+          </tr>`;
+        }).join('') : `<tr><td colspan="3">채점 기록이 없어요.</td></tr>`;
+        return `<details class="manual-fallback">
+          <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</summary>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+          ${myResults.length ? `<div class="inline-form" style="margin:10px 0;">
+            <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>
+          </div>` : ''}
+        </details>`;
+      }).join('')}
+    </div>`).join('');
 
   wrap.querySelectorAll('[data-clear-result]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.clearResult;
@@ -947,12 +940,6 @@ function renderStudentResetPanel() {
     saveState();
     renderScoreTab();
     toast('전체 채점 기록을 지웠어요.');
-  }));
-
-  wrap.querySelectorAll('[data-remove-from-list]').forEach(b => b.addEventListener('click', e => {
-    e.preventDefault();
-    resetPanelStudentIds = resetPanelStudentIds.filter(id => id !== b.dataset.removeFromList);
-    renderStudentResetPanel();
   }));
 }
 
@@ -1005,14 +992,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreRoundGroupSel').addEventListener('change', () => { populateScoreExamSel(); renderScoreTab(); });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', renderScoreTab);
-
-  document.getElementById('resetClassSel').addEventListener('change', populateResetStudentSel);
-  document.getElementById('resetStudentSel').addEventListener('change', e => {
-    const id = e.target.value;
-    if (id && !resetPanelStudentIds.includes(id)) resetPanelStudentIds.push(id);
-    e.target.value = '';
-    renderStudentResetPanel();
-  });
 
   // (주의) 예전엔 여기에 'input' 이벤트로 타이핑할 때마다 그리드 전체를 현재 입력값 기준으로
   // 다시 그리는 실시간 미리보기가 있었는데, 그게 "번호 하나 입력 → Enter" 누적 입력과 충돌해서
@@ -1140,7 +1119,15 @@ function renderRetestList() {
   const wrap = document.getElementById('retestListWrap');
   if (!state.retests.length) { wrap.innerHTML = '<div class="empty-state">아직 재시험 기록이 없어요.</div>'; return; }
   const roundLabelById = id => { const r = state.rounds.find(x => x.id === id); return r ? roundLabel(r) : '(삭제된 회차)'; };
-  const sorted = [...state.retests].sort((a, b) => b.date.localeCompare(a.date));
+  // 반 순서(같은 반끼리 먼저) → 학생 이름 → 최근 재시험일 순으로 정렬 (학생별 채점 현황과 같은 방식)
+  const sorted = [...state.retests].sort((a, b) => {
+    const sa = state.students.find(x => x.id === a.studentId), sb = state.students.find(x => x.id === b.studentId);
+    const classCmp = classSortKey(sa?.class) - classSortKey(sb?.class);
+    if (classCmp !== 0) return classCmp;
+    const nameCmp = (sa?.name || '').localeCompare(sb?.name || '', 'ko');
+    if (nameCmp !== 0) return nameCmp;
+    return b.date.localeCompare(a.date);
+  });
   const rows = sorted.map(rt => {
     const s = state.students.find(x => x.id === rt.studentId);
     const result = state.results.find(r => r.studentId === rt.studentId && r.roundId === rt.roundId);
@@ -1149,6 +1136,7 @@ function renderRetestList() {
     const pct = originalCount ? Math.round((corrected / originalCount) * 100) : 0;
     const stillWrongTxt = rt.stillWrong.length ? `아직 틀림: ${escapeHtml(rangeToString(rt.stillWrong))}` : '전부 정답 전환';
     return `<tr>
+      <td>${s ? escapeHtml(s.class || '-') : '-'}</td>
       <td>${s ? escapeHtml(s.name) : '(삭제된 학생)'}</td>
       <td>${roundLabelById(rt.roundId)}</td>
       <td>${shortDate(rt.date)}</td>
@@ -1156,7 +1144,7 @@ function renderRetestList() {
       <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<table class="data-table"><thead><tr><th>학생</th><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
+  wrap.innerHTML = `<table class="data-table"><thead><tr><th>반</th><th>학생</th><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table>`;
   wrap.querySelectorAll('[data-del-retest]').forEach(b => b.addEventListener('click', () => {
     if (!confirm('이 재시험 기록을 삭제할까요?')) return;
     state.retests = state.retests.filter(rt => rt.id !== b.dataset.delRetest);
@@ -1554,14 +1542,23 @@ function computeStrengthWatch(typeStats) {
 }
 
 // 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
-function buildComment(student, points, typeStats) {
+// 성적 데이터로 판단 가능한 부분(추이·유형·난이도·재시험)은 최대한 구체적으로 자동 작성하고,
+// 수업 태도·학습 성향처럼 이 앱에 데이터가 없는 부분은 선생님이 직접 채워 넣도록 빈 자리를 남겨둠
+// (실제로 관찰하지 않은 내용을 지어내지 않기 위함)
+function buildComment(student, points, typeStats, difficulty, unitBreakdown, retest) {
   const name = displayName(student.name);
+  const attitudeNote = '\n\n[수업 태도 · 학습 성향]\n이 부분은 선생님이 직접 관찰하신 내용으로 채워주세요 — 수업 참여도, 질문하는 태도, 과제·재시험 성실도, 성향(꼼꼼함/급함 등) 등을 자유롭게 적어보세요.';
   if (points.length < 2) {
-    return `${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.`;
+    return `${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.${attitudeNote}`;
   }
   const first = points[0].pct, last = points[points.length - 1].pct;
-  const rise = last - first;
-  const overallVerb = rise > 0 ? `${first}% → ${last}%로 꾸준히 상승했어요` : rise < 0 ? `${first}% → ${last}%로 다소 낮아졌어요` : `${first}%대를 꾸준히 유지하고 있어요`;
+  // 처음·마지막 두 회차만 비교하면 그 사이 기복에 따라 과장돼 보일 수 있어서,
+  // 최근 흐름(최대 최근 3회차의 평균 변화량)도 함께 봐서 추세를 판단함
+  const recentPts = points.slice(-4);
+  const recentDeltas = [];
+  for (let i = 1; i < recentPts.length; i++) recentDeltas.push(recentPts[i].pct - recentPts[i - 1].pct);
+  const recentTrend = recentDeltas.length ? recentDeltas.reduce((a, b) => a + b, 0) / recentDeltas.length : (last - first);
+  const overallVerb = recentTrend > 1 ? `${first}% → ${last}%로 상승 흐름이에요` : recentTrend < -1 ? `${first}% → ${last}%로 하락 흐름이에요` : `${first}%에서 ${last}%로, 큰 변화 없이 비슷한 수준을 유지하고 있어요`;
 
   const withDelta = typeStats.filter(t => t.delta !== null);
   const strengths = withDelta.filter(t => t.last >= 90 && t.delta >= 0).sort((a, b) => b.last - a.last);
@@ -1576,7 +1573,20 @@ function buildComment(student, points, typeStats) {
   if (improving.length) parts.push(`${nameList(improving)} 유형도 ${improving.map(t => (t.delta > 0 ? '+' : '') + t.delta + '%p').join(', ')} 상승하며 꾸준히 좋아지는 중이에요.`);
   if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 ${watch.map(t => t.avg + '%').join(', ')} 수준에서 정체되어 있어, 다음 학습에서 가장 집중적으로 다룰 예정입니다.`);
   if (!strengths.length && !improving.length && !watch.length) parts.push('아직 뚜렷한 강점·약점 유형을 판단하기엔 데이터가 조금 더 필요해요.');
-  return parts.join(' ');
+
+  if (difficulty && difficulty.avgWrong !== null && difficulty.avgCorrect !== null) {
+    if (difficulty.avgWrong > difficulty.avgCorrect + 0.5) parts.push('어려운 문제에서 막히는 경향이 있어, 심화 개념 보완이 필요해 보여요.');
+    else if (difficulty.avgWrong < difficulty.avgCorrect - 0.5) parts.push('오답 중 비교적 쉬운 문제도 섞여 있어, 실수를 줄이는 연습이 도움이 될 수 있어요.');
+  }
+  if (unitBreakdown && unitBreakdown.length) {
+    const weakest = [...unitBreakdown].sort((a, b) => a.pct - b.pct)[0];
+    if (weakest.pct < 70) parts.push(`단원 중에서는 ${weakest.unit}이(가) ${weakest.pct}%로 가장 취약해 보완이 필요해요.`);
+  }
+  if (retest && retest.items.length) {
+    parts.push(`재시험에서는 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항을 정답으로 전환했어요.`);
+  }
+
+  return parts.join(' ') + attitudeNote;
 }
 
 // 선택된 학생이 채점 기록을 가진 회차들로 시작/종료 드롭다운을 채움 (가능하면 기존 선택 유지)
@@ -1709,7 +1719,7 @@ function renderReportTab() {
       ${competencyLegend}
     </div>` : '';
 
-  const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats);
+  const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats, difficulty, unitBreakdown, retest);
 
   // "전체 정답률 추이" 그래프는 선택한 기간 그대로 항상 보여주고, 체크하면 원하는 기간을 직접 골라
   // 추이 그래프를 하나 더 "추가"로 붙일 수 있게 함 (기존 그래프를 대체하지 않음)
@@ -1875,7 +1885,7 @@ function renderReportTab() {
       status.style.color = 'var(--muted)';
       status.textContent = '작성 중이에요...';
       try {
-        const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch);
+        const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest);
         const { text } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 600 });
         noteInput.value = text.trim();
         state.teacherNotes[studentId] = noteInput.value;
@@ -1894,16 +1904,25 @@ function renderReportTab() {
   }
 }
 
-function buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch) {
+function buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest) {
   const period = `${points[0].date} ~ ${points[points.length - 1].date} (${points.length}회차)`;
   const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
-  return `다음은 수학학원 캐치유테스트에서 한 학생의 최근 학습 데이터 요약입니다. 이 데이터를 바탕으로 학부모님께 보여드릴 "선생님 의견" 문단을 자연스러운 한국어로 3~5문장 작성해주세요. 잘하고 있는 부분과 보완이 필요한 부분을 구체적인 유형명과 함께 언급하고, 앞으로의 지도 계획을 한 문장 포함해주세요. 너무 딱딱하지 않으면서도 전문적인 톤으로 써주세요. 결과는 문단 텍스트만 출력하세요 (따옴표, 마크다운, 제목 없이).
+  const difficultyLine = difficulty ? `난이도: 전체 평균 ${difficulty.avgAll}/6, 정답 문항 평균 ${difficulty.avgCorrect ?? '—'}, 오답 문항 평균 ${difficulty.avgWrong ?? '—'}` : '';
+  const retestLine = retest && retest.items.length ? `재시험: 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환` : '';
+  return `다음은 수학학원 캐치유테스트에서 한 학생의 최근 학습 데이터 요약입니다. 이 데이터를 바탕으로 학부모님께 보여드릴 "선생님 의견" 문단을 자연스러운 한국어로 4~6문장 작성해주세요.
+- 잘하고 있는 부분과 보완이 필요한 부분을 구체적인 유형명과 수치를 함께 언급하세요.
+- 난이도·재시험 데이터가 있으면 그 내용도 자연스럽게 녹여주세요(예: 어려운 문제에서의 경향, 재시험을 통한 보완 정도).
+- 앞으로의 지도 계획을 한 문장 포함해주세요.
+- 마지막 줄에 "[수업 태도 · 학습 성향]"이라는 제목만 쓰고, 그 내용은 절대 지어내지 마세요 — 선생님이 직접 관찰한 내용을 적을 수 있도록 빈 줄로 남겨두세요. 이 앱은 수업 태도 데이터를 갖고 있지 않으니, 성적만으로 태도나 성향을 추측해서 쓰면 안 됩니다.
+- 너무 딱딱하지 않으면서도 전문적인 톤으로 써주세요. 결과는 문단 텍스트만 출력하세요 (따옴표, 마크다운, 제목 없이 — 단, 마지막의 "[수업 태도 · 학습 성향]" 제목 줄은 그대로 출력하세요).
 
 학생: ${displayName(student.name)}
 측정 기간: ${period}
 전체 정답률: ${overallPct}%
 강점 유형: ${strengths.length ? strengths.map(t => `${t.name}(${t.last}%)`).join(', ') : '없음'}
 취약 유형: ${watch.length ? watch.map(t => `${t.name}(${t.avg}%)`).join(', ') : '없음'}
+${difficultyLine}
+${retestLine}
 
 유형별 상세:
 ${typeLines}`;
@@ -2012,7 +2031,7 @@ async function pdfAddCoverPage(pdf, student, points) {
             <div style="border-top:1px solid #ddddd3; margin-bottom:22px;"></div>
             <div style="display:flex; justify-content:center; gap:64px; font-size:14px; color:#3a3a3a; text-align:center;">
               <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">측정 기간</div>${escapeHtml(period)} (${points.length}회차)</div>
-              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">담당 강사</div>${teacherTxt}</div>
+              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">담임</div>${teacherTxt}</div>
             </div>
           </div>
         </div>
@@ -2073,7 +2092,7 @@ async function exportReportPDF() {
     const lastPoint = data.points[data.points.length - 1];
     const lastRound = lastPoint ? state.rounds.find(r => r.id === lastPoint.roundId) : null;
     const reportMonth = lastRound ? new Date(lastRound.date + 'T00:00:00').getMonth() + 1 : '';
-    pdf.save(`${reportMonth ? reportMonth + '월' : ''}캐치유리포트_${displayName(data.student.name)}.pdf`);
+    pdf.save(`${reportMonth ? reportMonth + '월' : ''}캐치유분석보고서_${displayName(data.student.name)}.pdf`);
     status.style.color = 'var(--good)';
     status.textContent = 'PDF를 저장했어요.';
   } catch (err) {
