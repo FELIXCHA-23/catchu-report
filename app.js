@@ -897,13 +897,13 @@ function renderStudentResetPanel() {
   if (!wrap) return;
   if (!state.studentDone) state.studentDone = {};
 
-  const scoredStudentIds = new Set(state.results.map(r => r.studentId));
+  // 채점을 한 번도 안 한 학생도 반에 있으면 "0개 회차 채점됨"으로 그대로 보여줘서, 진행중 목록만 봐도
+  // 그 반 학생이 전부 다 있는지(아직 손도 안 댄 학생이 누군지) 알 수 있게 함
   const allStudents = filterByCurrentTeacher(state.students)
-    .filter(s => scoredStudentIds.has(s.id))
     .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
 
   if (!allStudents.length) {
-    wrap.innerHTML = '<div class="empty-state">위에서 채점을 저장하면 여기에 자동으로 나타나요.</div>';
+    wrap.innerHTML = `<div class="empty-state">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 담당 학생이 없어요.' : '학생을 먼저 등록하세요.'}</div>`;
     return;
   }
 
@@ -927,8 +927,8 @@ function renderStudentResetPanel() {
   const inRange = date => !rangeStart || !rangeEnd || (date >= rangeStart && date <= rangeEnd);
 
   const studentCardHTML = (student, done) => {
-    const myResults = state.results
-      .filter(r => r.studentId === student.id)
+    const allMyResults = state.results.filter(r => r.studentId === student.id);
+    const myResults = allMyResults
       .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
       .filter(({ round }) => !round || inRange(round.date))
       .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
@@ -940,7 +940,7 @@ function renderStudentResetPanel() {
         <td>${wrongTxt}</td>
         <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
       </tr>`;
-    }).join('') : `<tr><td colspan="3">이 기간엔 채점 기록이 없어요.</td></tr>`;
+    }).join('') : `<tr><td colspan="3">${allMyResults.length ? '이 기간엔 채점 기록이 없어요.' : '아직 채점 기록이 없어요.'}</td></tr>`;
     const memo = state.studentMemo[student.id] || '';
     return `<details class="manual-fallback${done ? ' is-done' : ''}">
       <summary>
@@ -949,9 +949,9 @@ function renderStudentResetPanel() {
         <button type="button" class="btn-done-toggle no-print${done ? ' is-done' : ''}" data-toggle-done="${student.id}">${done ? '✅ 완료' : '완료'}</button>
       </summary>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="inline-form" style="margin:10px 0;">
+      ${allMyResults.length ? `<div class="inline-form" style="margin:10px 0;">
         <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화 (기간 무관, 전체)</button>
-      </div>
+      </div>` : ''}
     </details>`;
   };
 
