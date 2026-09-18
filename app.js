@@ -946,17 +946,23 @@ function renderStudentResetPanel() {
       <summary>
         <span class="reset-summary-text">${done ? '✅ ' : ''}${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</span>
         <input type="text" class="student-memo no-print" data-memo="${student.id}" placeholder="메모 한 줄" maxlength="60" value="${escapeHtml(memo)}">
+        <button type="button" class="btn-done-toggle no-print${done ? ' is-done' : ''}" data-toggle-done="${student.id}">${done ? '✅ 완료' : '완료'}</button>
       </summary>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="inline-form" style="margin:10px 0;">
         <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화 (기간 무관, 전체)</button>
-        <button type="button" class="btn ${done ? 'ghost' : 'primary'}" data-toggle-done="${student.id}">${done ? '완료 취소' : '완료 표시'}</button>
       </div>
     </details>`;
   };
 
   const activeStudents = allStudents.filter(s => !state.studentDone[s.id]);
   const doneStudents = allStudents.filter(s => state.studentDone[s.id]);
+
+  // 담당 선생님(위 상단에서 고른 선생님) 기준으로, 완료/미완료 학생 이름을 한눈에 볼 수 있는 명단 줄
+  const rosterHTML = `<div class="reset-roster-bar">
+    <div class="reset-roster-group todo"><b>진행중 ${activeStudents.length}명</b><span>${activeStudents.length ? activeStudents.map(s => escapeHtml(s.name)).join(', ') : '없음'}</span></div>
+    <div class="reset-roster-group done"><b>완료 ${doneStudents.length}명</b><span>${doneStudents.length ? doneStudents.map(s => escapeHtml(s.name)).join(', ') : '없음'}</span></div>
+  </div>`;
 
   const activeHTML = groupByClass(activeStudents).map(g => `
     <div class="reset-class-group">
@@ -970,7 +976,7 @@ function renderStudentResetPanel() {
       ${doneStudents.map(s => studentCardHTML(s, true)).join('')}
     </div>` : '';
 
-  wrap.innerHTML = activeHTML + doneHTML;
+  wrap.innerHTML = rosterHTML + activeHTML + doneHTML;
 
   wrap.querySelectorAll('[data-clear-result]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.clearResult;
@@ -997,7 +1003,9 @@ function renderStudentResetPanel() {
     toast('전체 채점 기록을 지웠어요.');
   }));
 
-  wrap.querySelectorAll('[data-toggle-done]').forEach(b => b.addEventListener('click', () => {
+  wrap.querySelectorAll('[data-toggle-done]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    e.preventDefault();
     const id = b.dataset.toggleDone;
     const student = state.students.find(s => s.id === id);
     if (!student) return;
@@ -1015,6 +1023,12 @@ function renderStudentResetPanel() {
     inp.addEventListener('input', () => {
       state.studentMemo[inp.dataset.memo] = inp.value;
       saveState();
+    });
+    // Enter 누르면 그냥 저장(이미 input에서 저장 중)하고 커서만 빠져나가게 함
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      inp.blur();
     });
   });
 }

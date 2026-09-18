@@ -154,9 +154,23 @@ details.manual-fallback summary {
   border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); color: var(--ink);
   cursor: text;
 }
+/* 메모 옆 완료 버튼 — summary 안에 있지만 클릭해도 펼침/접힘에 영향 없게 JS에서 stopPropagation 처리함 */
+.btn-done-toggle {
+  font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-page); color: var(--ink-soft); flex-shrink: 0;
+}
+.btn-done-toggle.is-done { background: var(--good-bg); color: var(--good); border-color: var(--good); }
 details.manual-fallback summary::-webkit-details-marker { display: none; }
 details.manual-fallback summary::before { content: '▸ '; }
 details.manual-fallback[open] summary::before { content: '▾ '; }
+
+/* 학생별 채점 현황 맨 위 — 담당 선생님 학생 중 완료/미완료 명단을 한눈에 보여주는 줄 */
+.reset-roster-bar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.reset-roster-group { font-size: 12.5px; padding: 8px 12px; border-radius: 8px; background: var(--surface-page); border: 1px solid var(--line); }
+.reset-roster-group b { margin-right: 8px; }
+.reset-roster-group.todo b { color: var(--accent); }
+.reset-roster-group.done b { color: var(--good); }
+.reset-roster-group span { color: var(--ink-soft); }
 
 /* 학생별 채점 현황 — 반별 그룹 */
 .reset-class-group { margin-top: 16px; }
