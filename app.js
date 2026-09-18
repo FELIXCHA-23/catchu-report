@@ -1191,13 +1191,18 @@ function renderRetestGrid() {
   const result = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
   const originalWrong = result ? [...result.wrong].sort((a, b) => a - b) : [];
   if (!originalWrong.length) { wrap.innerHTML = '<div class="empty-state">이 학생은 이 회차에 틀린 문항이 없어요.</div>'; updateRetestSummary(); return; }
+  // 채점 입력과 똑같이, 이미 채점해둔 재시험 기록이 있으면 그 틀린 번호가 다시 봐도 그대로 눌려있게 불러옴
+  // (재시험일도 그때 저장한 날짜로 같이 불러와서, 학생/회차를 왔다갔다 해도 기록이 안 흔들리게 함)
+  const existingRetest = state.retests.find(rt => rt.studentId === student.id && rt.roundId === round.id);
+  const stillWrongSet = new Set(existingRetest ? existingRetest.stillWrong : []);
+  if (existingRetest) populateFridaySelect(document.getElementById('retestDate'), existingRetest.date);
   const legend = round.types.map((t, i) => `<span class="legend-item"><span class="type-swatch" style="background:${TYPE_COLORS[i % TYPE_COLORS.length]}"></span>${escapeHtml(t.name)}</span>`).join('');
   // 재시험지는 오답 문항만 다시 1번부터 순서대로 인쇄되므로, 버튼도 그 순서(1,2,3…)로 크게 보여주고
   // 원본 시험지 문항 번호는 괄호 안에 작게만 곁들임 — 채점할 때 재시험지에 적힌 번호를 그대로 누르면 됨
   const btns = originalWrong.map((q, i) => {
     const t = typeForQuestion(round, q);
     const style = t ? `box-shadow: inset 3px 0 0 ${t.color};` : '';
-    return `<button type="button" class="qbtn qbtn-retest" style="${style}" data-q="${q}" data-idx="${i + 1}">${i + 1}<span class="qbtn-orig">(${q})</span></button>`;
+    return `<button type="button" class="qbtn qbtn-retest${stillWrongSet.has(q) ? ' wrong' : ''}" style="${style}" data-q="${q}" data-idx="${i + 1}">${i + 1}<span class="qbtn-orig">(${q})</span></button>`;
   }).join('');
   wrap.innerHTML = `<p class="card-sub" style="margin-top:10px;">원래 오답 ${originalWrong.length}문항 · 번호는 재시험지에 적힌 순서(1,2,3…)예요 — 괄호 안 작은 숫자가 원본 문항 번호. 재시험에서도 틀린 문항만 클릭하세요 (기본값: 전부 정답)</p><div class="score-grid">${btns}</div><div class="type-legend">${legend}</div>`;
   // "재시험 결과 저장" 버튼을 안 눌러도, 번호 하나 클릭할 때마다 바로바로 저장함(채점 입력과 동일한 방식)
