@@ -796,9 +796,13 @@ function populateResetPanelDateSel() {
 function populateReportStudentSel() {
   const sel = document.getElementById('reportStudentSel');
   const prev = sel.value;
-  const eligible = filterByCurrentTeacher(state.students);
+  // 채점 입력 탭에서 "완료" 표시해둔 학생을 목록 맨 위로 올리고 "(완)"을 붙여서, 다 끝난 학생 보고서를
+  // 바로 찾을 수 있게 함 (정렬은 안정 정렬이라 완료 여부 말고는 원래 순서 그대로 유지됨)
+  const eligible = filterByCurrentTeacher(state.students)
+    .slice()
+    .sort((a, b) => (state.studentDone[b.id] ? 1 : 0) - (state.studentDone[a.id] ? 1 : 0));
   sel.innerHTML = eligible.length
-    ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`).join('')
+    ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}${state.studentDone[s.id] ? ' (완)' : ''}</option>`).join('')
     : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
   if (eligible.some(s => s.id === prev)) sel.value = prev;
 }
@@ -951,8 +955,8 @@ function renderStudentResetPanel() {
         <button type="button" class="btn-done-toggle no-print${done ? ' is-done' : ''}" data-toggle-done="${student.id}">${done ? '✅ 완료' : '완료'}</button>
       </summary>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${allMyResults.length ? `<div class="inline-form" style="margin:10px 0;">
-        <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화 (기간 무관, 전체)</button>
+      ${myResults.length ? `<div class="inline-form" style="margin:10px 0;">
+        <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 채점 초기화 (위 기간만, ${myResults.length}건)</button>
       </div>` : ''}
     </details>`;
   };
@@ -994,15 +998,25 @@ function renderStudentResetPanel() {
     toast('채점 기록을 지웠어요.');
   }));
 
+  // 회차가 계속 누적될 거라, "전체 초기화"가 이전 달까지 다 날려버리지 않도록 위 "OO부터 OO까지" 필터에
+  // 걸리는 기록만 지움 — 화면에 지금 보이는 회차만 정확히 지워지고, 필터 밖(이전에 쌓아둔) 기록은 안전함
   wrap.querySelectorAll('[data-clear-all]').forEach(b => b.addEventListener('click', () => {
     const student = state.students.find(s => s.id === b.dataset.clearAll);
     if (!student) return;
-    if (!confirm(`${student.name} 학생의 채점 기록을 전부 지울까요? 되돌릴 수 없어요.`)) return;
-    state.results = state.results.filter(r => r.studentId !== student.id);
-    state.retests = state.retests.filter(rt => rt.studentId !== student.id);
+    const idsToDelete = state.results
+      .filter(r => r.studentId === student.id)
+      .filter(r => { const round = state.rounds.find(x => x.id === r.roundId); return !round || inRange(round.date); })
+      .map(r => r.id);
+    if (!idsToDelete.length) return;
+    const periodTxt = (rangeStart && rangeEnd) ? `${rangeStart} ~ ${rangeEnd} 기간의 ` : '';
+    if (!confirm(`${student.name} 학생의 ${periodTxt}채점 기록(${idsToDelete.length}건)을 지울까요? 되돌릴 수 없어요.`)) return;
+    const idSet = new Set(idsToDelete);
+    const roundIdsToDelete = new Set(state.results.filter(r => idSet.has(r.id)).map(r => r.roundId));
+    state.results = state.results.filter(r => !idSet.has(r.id));
+    state.retests = state.retests.filter(rt => !(rt.studentId === student.id && roundIdsToDelete.has(rt.roundId)));
     saveState();
     renderScoreTab();
-    toast('전체 채점 기록을 지웠어요.');
+    toast(`${student.name} 학생의 채점 기록 ${idsToDelete.length}건을 지웠어요.`);
   }));
 
   wrap.querySelectorAll('[data-toggle-done]').forEach(b => b.addEventListener('click', e => {
@@ -1885,7 +1899,7 @@ function renderReportTab() {
       <div class="masthead">
         <div>
           <div class="brand-line">${logoBlock()}</div>
-          <h2>캐치유테스트 분석보고서</h2>
+          <h2>캐치유테스트 분석보고서${state.studentDone[studentId] ? '<span class="badge good no-print" style="margin-left:10px; vertical-align:middle;"><span class="dot"></span>채점입력 완료</span>' : ''}</h2>
         </div>
         <div class="meta">
           <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
