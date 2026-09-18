@@ -1067,14 +1067,14 @@ function renderScoreTab() {
 }
 
 function syncQuickInputFromGrid() {
-  const wrong = Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
+  const wrong = Array.from(document.querySelectorAll('#scoreGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10));
   document.getElementById('quickWrongInput').value = rangeToString(wrong);
 }
 
 function updateScoreSummary() {
   const round = currentScoreRound();
   if (!round) { document.getElementById('scoreSummary').textContent = ''; return; }
-  const wrongCount = document.querySelectorAll('.qbtn.wrong').length;
+  const wrongCount = document.querySelectorAll('#scoreGridWrap .qbtn.wrong').length;
   const correct = round.total - wrongCount;
   const pct = round.total ? Math.round((correct / round.total) * 100) : 0;
   document.getElementById('scoreSummary').textContent = `정답 ${correct} / ${round.total} (${pct}%)`;
@@ -1111,9 +1111,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('clearScoreBtn').addEventListener('click', () => {
-    document.querySelectorAll('.qbtn.wrong').forEach(b => b.classList.remove('wrong'));
+    document.querySelectorAll('#scoreGridWrap .qbtn.wrong').forEach(b => b.classList.remove('wrong'));
     document.getElementById('quickWrongInput').value = '';
     updateScoreSummary();
+    saveCurrentScore(true);
   });
 
   document.getElementById('saveScoreBtn').addEventListener('click', () => saveCurrentScore());
@@ -1126,7 +1127,7 @@ function saveCurrentScore(silent) {
   if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
   // 개별시험지인데 아직 이 학생으로 배정되지 않았으면(처음 채점하는 거면) 지금 배정을 확정함
   if (round.individual && !round.studentId) round.studentId = student.id;
-  const wrong = [...new Set(Array.from(document.querySelectorAll('.qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
+  const wrong = [...new Set(Array.from(document.querySelectorAll('#scoreGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
   const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
   if (existing) existing.wrong = wrong;
   else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
@@ -1199,7 +1200,12 @@ function renderRetestGrid() {
     return `<button type="button" class="qbtn qbtn-retest" style="${style}" data-q="${q}" data-idx="${i + 1}">${i + 1}<span class="qbtn-orig">(${q})</span></button>`;
   }).join('');
   wrap.innerHTML = `<p class="card-sub" style="margin-top:10px;">원래 오답 ${originalWrong.length}문항 · 번호는 재시험지에 적힌 순서(1,2,3…)예요 — 괄호 안 작은 숫자가 원본 문항 번호. 재시험에서도 틀린 문항만 클릭하세요 (기본값: 전부 정답)</p><div class="score-grid">${btns}</div><div class="type-legend">${legend}</div>`;
-  wrap.querySelectorAll('.qbtn').forEach(b => b.addEventListener('click', () => { b.classList.toggle('wrong'); updateRetestSummary(); }));
+  // "재시험 결과 저장" 버튼을 안 눌러도, 번호 하나 클릭할 때마다 바로바로 저장함(채점 입력과 동일한 방식)
+  wrap.querySelectorAll('.qbtn').forEach(b => b.addEventListener('click', () => {
+    b.classList.toggle('wrong');
+    updateRetestSummary();
+    saveCurrentRetest(true);
+  }));
   updateRetestSummary();
 }
 
