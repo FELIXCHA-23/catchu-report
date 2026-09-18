@@ -203,6 +203,8 @@ let editingStudentId = null;
 let pendingExamFile = null;
 let pendingDifficulty = null;
 let pendingCompetency = null;
+// 채점 입력에서 마지막으로 저장한 학생 — 재시험 탭으로 넘어갔을 때 그 학생이 바로 선택되어 있게 씀
+let lastScoredStudentId = null;
 
 /* ---------- state ---------- */
 
@@ -1125,6 +1127,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function saveCurrentScore(silent) {
   const round = currentScoreRound(), student = currentScoreStudent();
   if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
+  // 이 학생을 마지막으로 채점한 걸로 기록해둠 — 재시험 탭으로 넘어가면 바로 이 학생이 선택되게 함
+  lastScoredStudentId = student.id;
   // 개별시험지인데 아직 이 학생으로 배정되지 않았으면(처음 채점하는 거면) 지금 배정을 확정함
   if (round.individual && !round.studentId) round.studentId = student.id;
   const wrong = [...new Set(Array.from(document.querySelectorAll('#scoreGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
@@ -1144,10 +1148,16 @@ function saveCurrentScore(silent) {
 // 재시험은 새 유형표가 필요 없음 — 원래 회차에서 틀린 문항 번호를 그대로 재사용해서
 // "쌍둥이문제를 다시 풀었을 때도 틀렸는지"만 기록. 유형·단원·난이도·역량은 원래 회차 것을 그대로 물려받음.
 
+// 채점 입력에서 마지막으로 "새로" 채점한 학생을 재시험 탭에서 한 번 자동 선택해줬는지 추적 — 이걸 안 두면
+// 재시험 탭 안에서 선생님이 직접 다른 학생을 골라도, 탭을 오갈 때마다 다시 그 학생으로 튕겨버리게 됨
+let lastAppliedRetestStudentId = null;
+
 // 학생을 먼저 고르고, 그 학생이 오답을 가진 회차만 골라서 재시험을 채점하는 흐름 — 이름 가나다순 정렬로
-// 목록 순서가 매번 안정적이게 함(<select>는 첫 옵션이 기본 선택되므로 맨 처음 학생이 바로 선택됨)
+// 목록 순서가 매번 안정적이게 함. 채점 입력에서 새로 채점한 학생이 있으면(아직 여기서 안 반영했다면)
+// 그 학생을 우선 선택해서 바로 이어서 재시험을 채점할 수 있게 하고, 그 다음엔 기존 선택을 유지함
 function populateRetestStudentSelect() {
   const sel = document.getElementById('retestStudentSel');
+  const prev = sel.value;
   const currentTeacher = getCurrentTeacher();
   const studentIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.studentId));
   const students = state.students
@@ -1156,6 +1166,13 @@ function populateRetestStudentSelect() {
   sel.innerHTML = students.length
     ? students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
     : '<option value="">오답이 있는 학생이 없어요</option>';
+  const freshFromScoring = lastScoredStudentId && lastScoredStudentId !== lastAppliedRetestStudentId && students.some(s => s.id === lastScoredStudentId);
+  if (freshFromScoring) {
+    sel.value = lastScoredStudentId;
+    lastAppliedRetestStudentId = lastScoredStudentId;
+  } else if (students.some(s => s.id === prev)) {
+    sel.value = prev;
+  }
 }
 
 // 선택된 학생이 오답을 가진 회차만 최신순으로 보여줌
