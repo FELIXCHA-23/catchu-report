@@ -145,6 +145,14 @@ details.manual-fallback { margin-top: 12px; }
 details.manual-fallback summary {
   cursor: pointer; font-size: 13px; font-weight: 700; color: var(--ink-soft);
   padding: 6px 0; list-style: none;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.reset-summary-text { flex: 1; min-width: 140px; }
+/* 학생별 채점 현황의 학생 한 줄 메모 — summary 오른쪽에 붙임, 클릭해도 펼침/접힘에 영향 없게 JS에서 stopPropagation 처리함 */
+.student-memo {
+  font-size: 12px; font-weight: 400; padding: 5px 8px; width: 160px; max-width: 45%;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); color: var(--ink);
+  cursor: text;
 }
 details.manual-fallback summary::-webkit-details-marker { display: none; }
 details.manual-fallback summary::before { content: '▸ '; }

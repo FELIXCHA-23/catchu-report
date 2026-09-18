@@ -216,10 +216,11 @@ function loadState() {
       if (!data.gradeOverrides) data.gradeOverrides = {};
       if (!data.sharedRoundIds) data.sharedRoundIds = [];
       if (!data.studentDone) data.studentDone = {};
+      if (!data.studentMemo) data.studentMemo = {};
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [], studentDone: {} };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [], studentDone: {}, studentMemo: {} };
 }
 
 function saveState() {
@@ -771,6 +772,22 @@ document.addEventListener('DOMContentLoaded', () => {
 function populateSelects() {
   populateReportStudentSel();
   populateScoreGradeSel();
+  populateResetPanelDateSel();
+}
+
+// 학생별 채점 현황 위의 "OO부터 OO까지" 드롭다운 — 회차가 계속 쌓여도 보고 싶은 기간만 골라서 볼 수 있게 함.
+// 선택값은 다시 그려도 유지되고, 기본값은 전체 기간(가장 이른 회차 ~ 가장 늦은 회차)임
+function populateResetPanelDateSel() {
+  const fromSel = document.getElementById('resetPanelFromSel');
+  const toSel = document.getElementById('resetPanelToSel');
+  if (!fromSel || !toSel) return;
+  const dates = Array.from(new Set(state.rounds.map(r => r.date))).sort();
+  const prevFrom = fromSel.value, prevTo = toSel.value;
+  const opts = dates.map(d => `<option value="${d}">${escapeHtml(dateToWeekLabel(d))} (${shortDate(d)})</option>`).join('');
+  fromSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
+  toSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
+  fromSel.value = dates.includes(prevFrom) ? prevFrom : (dates[0] || '');
+  toSel.value = dates.includes(prevTo) ? prevTo : (dates[dates.length - 1] || '');
 }
 
 // 상단에서 고른 담당 선생님 학생만 남김 (선택 안 하면 전체 보기)
@@ -901,10 +918,19 @@ function renderStudentResetPanel() {
     return groups;
   };
 
+  // 위 "OO부터 OO까지" 드롭다운으로 고른 기간 — 계속 쌓이는 회차 중 이 기간에 속하는 것만 학생 카드에 보여줌
+  if (!state.studentMemo) state.studentMemo = {};
+  const fromRaw = document.getElementById('resetPanelFromSel')?.value || '';
+  const toRaw = document.getElementById('resetPanelToSel')?.value || '';
+  const rangeStart = fromRaw && toRaw && fromRaw > toRaw ? toRaw : fromRaw;
+  const rangeEnd = fromRaw && toRaw && fromRaw > toRaw ? fromRaw : toRaw;
+  const inRange = date => !rangeStart || !rangeEnd || (date >= rangeStart && date <= rangeEnd);
+
   const studentCardHTML = (student, done) => {
     const myResults = state.results
       .filter(r => r.studentId === student.id)
       .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
+      .filter(({ round }) => !round || inRange(round.date))
       .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
     const rows = myResults.length ? myResults.map(({ result, round }) => {
       const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
@@ -914,12 +940,16 @@ function renderStudentResetPanel() {
         <td>${wrongTxt}</td>
         <td class="row-actions"><button class="icon-btn" data-clear-result="${result.id}" data-owner="${student.id}">취소</button></td>
       </tr>`;
-    }).join('') : `<tr><td colspan="3">채점 기록이 없어요.</td></tr>`;
+    }).join('') : `<tr><td colspan="3">이 기간엔 채점 기록이 없어요.</td></tr>`;
+    const memo = state.studentMemo[student.id] || '';
     return `<details class="manual-fallback${done ? ' is-done' : ''}">
-      <summary>${done ? '✅ ' : ''}${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</summary>
+      <summary>
+        <span class="reset-summary-text">${done ? '✅ ' : ''}${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (${myResults.length}개 회차 채점됨)</span>
+        <input type="text" class="student-memo no-print" data-memo="${student.id}" placeholder="메모 한 줄" maxlength="60" value="${escapeHtml(memo)}">
+      </summary>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>채점(오답 문항)</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="inline-form" style="margin:10px 0;">
-        ${myResults.length ? `<button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화</button>` : ''}
+        <button type="button" class="btn danger" data-clear-all="${student.id}">${escapeHtml(student.name)} 학생 전체 채점 초기화 (기간 무관, 전체)</button>
         <button type="button" class="btn ${done ? 'ghost' : 'primary'}" data-toggle-done="${student.id}">${done ? '완료 취소' : '완료 표시'}</button>
       </div>
     </details>`;
@@ -976,6 +1006,17 @@ function renderStudentResetPanel() {
     renderStudentResetPanel();
     toast(state.studentDone[id] ? `${student.name} 학생을 완료로 표시했어요.` : `${student.name} 학생을 다시 진행중으로 옮겼어요.`);
   }));
+
+  // 메모는 한 글자 칠 때마다 바로 저장(자동저장) — 채점 중엔 번호를 누를 때마다 이 패널 전체가
+  // 다시 그려지므로, blur까지 기다리면 그 사이에 타이핑한 내용이 다시 그려지며 날아갈 수 있어서
+  // 클릭으로 details가 접히거나 펼쳐지지 않도록 클릭 전파는 막아둠
+  wrap.querySelectorAll('.student-memo').forEach(inp => {
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('input', () => {
+      state.studentMemo[inp.dataset.memo] = inp.value;
+      saveState();
+    });
+  });
 }
 
 function renderScoreTab() {
@@ -1030,6 +1071,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreRoundGroupSel').addEventListener('change', () => { populateScoreExamSel(); renderScoreTab(); });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', renderScoreTab);
+  document.getElementById('resetPanelFromSel').addEventListener('change', renderStudentResetPanel);
+  document.getElementById('resetPanelToSel').addEventListener('change', renderStudentResetPanel);
 
   // (주의) 예전엔 여기에 'input' 이벤트로 타이핑할 때마다 그리드 전체를 현재 입력값 기준으로
   // 다시 그리는 실시간 미리보기가 있었는데, 그게 "번호 하나 입력 → Enter" 누적 입력과 충돌해서
@@ -2234,6 +2277,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.retests) data.retests = [];
         if (!data.gradeOverrides) data.gradeOverrides = {};
         if (!data.studentDone) data.studentDone = {};
+        if (!data.studentMemo) data.studentMemo = {};
         if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
         state = data;
         saveState();
@@ -2259,7 +2303,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, studentDone: {} };
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, studentDone: {}, studentMemo: {} };
     saveState();
     renderAll();
     toast('초기화했어요.');
@@ -2331,6 +2375,7 @@ function seedDemoData() {
     },
     gradeOverrides: {},
     studentDone: {},
+    studentMemo: {},
   };
   saveState();
 }
