@@ -1028,6 +1028,8 @@ function renderStudentResetPanel() {
     state.studentDone[id] = !state.studentDone[id];
     saveState();
     renderStudentResetPanel();
+    // 보고서 탭 학생 드롭다운의 "(완)" 표시·정렬도 바로 반영되게 함(안 하면 채점 등 다른 동작을 해야만 갱신됐음)
+    populateReportStudentSel();
     toast(state.studentDone[id] ? `${student.name} 학생을 완료로 표시했어요.` : `${student.name} 학생을 다시 진행중으로 옮겼어요.`);
   }));
 
