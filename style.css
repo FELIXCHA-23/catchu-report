@@ -100,7 +100,7 @@ input[type=text], input[type=date], input[type=number], select {
   min-width: 120px;
 }
 /* select는 flex row 안에서 줄어들면 선택된 글자가 잘려 보여서(특히 시험지 이름), 줄어들지 않고 필요하면 다음 줄로 넘어가게 함 */
-select { flex-shrink: 0; max-width: 100%; }
+select { flex-shrink: 0; max-width: 100%; font-variant-numeric: tabular-nums; }
 /* 재시험 탭 두 번째 드롭다운(회차 선택) — "학년 · N주차 (날짜) · 오답 N개"가 다 들어가야 해서 기본 min-width보다 훨씬 넓게 */
 #retestRoundSel { min-width: 300px; }
 input:focus, select:focus, button:focus-visible {

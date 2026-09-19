@@ -283,7 +283,8 @@ function populateFridaySelect(selectEl, keepValue) {
   }
   const options = fridays.map(d => {
     const iso = toISODate(d);
-    return `<option value="${iso}">${d.getMonth() + 1}월 ${d.getDate()}일 (금)</option>`;
+    // 월/일을 항상 2자리로 맞춰서(예: 09월 05일) 글자 수가 날짜마다 달라도 (금) 위치가 흔들리지 않게 함
+    return `<option value="${iso}">${String(d.getMonth() + 1).padStart(2, '0')}월 ${String(d.getDate()).padStart(2, '0')}일 (금)</option>`;
   });
   // 기존 데이터의 날짜가 금요일이 아니거나 목록 범위 밖이면(과거 회차 등) 선택 유지를 위해 추가해둠
   if (keepValue && !fridays.some(d => toISODate(d) === keepValue)) {
@@ -596,7 +597,7 @@ function roundStudentTag(round) {
     const s = state.students.find(x => x.id === round.studentId);
     return s ? ` · ${escapeHtml(s.name)} 개별` : ' · 개별(학생 삭제됨)';
   }
-  if (round.individual) return ' · 개별시험지 (학생 미지정 — 채점할 때 선택)';
+  if (round.individual) return ' · 개별(미지정)';
   return round.studentName ? ` · ${escapeHtml(round.studentName)} 개별` : '';
 }
 
@@ -1277,6 +1278,7 @@ function updateRetestSummary() {
 // 하나의 접이식 카드 안에 전부 모아서 보여줌 (기록이 여러 회차에 걸쳐 있어도 학생별로 흩어지지 않게)
 function renderRetestList() {
   const wrap = document.getElementById('retestListWrap');
+  if (!state.studentMemo) state.studentMemo = {};
   const roundLabelById = id => { const r = state.rounds.find(x => x.id === id); return r ? roundLabel(r) : '(삭제된 회차)'; };
 
   const retestStudentIds = new Set(state.retests.map(rt => rt.studentId));
@@ -1312,8 +1314,12 @@ function renderRetestList() {
             <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
           </tr>`;
         }).join('');
+        const memo = state.studentMemo[student.id] || '';
         return `<details class="manual-fallback">
-          <summary>${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (재시험 ${myRetests.length}건)</summary>
+          <summary>
+            <span class="reset-summary-text">${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (재시험 ${myRetests.length}건)</span>
+            <input type="text" class="student-memo no-print" data-memo="${student.id}" placeholder="메모 한 줄" maxlength="60" value="${escapeHtml(memo)}">
+          </summary>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
         </details>`;
       }).join('')}
@@ -1325,6 +1331,20 @@ function renderRetestList() {
     saveState(); renderRetestList();
     toast('삭제했어요.');
   }));
+
+  // 채점입력 탭의 학생별 메모와 같은 데이터(state.studentMemo)를 공유 — 학생당 메모는 하나만 존재
+  wrap.querySelectorAll('.student-memo').forEach(inp => {
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('input', () => {
+      state.studentMemo[inp.dataset.memo] = inp.value;
+      saveState();
+    });
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      inp.blur();
+    });
+  });
 }
 
 // 재시험 결과 저장 — "재시험 결과 저장" 버튼과 빠른입력 Enter 저장이 공용으로 씀.
