@@ -221,10 +221,11 @@ function loadState() {
       if (!data.sharedRoundIds) data.sharedRoundIds = [];
       if (!data.studentDone) data.studentDone = {};
       if (!data.studentMemo) data.studentMemo = {};
+      if (!data.studentMemoRetest) data.studentMemoRetest = {};
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [], studentDone: {}, studentMemo: {} };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [], studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
 }
 
 function saveState() {
@@ -1229,7 +1230,6 @@ function currentRetestStudent() { return state.students.find(s => s.id === docum
 function renderRetestTab() {
   populateRetestStudentSelect();
   populateRetestRoundSelect();
-  populateFridaySelect(document.getElementById('retestDate'), document.getElementById('retestDate').value || undefined);
   renderRetestGrid();
   renderRetestList();
 }
@@ -1243,10 +1243,8 @@ function renderRetestGrid() {
   const originalWrong = result ? [...result.wrong].sort((a, b) => a - b) : [];
   if (!originalWrong.length) { wrap.innerHTML = '<div class="empty-state">이 학생은 이 회차에 틀린 문항이 없어요.</div>'; updateRetestSummary(); return; }
   // 채점 입력과 똑같이, 이미 채점해둔 재시험 기록이 있으면 그 틀린 번호가 다시 봐도 그대로 눌려있게 불러옴
-  // (재시험일도 그때 저장한 날짜로 같이 불러와서, 학생/회차를 왔다갔다 해도 기록이 안 흔들리게 함)
   const existingRetest = state.retests.find(rt => rt.studentId === student.id && rt.roundId === round.id);
   const stillWrongSet = new Set(existingRetest ? existingRetest.stillWrong : []);
-  if (existingRetest) populateFridaySelect(document.getElementById('retestDate'), existingRetest.date);
   const legend = round.types.map((t, i) => `<span class="legend-item"><span class="type-swatch" style="background:${TYPE_COLORS[i % TYPE_COLORS.length]}"></span>${escapeHtml(t.name)}</span>`).join('');
   // 재시험지는 오답 문항만 다시 1번부터 순서대로 인쇄되므로, 버튼도 그 순서(1,2,3…)로 크게 보여주고
   // 원본 시험지 문항 번호는 괄호 안에 작게만 곁들임 — 채점할 때 재시험지에 적힌 번호를 그대로 누르면 됨
@@ -1278,7 +1276,7 @@ function updateRetestSummary() {
 // 하나의 접이식 카드 안에 전부 모아서 보여줌 (기록이 여러 회차에 걸쳐 있어도 학생별로 흩어지지 않게)
 function renderRetestList() {
   const wrap = document.getElementById('retestListWrap');
-  if (!state.studentMemo) state.studentMemo = {};
+  if (!state.studentMemoRetest) state.studentMemoRetest = {};
   const roundLabelById = id => { const r = state.rounds.find(x => x.id === id); return r ? roundLabel(r) : '(삭제된 회차)'; };
 
   const retestStudentIds = new Set(state.retests.map(rt => rt.studentId));
@@ -1314,7 +1312,7 @@ function renderRetestList() {
             <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
           </tr>`;
         }).join('');
-        const memo = state.studentMemo[student.id] || '';
+        const memo = state.studentMemoRetest[student.id] || '';
         return `<details class="manual-fallback">
           <summary>
             <span class="reset-summary-text">${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (재시험 ${myRetests.length}건)</span>
@@ -1332,11 +1330,11 @@ function renderRetestList() {
     toast('삭제했어요.');
   }));
 
-  // 채점입력 탭의 학생별 메모와 같은 데이터(state.studentMemo)를 공유 — 학생당 메모는 하나만 존재
+  // 채점입력 탭의 메모(state.studentMemo)와는 별도 데이터(state.studentMemoRetest) — 재시험 탭 메모는 독립적으로 관리됨
   wrap.querySelectorAll('.student-memo').forEach(inp => {
     inp.addEventListener('click', e => e.stopPropagation());
     inp.addEventListener('input', () => {
-      state.studentMemo[inp.dataset.memo] = inp.value;
+      state.studentMemoRetest[inp.dataset.memo] = inp.value;
       saveState();
     });
     inp.addEventListener('keydown', e => {
@@ -1353,7 +1351,7 @@ function saveCurrentRetest(silent) {
   const round = currentRetestRound(), student = currentRetestStudent();
   if (!round || !student) { if (!silent) toast('회차와 학생을 선택해주세요.'); return false; }
   const stillWrong = [...new Set(Array.from(document.querySelectorAll('#retestGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
-  const date = document.getElementById('retestDate').value || new Date().toISOString().slice(0, 10);
+  const date = new Date().toISOString().slice(0, 10);
   const existing = state.retests.find(rt => rt.studentId === student.id && rt.roundId === round.id);
   if (existing) { existing.date = date; existing.stillWrong = stillWrong; }
   else state.retests.push({ id: uid(), studentId: student.id, roundId: round.id, date, stillWrong });
@@ -2373,6 +2371,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.gradeOverrides) data.gradeOverrides = {};
         if (!data.studentDone) data.studentDone = {};
         if (!data.studentMemo) data.studentMemo = {};
+        if (!data.studentMemoRetest) data.studentMemoRetest = {};
         if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
         state = data;
         saveState();
@@ -2398,7 +2397,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, studentDone: {}, studentMemo: {} };
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
     saveState();
     renderAll();
     toast('초기화했어요.');
@@ -2471,6 +2470,7 @@ function seedDemoData() {
     gradeOverrides: {},
     studentDone: {},
     studentMemo: {},
+    studentMemoRetest: {},
   };
   saveState();
 }

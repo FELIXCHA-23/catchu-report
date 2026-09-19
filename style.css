@@ -103,6 +103,10 @@ input[type=text], input[type=date], input[type=number], select {
 select { flex-shrink: 0; max-width: 100%; font-variant-numeric: tabular-nums; }
 /* 재시험 탭 두 번째 드롭다운(회차 선택) — "학년 · N주차 (날짜) · 오답 N개"가 다 들어가야 해서 기본 min-width보다 훨씬 넓게 */
 #retestRoundSel { min-width: 300px; }
+/* 담당 선생님 선택(헤더)·시험 학년 선택(학생 등록)은 기기/폰트에 따라 괄호 안 글자가 타이트하게 붙어서
+   실제로는 넉넉하게 안 보인다는 신고가 있었음 — 필요 폭보다 여유 있게 최소폭을 줘서 잘릴 여지를 없앰 */
+#currentTeacherSel { min-width: 230px; }
+#stuExamGrade { min-width: 220px; }
 input:focus, select:focus, button:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
