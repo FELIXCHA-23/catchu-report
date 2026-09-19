@@ -867,18 +867,16 @@ function populateScoreStudentSelect() {
   const round = state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value);
   const sel = document.getElementById('scoreStudentSel');
   const prev = sel.value;
-  let eligible;
-  if (round && round.studentId) {
-    eligible = state.students.filter(s => s.id === round.studentId);
-  } else {
-    // 시험 응시 학년(examGrade)이 따로 설정된 학생은(예: 중3인데 고1 시험지를 보는 경우) 그 학년 기준으로 매칭
-    eligible = round && round.grade ? state.students.filter(s => (s.examGrade || s.grade) === round.grade) : state.students;
-  }
+  // 개별시험지도 한번 배정됐다고 그 학생 하나로 고정해버리지 않고 같은 학년 학생을 전부 보여줌 —
+  // 실수로 잘못 배정했을 때 여기서 바로 다른 학생으로 바꿀 수 있게 함(배정된 학생이 기본 선택값)
+  // 시험 응시 학년(examGrade)이 따로 설정된 학생은(예: 중3인데 고1 시험지를 보는 경우) 그 학년 기준으로 매칭
+  let eligible = round && round.grade ? state.students.filter(s => (s.examGrade || s.grade) === round.grade) : state.students;
   eligible = filterByCurrentTeacher(eligible);
   sel.innerHTML = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
     : `<option value="">${round && round.grade ? escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
-  if (eligible.some(s => s.id === prev)) sel.value = prev;
+  if (round && round.individual && round.studentId && eligible.some(s => s.id === round.studentId)) sel.value = round.studentId;
+  else if (eligible.some(s => s.id === prev)) sel.value = prev;
 }
 
 function currentScoreRound() { return state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value); }
@@ -1102,7 +1100,24 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreGradeSel').addEventListener('change', () => { populateScoreRoundGroupSel(); renderScoreTab(); });
   document.getElementById('scoreRoundGroupSel').addEventListener('change', () => { populateScoreExamSel(); renderScoreTab(); });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
-  document.getElementById('scoreStudentSel').addEventListener('change', renderScoreTab);
+  document.getElementById('scoreStudentSel').addEventListener('change', () => {
+    // 개별시험지를 실수로 잘못된 학생에게 배정했을 때, 여기서 다른 학생을 고르면 바로 재배정함.
+    // 이미 채점해둔 기록이 있으면 지우지 않고 새 학생 쪽으로 그대로 옮겨서 다시 채점할 필요 없게 함
+    const round = currentScoreRound();
+    const newStudentId = document.getElementById('scoreStudentSel').value;
+    if (round && round.individual && round.studentId && newStudentId && round.studentId !== newStudentId) {
+      const oldStudentId = round.studentId;
+      const newStudent = state.students.find(s => s.id === newStudentId);
+      state.results.forEach(r => { if (r.studentId === oldStudentId && r.roundId === round.id) r.studentId = newStudentId; });
+      state.retests.forEach(rt => { if (rt.studentId === oldStudentId && rt.roundId === round.id) rt.studentId = newStudentId; });
+      round.studentId = newStudentId;
+      saveState();
+      renderRounds();
+      const nameTxt = newStudent ? newStudent.name : '다른 학생';
+      toast(`개별시험지를 ${nameTxt}${hasBatchim(nameTxt) ? '으로' : '로'} 다시 배정했어요.`);
+    }
+    renderScoreTab();
+  });
   document.getElementById('resetPanelFromSel').addEventListener('change', renderStudentResetPanel);
   document.getElementById('resetPanelToSel').addEventListener('change', renderStudentResetPanel);
 
