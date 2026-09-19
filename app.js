@@ -1951,8 +1951,8 @@ function renderReportTab() {
         <div class="pill-value tnum">${difficulty ? difficultyLabelByN(difficulty.avgAll) : '—'}</div>
         <div class="pill-compare">${difficulty ? `평균 ${difficulty.avgAll} / 6` : '난이도 정보 없음'}</div>
       </div>
-      <div class="pill-tile"><span class="pill-tag" style="background:${delta > 0 ? 'var(--good)' : delta < 0 ? 'var(--critical)' : 'var(--muted)'}">${delta > 0 ? '상승' : delta < 0 ? '하락' : '변화 없음'}</span>
-        <div class="pill-value tnum ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div>
+      <div class="pill-tile"><span class="pill-tag" style="background:${delta > 0 ? 'var(--good)' : 'var(--muted)'}">${delta > 0 ? '상승' : '학습 흐름'}</span>
+        <div class="pill-value tnum${delta > 0 ? ' up' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div>
         <div class="pill-compare"><span style="white-space:nowrap;">${first.label} ${first.pct}%</span><br><span style="white-space:nowrap;">→ ${last.label} ${last.pct}%</span></div>
       </div>
     </div>
