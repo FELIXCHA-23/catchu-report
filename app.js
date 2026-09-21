@@ -1801,11 +1801,26 @@ function insertAttitudePhrase(text, phrase) {
 // 성적 데이터로 판단 가능한 부분(추이·유형·난이도·재시험)은 최대한 구체적으로 자동 작성하고,
 // 수업 태도·학습 성향처럼 이 앱에 데이터가 없는 부분은 선생님이 직접 채워 넣도록 빈 자리를 남겨둠
 // (실제로 관찰하지 않은 내용을 지어내지 않기 위함)
+// 선생님 의견 맨 앞 인사말 — 학생 담당 선생님(없으면 지금 로그인한 선생님)으로 자동 작성.
+// 이름은 성을 뺀 이름으로, 받침이 있으면 "이"를 붙임 (예: 민준 → 민준이, 서연 → 서연)
+function buildGreeting(student, points) {
+  const full = displayName(student.name).trim();
+  const given = full.length === 3 ? full.slice(1) : full.length >= 4 ? full.slice(2) : full;
+  const nick = given + (hasBatchim(given) ? '이' : '');
+  const teacher = student.teacher || getCurrentTeacher();
+  const teacherTxt = teacher ? `${teacher} ${teacherTitle(teacher)}` : '선생님';
+  const dateOf = p => { const r = state.rounds.find(x => x.id === p.roundId); return r ? new Date(r.date + 'T00:00:00') : null; };
+  const d1 = dateOf(points[0]), d2 = dateOf(points[points.length - 1]);
+  const weeks = d1 && d2 ? Math.max(1, Math.round((d2 - d1) / (7 * 86400000)) + 1) : points.length;
+  return `안녕하세요! ${given} 학부모님. 캐슬수학 ${nick} 담임 ${teacherTxt}입니다.\n${nick}의 지난 ${weeks}주간 캐치유테스트 종합 보고서를 드립니다.`;
+}
+
 function buildComment(student, points, typeStats, difficulty, unitBreakdown, retest) {
   const name = displayName(student.name);
+  const greeting = buildGreeting(student, points);
   const attitudeNote = '\n\n[수업 태도 · 학습 성향]\n이 부분은 선생님이 직접 관찰하신 내용으로 채워주세요 — 수업 참여도, 질문하는 태도, 과제·재시험 성실도, 성향(꼼꼼함/급함 등) 등을 자유롭게 적어보세요.';
   if (points.length < 2) {
-    return `${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.${attitudeNote}`;
+    return `${greeting}\n\n${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.${attitudeNote}`;
   }
   const first = points[0].pct, last = points[points.length - 1].pct;
   // 처음·마지막 두 회차만 비교하면 그 사이 기복에 따라 과장돼 보일 수 있어서,
@@ -1842,7 +1857,7 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
     parts.push(`재시험에서는 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항을 정답으로 전환했어요.`);
   }
 
-  return parts.join(' ') + attitudeNote;
+  return greeting + '\n\n' + parts.join(' ') + attitudeNote;
 }
 
 // 선택된 학생이 채점 기록을 가진 회차들로 시작/종료 드롭다운을 채움 (가능하면 기존 선택 유지)
@@ -2163,7 +2178,7 @@ function renderReportTab() {
         const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest);
         const { text, stopReason } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 4000 });
         if (!text.trim()) throw new Error(stopReason === 'max_tokens' ? 'AI가 답을 쓰기 전에 길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답이 비어 있어요. 다시 눌러주세요.');
-        noteInput.value = text.trim();
+        noteInput.value = buildGreeting(student, points) + '\n\n' + text.trim();
         state.teacherNotes[studentId] = noteInput.value;
         saveState();
         out.querySelector('.print-only').innerHTML = escapeHtml(noteInput.value).replace(/\n/g, '<br>');
@@ -2188,6 +2203,7 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
   return `당신은 학생을 직접 가르치는 수학학원 담임 선생님입니다. 아래는 캐치유테스트에서 한 학생의 최근 학습 데이터예요. 이 데이터를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
 
 [문체]
+- 인사말("안녕하세요" 등)과 자기소개는 앞에 따로 붙으니 쓰지 말고, 바로 본문부터 시작하세요.
 - 데이터 리포트가 아니라 학생을 지켜본 선생님의 말투로 쓰세요. "~했어요", "~하고 있습니다", "~해 보려고 합니다"처럼 따뜻하고 정중한 존댓말을 쓰고, 필요하면 "저는", "제가"도 자연스럽게 쓰세요.
 - 숫자는 거의 쓰지 마세요. 전체 흐름을 말할 때 꼭 필요한 경우에만 숫자를 한두 개 넣고, 나머지는 말로 풀어주세요 (예: "90%" 대신 "거의 다 맞힐 만큼", "+12%p" 대신 "눈에 띄게 좋아졌어요", "정체" 대신 "조금 더 시간이 필요한"). 유형별 퍼센트를 줄줄이 나열하거나 "%p" 표기는 절대 쓰지 마세요.
 - 유형·단원 이름은 그대로 언급해도 좋지만 "OO 유형은 몇 %" 식의 나열이 아니라 "OO은 이제 믿고 맡길 만큼 탄탄해졌어요"처럼 문장 속에 녹여주세요.
