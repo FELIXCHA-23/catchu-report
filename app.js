@@ -2278,6 +2278,7 @@ async function pdfPlaceElement(pdf, el, ctx) {
       return;
     }
     // 더 쪼갤 수 없는데도 한 페이지보다 큰 경우에만 어쩔 수 없이 이미지째로 슬라이스
+    pdfFlushPage(pdf, ctx, true);
     if (ctx.pageHasContent) { pdf.addPage(); ctx.y = ctx.marginY; ctx.pageHasContent = false; }
     let heightLeft = imgH, position = ctx.marginY;
     const imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -2295,14 +2296,30 @@ async function pdfPlaceElement(pdf, el, ctx) {
   }
 
   if (ctx.pageHasContent && ctx.y + imgH > ctx.contentBottom) {
+    pdfFlushPage(pdf, ctx, true);
     pdf.addPage();
     ctx.y = ctx.marginY;
     ctx.pageHasContent = false;
   }
-  const imgData = canvas.toDataURL('image/jpeg', 0.95);
-  pdf.addImage(imgData, 'JPEG', ctx.marginX, ctx.y, ctx.contentWidth, imgH, undefined, 'FAST');
+  // 바로 그리지 않고 페이지에 모아뒀다가, 페이지가 다 찼을 때 남는 아래 여백을 요소 사이 간격에 나눠서 그림
+  (ctx.pageItems = ctx.pageItems || []).push({ imgData: canvas.toDataURL('image/jpeg', 0.95), y: ctx.y, h: imgH });
   ctx.y += imgH + ctx.gap;
   ctx.pageHasContent = true;
+}
+
+// 모아둔 요소들을 현재 PDF 페이지에 그림. justify가 켜져 있으면(=다음 페이지로 넘어가는 페이지) 아래에 남은 여백을
+// 요소 사이 간격에 골고루 나눠서 아래만 휑하지 않게 함 (간격 하나당 최대 20mm까지만 벌려서 과하게 늘어지지 않게)
+function pdfFlushPage(pdf, ctx, justify) {
+  const items = ctx.pageItems || [];
+  ctx.pageItems = [];
+  if (!items.length) return;
+  if (justify && items.length > 1) {
+    const last = items[items.length - 1];
+    const leftover = Math.max(0, ctx.contentBottom - (last.y + last.h));
+    const extra = Math.min(leftover / (items.length - 1), 20);
+    items.forEach((it, i) => { it.y += extra * i; });
+  }
+  items.forEach(it => pdf.addImage(it.imgData, 'JPEG', ctx.marginX, it.y, ctx.contentWidth, it.h, undefined, 'FAST'));
 }
 
 // 리포트 맨 앞장 — 로고/학원명, 학생 이름, 측정 기간·회차 수, 담당 강사를 보여주는 표지 한 장
@@ -2424,6 +2441,7 @@ async function exportReportPDF() {
 
     try {
       for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
+      pdfFlushPage(pdf, ctx, false);
     } finally {
       if (restoreChart !== null) chartWrap.innerHTML = restoreChart;
     }
