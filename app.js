@@ -2434,6 +2434,12 @@ async function exportReportPDF() {
           chartWrap.innerHTML = buildMainChartSVG(data.points, plotH);
           overflow = measureOverflowMM();
         }
+        // 그래프를 최소로 줄여도 의견이 첫 페이지에 안 들어가서 어차피 다음 페이지로 넘어가는 경우엔,
+        // 그래프를 괜히 납작하게 만들지 않고 원래 크기 그대로 둠
+        if (overflow > 0) {
+          chartWrap.innerHTML = restoreChart;
+          restoreChart = null;
+        }
       }
     }
 
