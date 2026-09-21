@@ -98,7 +98,7 @@ async function callClaudeAPI({ content, maxTokens = 2000 }) {
     throw new Error(msg);
   }
   const data = await res.json();
-  const text = (data.content || []).map(c => c.text || '').join('');
+  const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text || '').join('');
   return { text, stopReason: data.stop_reason };
 }
 
@@ -2151,7 +2151,8 @@ function renderReportTab() {
       status.textContent = '작성 중이에요...';
       try {
         const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest);
-        const { text } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 600 });
+        const { text, stopReason } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 4000 });
+        if (!text.trim()) throw new Error(stopReason === 'max_tokens' ? 'AI가 답을 쓰기 전에 길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답이 비어 있어요. 다시 눌러주세요.');
         noteInput.value = text.trim();
         state.teacherNotes[studentId] = noteInput.value;
         saveState();
