@@ -2026,15 +2026,15 @@ function renderReportTab() {
         <div class="pill-value tnum">${difficulty ? difficultyLabelByN(difficulty.avgAll) : '—'}</div>
         <div class="pill-compare">${difficulty ? `평균 ${difficulty.avgAll} / 6` : '난이도 정보 없음'}</div>
       </div>
-      ${delta <= -5 ? (() => {
-        // 5%p 이상 내려간 경우엔 변화량 대신 이 기간 최고 기록을 보여줌 (학부모에게 굳이 부담되는 숫자를 앞세우지 않기 위함)
+      ${delta <= 0 ? (() => {
+        // 오르지 않은 경우(0 이하)엔 변화량 대신 이 기간 최고 기록을 보여줌 (학부모에게 굳이 부담되는 숫자를 앞세우지 않기 위함)
         const best = points.reduce((a, b) => (b.pct > a.pct ? b : a), points[0]);
         return `<div class="pill-tile"><span class="pill-tag" style="background:var(--good)">최고 기록</span>
         <div class="pill-value tnum up">${best.pct}%</div>
         <div class="pill-compare"><span style="white-space:nowrap;">${best.label}</span><br><span style="white-space:nowrap;">이 기간 가장 높은 정답률</span></div>
       </div>`;
-      })() : `<div class="pill-tile"><span class="pill-tag" style="background:${delta > 0 ? 'var(--good)' : 'var(--muted)'}">${delta > 0 ? '상승' : '학습 흐름'}</span>
-        <div class="pill-value tnum${delta > 0 ? ' up' : ''}">${delta > 0 ? '+' : ''}${delta}%p</div>
+      })() : `<div class="pill-tile"><span class="pill-tag" style="background:var(--good)">상승</span>
+        <div class="pill-value tnum up">+${delta}%p</div>
         <div class="pill-compare"><span style="white-space:nowrap;">${first.label} ${first.pct}%</span><br><span style="white-space:nowrap;">→ ${last.label} ${last.pct}%</span></div>
       </div>`}
     </div>
