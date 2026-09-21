@@ -1675,9 +1675,7 @@ function buildMainChartSVG(points, plotH = 194) {
 
   return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="전체 정답률 추이">
     <line class="gridline" x1="${x0}" y1="${mapY(100,top,bottom)}" x2="${x1}" y2="${mapY(100,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(100,top,bottom)+4}" text-anchor="end">100%</text>
-    <line class="gridline" x1="${x0}" y1="${mapY(75,top,bottom)}" x2="${x1}" y2="${mapY(75,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(75,top,bottom)+4}" text-anchor="end">75%</text>
     <line class="gridline" x1="${x0}" y1="${mapY(50,top,bottom)}" x2="${x1}" y2="${mapY(50,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(50,top,bottom)+4}" text-anchor="end">50%</text>
-    <line class="gridline" x1="${x0}" y1="${mapY(25,top,bottom)}" x2="${x1}" y2="${mapY(25,top,bottom)}"/><text class="axis-label" x="${x0-6}" y="${mapY(25,top,bottom)+4}" text-anchor="end">25%</text>
     <line class="gridline" x1="${x0}" y1="${bottom}" x2="${x1}" y2="${bottom}" stroke="var(--baseline)"/><text class="axis-label" x="${x0-6}" y="${bottom+4}" text-anchor="end">0%</text>
     <path class="area-fill" d="${areaPts}"/>
     <path class="trend-line" d="M${linePts}"/>
