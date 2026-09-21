@@ -2397,22 +2397,27 @@ async function exportReportPDF() {
     if (chartCard && chartWrap && noteCard && chartIdx !== -1 && noteIdx === chartIdx + 1) {
       const refWidthPx = chartCard.getBoundingClientRect().width || 1;
       const mmPerPx = ctx.contentWidth / refWidthPx;
-      let sumMM = 0;
-      for (let i = 0; i <= noteIdx; i++) {
-        if (i > 0) sumMM += ctx.gap;
-        sumMM += blocks[i].getBoundingClientRect().height * mmPerPx;
-      }
-      const overflow = sumMM - ctx.pageContentH;
+      const measureOverflowMM = () => {
+        let sumMM = 0;
+        for (let i = 0; i <= noteIdx; i++) {
+          if (i > 0) sumMM += ctx.gap;
+          sumMM += blocks[i].getBoundingClientRect().height * mmPerPx;
+        }
+        return sumMM - ctx.pageContentH + 1; // 1mm 여유
+      };
+      let overflow = measureOverflowMM();
       if (overflow > 0) {
-        const chartMM = chartCard.getBoundingClientRect().height * mmPerPx;
-        const originalPlotH = 194, minPlotH = 70;
-        // 그래프 카드 전체 높이(chartMM) 중 overflow만큼 줄여야 하므로, 같은 비율을 그래프의
-        // 그림 영역 높이(plotH)에도 적용해서 새 plotH를 구함 — plotH만 바꾸면 카드 높이가 거의 그 비율대로 줄어듦
-        const shrinkRatio = Math.max(0, (chartMM - overflow) / chartMM);
-        const newPlotH = Math.max(minPlotH, Math.round(originalPlotH * shrinkRatio));
-        if (newPlotH < originalPlotH) {
-          restoreChart = chartWrap.innerHTML;
-          chartWrap.innerHTML = buildMainChartSVG(data.points, newPlotH);
+        const originalPlotH = 194, minPlotH = 30;
+        restoreChart = chartWrap.innerHTML;
+        // 그래프 카드는 그림 영역(plotH) 말고도 제목·여백·축 글자 높이가 고정이라 한 번에 비율로 계산하면 덜 줄어듦 —
+        // 실제로 줄여보고 다시 재서, 한 페이지에 들어올 때까지 몇 번 더 줄임 (SVG 높이는 plotH+68에 비례)
+        let plotH = originalPlotH;
+        for (let i = 0; i < 8 && overflow > 0 && plotH > minPlotH; i++) {
+          const svg = chartWrap.querySelector('svg');
+          const pxPerPlotUnit = svg ? svg.getBoundingClientRect().height / (plotH + 68) : 1;
+          plotH = Math.max(minPlotH, Math.floor(plotH - (overflow / mmPerPx) / pxPerPlotUnit));
+          chartWrap.innerHTML = buildMainChartSVG(data.points, plotH);
+          overflow = measureOverflowMM();
         }
       }
     }
