@@ -1395,11 +1395,16 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ================= 리포트 ================= */
 
 function gradeTier(pct) {
-  if (pct >= 90) return { n: 1, label: '1등급' };
-  if (pct >= 80) return { n: 2, label: '2등급' };
-  if (pct >= 70) return { n: 3, label: '3등급' };
-  if (pct >= 50) return { n: 4, label: '4등급' };
-  return { n: 5, label: '5등급' };
+  let tier;
+  if (pct >= 90) tier = { n: 1, label: '1등급' };
+  else if (pct >= 80) tier = { n: 2, label: '2등급' };
+  else if (pct >= 70) tier = { n: 3, label: '3등급' };
+  else if (pct >= 50) tier = { n: 4, label: '4등급' };
+  else tier = { n: 5, label: '5등급' };
+  // 등급 경계(90/80/70/50%) 앞뒤 3%p 안이면 한 등급으로 딱 잘라 말하기 어려우니 "1~2등급"처럼 범위로 표시
+  const boundary = [[90, 1], [80, 2], [70, 3], [50, 4]].find(([b]) => pct >= b - 3 && pct < b + 3);
+  if (boundary) tier.label = `${boundary[1]}~${boundary[1] + 1}등급`;
+  return tier;
 }
 
 // 선생님이 예상 등급을 직접 수정해둔 게 있으면 그걸 우선 사용
@@ -2004,7 +2009,8 @@ function renderReportTab() {
     </div>
     <div class="pill-row">
       <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">예상 등급</span>
-        <div class="pill-value tnum" style="font-size:21px;">${grade.label} 예상</div>
+        <div class="pill-value tnum" style="font-size:${grade.label.includes('~') ? 17 : 21}px; white-space:nowrap;">${grade.label}</div>
+        <div class="pill-compare">예상</div>
         <div class="no-print" style="margin-top:8px;">
           <select id="gradeOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
             <option value="">예상 등급 자동 계산</option>
