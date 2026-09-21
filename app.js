@@ -1405,7 +1405,8 @@ function gradeTier(pct) {
 // 선생님이 예상 등급을 직접 수정해둔 게 있으면 그걸 우선 사용
 function displayGradeTier(studentId, pct) {
   const override = state.gradeOverrides[studentId];
-  if (override) return { n: override, label: `${override}등급` };
+  // 수정값은 숫자(예: 2) 또는 범위 문자열(예: "1-2")로 저장됨 — 범위는 "1~2등급"으로 표시
+  if (override) return { n: override, label: `${String(override).replace('-', '~')}등급` };
   return gradeTier(pct);
 }
 
@@ -2003,15 +2004,11 @@ function renderReportTab() {
     </div>
     <div class="pill-row">
       <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">예상 등급</span>
-        <div class="pill-value tnum" style="font-size:21px;">${grade.n}등급 예상</div>
+        <div class="pill-value tnum" style="font-size:21px;">${grade.label} 예상</div>
         <div class="no-print" style="margin-top:8px;">
           <select id="gradeOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
             <option value="">예상 등급 자동 계산</option>
-            <option value="1"${state.gradeOverrides[studentId] === 1 ? ' selected' : ''}>1등급으로 수정</option>
-            <option value="2"${state.gradeOverrides[studentId] === 2 ? ' selected' : ''}>2등급으로 수정</option>
-            <option value="3"${state.gradeOverrides[studentId] === 3 ? ' selected' : ''}>3등급으로 수정</option>
-            <option value="4"${state.gradeOverrides[studentId] === 4 ? ' selected' : ''}>4등급으로 수정</option>
-            <option value="5"${state.gradeOverrides[studentId] === 5 ? ' selected' : ''}>5등급으로 수정</option>
+            ${['1', '2', '3', '4', '5', '1-2', '2-3', '3-4', '4-5'].map(v => `<option value="${v}"${String(state.gradeOverrides[studentId]) === v ? ' selected' : ''}>${v.replace('-', '~')}등급${v.includes('-') ? ' 예상' : '으로 수정'}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -2105,7 +2102,7 @@ function renderReportTab() {
   if (gradeOverrideSel) {
     gradeOverrideSel.addEventListener('change', () => {
       const v = gradeOverrideSel.value;
-      if (v) state.gradeOverrides[studentId] = parseInt(v, 10);
+      if (v) state.gradeOverrides[studentId] = v.includes('-') ? v : parseInt(v, 10);
       else delete state.gradeOverrides[studentId];
       saveState();
       renderReportTab();
