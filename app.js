@@ -1659,7 +1659,7 @@ function buildMainChartSVG(points, plotH = 194) {
 
   let dots = '';
   points.forEach((p, i) => {
-    const always = (i === 0 || i === n - 1) ? ' always' : '';
+    const always = ' always';
     const labelY = ys[i] - 16 < 14 ? ys[i] + 22 : ys[i] - 16;
     dots += `<g class="pt-group">
       <circle class="pt" cx="${xs[i]}" cy="${ys[i]}" r="4"/>
