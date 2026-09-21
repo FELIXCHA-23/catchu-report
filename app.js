@@ -981,7 +981,11 @@ function renderStudentResetPanel() {
   const doneHTML = doneStudents.length ? `
     <div class="reset-done-section">
       <h3 class="reset-class-title reset-done-title">완료 (${doneStudents.length}명)</h3>
-      ${doneStudents.map(s => studentCardHTML(s, true)).join('')}
+      ${groupByClass(doneStudents).map(g => `
+        <div class="reset-class-group">
+          <h3 class="reset-class-title">${escapeHtml(g.cls)}</h3>
+          ${g.students.map(s => studentCardHTML(s, true)).join('')}
+        </div>`).join('')}
     </div>` : '';
 
   wrap.innerHTML = rosterHTML + activeHTML + doneHTML;
@@ -1736,6 +1740,57 @@ function computeStrengthWatch(typeStats) {
   return { strengths, watch };
 }
 
+// "[수업 태도 · 학습 성향]" 칸에 선생님이 눌러서 고를 수 있는 예시 문장들 — 이 앱은 태도 데이터가 없으므로
+// 실제로 관찰하신 내용에 맞는 문장만 선생님이 골라 쓰도록 함 (자동으로 넣지 않음)
+const ATTITUDE_HEADING = '[수업 태도 · 학습 성향]';
+const ATTITUDE_PHRASES = [
+  { cat: '수업 참여', items: [
+    '수업 시간에 적극적으로 참여하며 배운 내용을 스스로 정리하려는 모습이 좋습니다.',
+    '모르는 부분이 생기면 주저하지 않고 질문하는 태도가 큰 장점입니다.',
+    '차분하게 수업을 듣고 필기를 성실하게 해 나가고 있습니다.',
+    '처음에는 조용했지만 최근 들어 수업 중 발표와 질문이 눈에 띄게 늘었습니다.',
+    '설명을 들으면 바로 자기 방식으로 다시 풀어보려는 의욕이 느껴집니다.',
+  ]},
+  { cat: '집중력', items: [
+    '문제를 풀 때 몰입하는 힘이 좋아 어려운 문제에도 끝까지 매달리는 편입니다.',
+    '집중이 잘 되는 날은 실력이 그대로 나오는데, 컨디션에 따라 집중의 폭이 조금 달라지는 편입니다.',
+    '수업 후반부에 집중력이 조금 흐트러지는 때가 있어 호흡을 나눠 지도하고 있습니다.',
+    '한번 집중하면 주변에 흔들리지 않고 끝까지 풀어내는 힘이 있습니다.',
+  ]},
+  { cat: '풀이 습관', items: [
+    '풀이 과정을 꼼꼼하게 적는 습관이 잡혀 있어 실수가 적은 편입니다.',
+    '이해가 빠른 만큼 서두르다 아는 문제에서 실수하는 경우가 있어, 검산하는 습관을 함께 잡아가고 있습니다.',
+    '문제를 끝까지 읽고 조건을 정리하는 연습을 하며 눈에 띄게 안정되고 있습니다.',
+    '어려운 문제 앞에서 쉽게 포기하지 않고 다른 방법을 시도해 보는 끈기가 있습니다.',
+    '풀이 과정을 생략하고 답만 적는 경향이 있어, 과정을 차근차근 쓰도록 지도하고 있습니다.',
+  ]},
+  { cat: '과제 · 재시험', items: [
+    '과제와 재시험을 빠짐없이 성실하게 해오고 있습니다.',
+    '틀린 문제를 스스로 다시 풀어보며 오답을 바로잡으려는 자세가 좋습니다.',
+    '재시험에서 이전에 틀렸던 유형을 잘 바로잡는 모습을 보여 주고 있습니다.',
+    '과제 수행이 들쑥날쑥한 편이라, 꾸준히 이어갈 수 있도록 함께 관리하고 있습니다.',
+  ]},
+  { cat: '자신감 · 성향', items: [
+    '차분하고 신중한 성향으로, 확실히 이해한 뒤에 넘어가는 학습 스타일입니다.',
+    '도전적인 문제를 좋아해서 어려운 문제를 만났을 때 오히려 의욕을 보입니다.',
+    '실력에 비해 자신감이 조금 낮은 편이라, 작은 성공 경험을 쌓아 주며 격려하고 있습니다.',
+    '성취감을 느끼면 더 열심히 하는 성향이라 목표를 작게 나누어 지도하고 있습니다.',
+    '친구들과 함께 풀이를 공유하는 활동에서 특히 이해가 깊어지는 모습을 보입니다.',
+    '스스로 목표를 세우고 꾸준히 노력하는 모습이 인상적입니다.',
+  ]},
+];
+
+// 예시 문장을 "[수업 태도 · 학습 성향]" 아래에 이어붙임 — 제목이 없으면 새로 만들고, 처음 들어 있던 안내 문구는 지움
+function insertAttitudePhrase(text, phrase) {
+  const idx = text.indexOf(ATTITUDE_HEADING);
+  if (idx < 0) return text.replace(/\s+$/, '') + '\n\n' + ATTITUDE_HEADING + '\n' + phrase;
+  const head = text.slice(0, idx + ATTITUDE_HEADING.length);
+  let body = text.slice(idx + ATTITUDE_HEADING.length).trim();
+  if (body.startsWith('이 부분은 선생님이 직접 관찰하신')) body = '';
+  if (body.includes(phrase)) return head + '\n' + body;
+  return head + '\n' + (body ? body + ' ' : '') + phrase;
+}
+
 // 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
 // 성적 데이터로 판단 가능한 부분(추이·유형·난이도·재시험)은 최대한 구체적으로 자동 작성하고,
 // 수업 태도·학습 성향처럼 이 앱에 데이터가 없는 부분은 선생님이 직접 채워 넣도록 빈 자리를 남겨둠
@@ -2000,6 +2055,11 @@ function renderReportTab() {
         <span id="aiCommentStatus" class="field-hint"></span>
       </div>
       <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
+      <details class="manual-fallback no-print attitude-picker">
+        <summary>수업 태도 · 학습 성향 예시 문장 (눌러서 추가, 아래 의견에 그대로 들어가요)</summary>
+        <p class="field-hint" style="margin:6px 0;">실제로 관찰하신 내용과 맞는 문장만 골라주세요. 추가된 뒤에도 자유롭게 고칠 수 있어요.</p>
+        ${ATTITUDE_PHRASES.map((g, gi) => `<div class="attitude-group"><b>${g.cat}</b>${g.items.map((p, pi) => `<button type="button" class="phrase-chip" data-g="${gi}" data-p="${pi}">${escapeHtml(p)}</button>`).join('')}</div>`).join('')}
+      </details>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
     ${extendChecked ? `<div class="card">
@@ -2072,6 +2132,16 @@ function renderReportTab() {
     });
   }
 
+  out.querySelectorAll('.phrase-chip').forEach(chip => chip.addEventListener('click', () => {
+    if (!noteInput) return;
+    const phrase = ATTITUDE_PHRASES[chip.dataset.g].items[chip.dataset.p];
+    noteInput.value = insertAttitudePhrase(noteInput.value, phrase);
+    state.teacherNotes[studentId] = noteInput.value;
+    saveState();
+    out.querySelector('.print-only').innerHTML = escapeHtml(noteInput.value).replace(/\n/g, '<br>');
+    chip.classList.add('used');
+  }));
+
   const aiCommentBtn = document.getElementById('aiCommentBtn');
   if (aiCommentBtn) {
     aiCommentBtn.addEventListener('click', async () => {
@@ -2104,12 +2174,20 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
   const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
   const difficultyLine = difficulty ? `난이도: 전체 평균 ${difficulty.avgAll}/6, 정답 문항 평균 ${difficulty.avgCorrect ?? '—'}, 오답 문항 평균 ${difficulty.avgWrong ?? '—'}` : '';
   const retestLine = retest && retest.items.length ? `재시험: 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환` : '';
-  return `다음은 수학학원 캐치유테스트에서 한 학생의 최근 학습 데이터 요약입니다. 이 데이터를 바탕으로 학부모님께 보여드릴 "선생님 의견" 문단을 자연스러운 한국어로 4~6문장 작성해주세요.
-- 잘하고 있는 부분과 보완이 필요한 부분을 구체적인 유형명과 수치를 함께 언급하세요.
-- 난이도·재시험 데이터가 있으면 그 내용도 자연스럽게 녹여주세요(예: 어려운 문제에서의 경향, 재시험을 통한 보완 정도).
-- 앞으로의 지도 계획을 한 문장 포함해주세요.
-- 마지막 줄에 "[수업 태도 · 학습 성향]"이라는 제목만 쓰고, 그 내용은 절대 지어내지 마세요 — 선생님이 직접 관찰한 내용을 적을 수 있도록 빈 줄로 남겨두세요. 이 앱은 수업 태도 데이터를 갖고 있지 않으니, 성적만으로 태도나 성향을 추측해서 쓰면 안 됩니다.
-- 너무 딱딱하지 않으면서도 전문적인 톤으로 써주세요. 결과는 문단 텍스트만 출력하세요 (따옴표, 마크다운, 제목 없이 — 단, 마지막의 "[수업 태도 · 학습 성향]" 제목 줄은 그대로 출력하세요).
+  return `당신은 학생을 직접 가르치는 수학학원 담임 선생님입니다. 아래는 캐치유테스트에서 한 학생의 최근 학습 데이터예요. 이 데이터를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
+
+[문체]
+- 데이터 리포트가 아니라 학생을 지켜본 선생님의 말투로 쓰세요. "~했어요", "~하고 있습니다", "~해 보려고 합니다"처럼 따뜻하고 정중한 존댓말을 쓰고, 필요하면 "저는", "제가"도 자연스럽게 쓰세요.
+- 숫자는 거의 쓰지 마세요. 전체 흐름을 말할 때 꼭 필요한 경우에만 숫자를 한두 개 넣고, 나머지는 말로 풀어주세요 (예: "90%" 대신 "거의 다 맞힐 만큼", "+12%p" 대신 "눈에 띄게 좋아졌어요", "정체" 대신 "조금 더 시간이 필요한"). 유형별 퍼센트를 줄줄이 나열하거나 "%p" 표기는 절대 쓰지 마세요.
+- 유형·단원 이름은 그대로 언급해도 좋지만 "OO 유형은 몇 %" 식의 나열이 아니라 "OO은 이제 믿고 맡길 만큼 탄탄해졌어요"처럼 문장 속에 녹여주세요.
+- "하락", "떨어졌다", "부진", "취약" 같은 딱딱하거나 부정적인 단어는 피하고, 보완할 점은 "다음에 함께 채워갈 부분", "조금만 더 다듬으면 좋아질 부분"처럼 앞으로의 과제로 표현하세요. 그렇다고 사실과 다르게 과장하거나 근거 없이 칭찬하지는 마세요.
+
+[내용]
+- 잘하고 있는 점을 먼저, 그다음 보완할 점, 마지막에 앞으로의 지도 계획을 한 문장으로 쓰세요.
+- 난이도·재시험 데이터가 있으면 숫자 대신 경향으로 자연스럽게 녹여주세요 (예: 어려운 문제에서 조금 흔들리는 모습, 재시험에서 틀렸던 문제를 잘 바로잡은 모습).
+- 데이터에 없는 사실(수업 태도, 숙제, 성격, 있었던 일 등)은 절대 지어내지 마세요. 이 앱은 그런 정보를 갖고 있지 않습니다.
+- 마지막 줄에 "[수업 태도 · 학습 성향]"이라는 제목만 쓰고, 그 아래는 선생님이 직접 채울 수 있도록 비워두세요.
+- 결과는 본문 텍스트만 출력하세요 (따옴표, 마크다운, 별도 제목 없이 — 단, 마지막의 "[수업 태도 · 학습 성향]" 제목 줄은 그대로 출력하세요).
 
 학생: ${displayName(student.name)}
 측정 기간: ${period}

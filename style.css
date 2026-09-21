@@ -286,6 +286,16 @@ textarea.teacher-note {
   resize: vertical;
 }
 .print-only { display: none; }
+.attitude-picker { margin-top: 10px; }
+.attitude-group { margin: 10px 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.attitude-group > b { font-size: 12.5px; color: var(--muted); }
+.phrase-chip {
+  font-family: inherit; font-size: 12.5px; line-height: 1.5; text-align: left; cursor: pointer;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-page); color: var(--ink);
+  max-width: 100%;
+}
+.phrase-chip:hover { border-color: var(--accent); }
+.phrase-chip.used { background: var(--good-bg); border-color: var(--good); color: var(--good); }
 
 .chart-wrap { width: 100%; overflow-x: auto; }
 .chart-wrap svg { width: 100%; height: auto; display: block; min-width: 420px; }
