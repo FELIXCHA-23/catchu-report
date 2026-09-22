@@ -22,6 +22,13 @@ const CLASS_TEACHER_MAP = {
 };
 function teacherTitle(name) { return name === '차성빈' ? '원장' : '선생님'; }
 
+// 학부모용 화면·PDF에 선생님 이름을 영어 이름과 함께 "차성빈(Felix)" 형식으로 보여줌
+const TEACHER_ENGLISH_NAME = { '차성빈': 'Felix', '문태민': 'Lucas', '방희진': 'Celina', '목윤재': 'Dave', '오민경': 'Lia' };
+function teacherDisplayName(name) {
+  const en = TEACHER_ENGLISH_NAME[name];
+  return en ? `${name}(${en})` : name;
+}
+
 // 이 컴퓨터에서 로그인한 선생님이 누구인지 (계산기록/백업 파일에는 안 들어가고, 이 브라우저에만 저장됨)
 const CURRENT_TEACHER_KEY = 'catchu_current_teacher';
 function getCurrentTeacher() { return localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
@@ -1814,7 +1821,7 @@ function buildGreeting(student, points) {
   const given = full.length === 3 ? full.slice(1) : full.length >= 4 ? full.slice(2) : full;
   const nick = given + (hasBatchim(given) ? '이' : '');
   const teacher = student.teacher || getCurrentTeacher();
-  const teacherTxt = teacher ? `${teacher} ${teacherTitle(teacher)}` : '선생님';
+  const teacherTxt = teacher ? `${teacherDisplayName(teacher)} ${teacherTitle(teacher)}` : '선생님';
   const dateOf = p => { const r = state.rounds.find(x => x.id === p.roundId); return r ? new Date(r.date + 'T00:00:00') : null; };
   const d1 = dateOf(points[0]), d2 = dateOf(points[points.length - 1]);
   const weeks = d1 && d2 ? Math.max(1, Math.round((d2 - d1) / (7 * 86400000)) + 1) : points.length;
@@ -2035,7 +2042,7 @@ function renderReportTab() {
         <div class="meta">
           <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
           <div>${[student.school, student.grade].filter(Boolean).map(escapeHtml).join(' ')}</div>
-          ${student.teacher ? `<div>담임: ${escapeHtml(student.teacher)} ${teacherTitle(student.teacher)}</div>` : ''}
+          ${student.teacher ? `<div>담임: ${escapeHtml(teacherDisplayName(student.teacher))} ${teacherTitle(student.teacher)}</div>` : ''}
           <div>기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
         </div>
       </div>
@@ -2344,7 +2351,7 @@ function pdfFlushPage(pdf, ctx, justify) {
 // 학원의 상징색인 빨간색 포인트 라인 + 페이지 대부분을 채우는 큰 테두리 박스로 격식있게 구성
 async function pdfAddCoverPage(pdf, student, points) {
   const period = points.length ? `${points[0].date} – ${points[points.length - 1].date}` : '';
-  const teacherTxt = student.teacher ? escapeHtml(student.teacher) + ' ' + teacherTitle(student.teacher) : '-';
+  const teacherTxt = student.teacher ? escapeHtml(teacherDisplayName(student.teacher)) + ' ' + teacherTitle(student.teacher) : '-';
   // "서인천 고1"처럼 띄어쓰지 않고 "서인천고1"처럼 붙여서 씀
   const schoolGradeTxt = escapeHtml([student.school, student.grade].filter(Boolean).join('')) || '-';
   const wrap = document.createElement('div');
