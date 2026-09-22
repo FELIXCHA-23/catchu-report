@@ -208,6 +208,14 @@ let pendingCompetency = null;
 // 채점 입력에서 마지막으로 저장한 학생 — 재시험 탭으로 넘어갔을 때 그 학생이 바로 선택되어 있게 씀
 let lastScoredStudentId = null;
 
+// 보고서 탭의 "기간" 드롭다운 기본값 — 이번 배포 기준 보고서 발행 기간(8-3주차~9-3주차)을 고정으로 기본 설정함.
+// 다음 달 배치에는 이 두 날짜만 그때 기간의 시작/끝 회차 날짜로 바꿔주면 됨.
+const DEFAULT_REPORT_FROM_DATE = '2026-08-21'; // 8-3주차
+const DEFAULT_REPORT_TO_DATE = '2026-09-18'; // 9-3주차
+// 보고서 탭에서 마지막으로 기간을 세팅해준 학생 — 같은 학생이면 선생님이 고른 기간을 유지하고,
+// 다른 학생으로 바뀌면 항상 위 기본 기간으로 다시 리셋되게 함
+let lastReportRangeStudentId = undefined;
+
 /* ---------- state ---------- */
 
 function loadState() {
@@ -1865,12 +1873,24 @@ function populateReportRoundSelects() {
   const toSel = document.getElementById('reportToSel');
   const rounds = studentId ? studentScoredRounds(studentId) : [];
   const opts = rounds.map(x => `<option value="${x.round.id}">${escapeHtml(x.label)} (${shortDate(x.round.date)})</option>`).join('');
+  const studentChanged = studentId !== lastReportRangeStudentId;
+  lastReportRangeStudentId = studentId;
   const prevFrom = fromSel.value, prevTo = toSel.value;
   fromSel.innerHTML = opts;
   toSel.innerHTML = opts;
   if (!rounds.length) return;
-  fromSel.value = rounds.some(x => x.round.id === prevFrom) ? prevFrom : rounds[0].round.id;
-  toSel.value = rounds.some(x => x.round.id === prevTo) ? prevTo : rounds[rounds.length - 1].round.id;
+  if (studentChanged) {
+    // 학생이 바뀌면 이번 보고서 기본 기간(8-3주차~9-3주차)으로 다시 맞춤 — 그 기간에 있는 회차만 걸러서
+    // 처음/끝을 정하므로, 그 학생이 8-3주차나 9-3주차에 채점 기록이 없으면 있는 데이터 선에서 자동으로 줄어듦
+    const inWindow = rounds.filter(x => x.round.date >= DEFAULT_REPORT_FROM_DATE && x.round.date <= DEFAULT_REPORT_TO_DATE);
+    const fromR = inWindow.length ? inWindow[0] : rounds[0];
+    const toR = inWindow.length ? inWindow[inWindow.length - 1] : rounds[rounds.length - 1];
+    fromSel.value = fromR.round.id;
+    toSel.value = toR.round.id;
+  } else {
+    fromSel.value = rounds.some(x => x.round.id === prevFrom) ? prevFrom : rounds[0].round.id;
+    toSel.value = rounds.some(x => x.round.id === prevTo) ? prevTo : rounds[rounds.length - 1].round.id;
+  }
 }
 
 function renderReportTab() {
