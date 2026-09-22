@@ -2338,11 +2338,15 @@ function pdfFlushPage(pdf, ctx, justify) {
   const items = ctx.pageItems || [];
   ctx.pageItems = [];
   if (!items.length) return;
-  if (justify && items.length > 1) {
+  if (justify) {
     const last = items[items.length - 1];
     const leftover = Math.max(0, ctx.contentBottom - (last.y + last.h));
-    const extra = Math.min(leftover / (items.length - 1), 20);
-    items.forEach((it, i) => { it.y += extra * i; });
+    const gapCount = items.length - 1;
+    // 여백을 전부 요소 사이 간격에 몰아 위아래로 꽉 채우면 페이지가 너무 퍼져 보여서, 간격은 조금만
+    // 벌리고(최대 10mm) 남는 여백은 블록 전체를 아래로 내려 페이지 가운데 쪽으로 모음
+    const gapExtra = gapCount > 0 ? Math.min(leftover / gapCount, 10) : 0;
+    const topOffset = (leftover - gapExtra * gapCount) / 2;
+    items.forEach((it, i) => { it.y += topOffset + gapExtra * i; });
   }
   items.forEach(it => pdf.addImage(it.imgData, 'JPEG', ctx.marginX, it.y, ctx.contentWidth, it.h, undefined, 'FAST'));
 }
