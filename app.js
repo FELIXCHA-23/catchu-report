@@ -2054,14 +2054,6 @@ function renderReportTab() {
         <div class="pill-compare"><span style="white-space:nowrap;">${first.label} ${first.pct}%</span><br><span style="white-space:nowrap;">→ ${last.label} ${last.pct}%</span></div>
       </div>`}
     </div>
-    <div class="card">
-      <h2>대표 강점 · 취약 유형</h2>
-      <p class="card-sub">선택한 기간 기준</p>
-      <div class="summary-cols">
-        <div class="summary-box good"><h3>대표 강점 유형</h3>${strengthsHtml}</div>
-        <div class="summary-box watch"><h3>대표 취약 유형</h3>${watchHtml}</div>
-      </div>
-    </div>
     <div class="card" id="trendChartCard">
       <h2>전체 정답률 추이</h2>
       <p class="card-sub">회차별 ${points[points.length-1].total}문항 기준</p>
@@ -2084,6 +2076,14 @@ function renderReportTab() {
         ${ATTITUDE_PHRASES.map((g, gi) => `<div class="attitude-group"><b>${g.cat}</b>${g.items.map((p, pi) => `<button type="button" class="phrase-chip" data-g="${gi}" data-p="${pi}">${escapeHtml(p)}</button>`).join('')}</div>`).join('')}
       </details>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
+    </div>
+    <div class="card">
+      <h2>대표 강점 · 취약 유형</h2>
+      <p class="card-sub">선택한 기간 기준</p>
+      <div class="summary-cols">
+        <div class="summary-box good"><h3>대표 강점 유형</h3>${strengthsHtml}</div>
+        <div class="summary-box watch"><h3>대표 취약 유형</h3>${watchHtml}</div>
+      </div>
     </div>
     ${extendChecked ? `<div class="card">
       <h2>추가 추이 그래프</h2>
@@ -2447,7 +2447,17 @@ async function exportReportPDF() {
     }
 
     try {
-      for (const el of blocks) await pdfPlaceElement(pdf, el, ctx);
+      for (let i = 0; i < blocks.length; i++) {
+        await pdfPlaceElement(pdf, blocks[i], ctx);
+        // 선생님 의견 바로 다음 블록(대표 강점·취약 유형)은 여백이 남더라도 항상 새 페이지에서 시작하게 함 —
+        // "예상등급~전체 정답률 추이~선생님 의견"까지가 한 페이지, 그다음부터 새 페이지로 딱 나뉘도록
+        if (i === noteIdx && i < blocks.length - 1) {
+          pdfFlushPage(pdf, ctx, false);
+          pdf.addPage();
+          ctx.y = ctx.marginY;
+          ctx.pageHasContent = false;
+        }
+      }
       pdfFlushPage(pdf, ctx, false);
     } finally {
       if (restoreChart !== null) chartWrap.innerHTML = restoreChart;
