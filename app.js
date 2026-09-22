@@ -2396,6 +2396,9 @@ async function exportReportPDF() {
 
     await pdfAddCoverPage(pdf, data.student, data.points);
     pdf.addPage();
+    // 겉표지 뒷면이 비도록 빈 페이지를 하나 더 끼워 넣음 — 양면 인쇄해도 겉표지는 단면으로 나오고,
+    // 본문은 그다음 용지 앞면부터 시작하게 됨
+    pdf.addPage();
 
     // 카드(섹션) 단위로 따로 캡처해서, 한 페이지에 안 들어가면 카드 안의 항목(문항/행) 단위까지
     // 재귀적으로 쪼개 붙여서 어중간하게 잘리는 부분 없이 항상 항목 경계에서만 페이지가 넘어가게 함
