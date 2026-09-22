@@ -2496,12 +2496,11 @@ async function exportReportPDF() {
     // 3번째 페이지(겉표지·공백페이지 다음, 본문 시작)부터 페이지 하단 가운데에 쪽번호를 매김 —
     // 겉표지·공백페이지는 숫자를 안 매기므로 본문 기준 1페이지부터 시작함
     const totalPages = pdf.getNumberOfPages();
-    const contentPageCount = totalPages - 2;
     for (let p = 3; p <= totalPages; p++) {
       pdf.setPage(p);
       pdf.setFontSize(9);
       pdf.setTextColor(150, 150, 150);
-      pdf.text(`${p - 2} / ${contentPageCount}`, 105, 291, { align: 'center' });
+      pdf.text(`- ${p - 2} -`, 105, 291, { align: 'center' });
     }
 
     // 파일명 맨 앞에 "발행월"을 붙임 — 리포트에 포함된 마지막 회차가 속한 달 기준
