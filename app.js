@@ -2345,6 +2345,8 @@ function pdfFlushPage(pdf, ctx, justify) {
 async function pdfAddCoverPage(pdf, student, points) {
   const period = points.length ? `${points[0].date} – ${points[points.length - 1].date}` : '';
   const teacherTxt = student.teacher ? escapeHtml(student.teacher) + ' ' + teacherTitle(student.teacher) : '-';
+  // "서인천 고1"처럼 띄어쓰지 않고 "서인천고1"처럼 붙여서 씀
+  const schoolGradeTxt = escapeHtml([student.school, student.grade].filter(Boolean).join('')) || '-';
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed; left:-99999px; top:0;';
   wrap.innerHTML = `
@@ -2365,6 +2367,7 @@ async function pdfAddCoverPage(pdf, student, points) {
           <div style="width:100%;">
             <div style="border-top:1px solid #ddddd3; margin-bottom:22px;"></div>
             <div style="display:flex; justify-content:center; gap:64px; font-size:14px; color:#3a3a3a; text-align:center;">
+              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">학교/학년</div>${schoolGradeTxt}</div>
               <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">측정 기간</div>${escapeHtml(period)} (${points.length}회차)</div>
               <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">담임</div>${teacherTxt}</div>
             </div>
