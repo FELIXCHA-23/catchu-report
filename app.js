@@ -36,10 +36,13 @@ function setCurrentTeacher(t) {
   if (t) localStorage.setItem(CURRENT_TEACHER_KEY, t);
   else localStorage.removeItem(CURRENT_TEACHER_KEY);
 }
-// 담당 선생님이 선택되어 있으면 그 선생님 학생만 남기고, 선택 안 했으면(전체 보기) 그대로 반환
+// 원장님처럼 모든 학년·모든 학생을 채점/조회해야 하는 선생님 — 이 선생님을 고르면 담당 학생 제한 없이 전체가 다 보임
+const ALL_ACCESS_TEACHERS = ['차성빈'];
+function hasAllAccess() { return ALL_ACCESS_TEACHERS.includes(getCurrentTeacher()); }
+// 담당 선생님이 선택되어 있으면 그 선생님 학생만 남기고, 선택 안 했거나 전체 권한 선생님이면 그대로 반환
 function filterByCurrentTeacher(students) {
   const t = getCurrentTeacher();
-  return t ? students.filter(s => s.teacher === t) : students;
+  return t && !hasAllAccess() ? students.filter(s => s.teacher === t) : students;
 }
 
 // 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
@@ -841,7 +844,7 @@ function populateScoreGradeSel() {
   // 담당 선생님이 선택돼 있으면, 그 선생님 학생 중 아무도 없는 학년은 다운드롭에서 아예 뺌
   // (시험 응시 학년이 따로 설정된 학생은 examGrade 기준으로 매칭 — 위 채점 대상 매칭 로직과 동일)
   const myStudents = filterByCurrentTeacher(state.students);
-  const grades = getCurrentTeacher()
+  const grades = getCurrentTeacher() && !hasAllAccess()
     ? roundGrades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g))
     : roundGrades;
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
@@ -1215,7 +1218,7 @@ function populateRetestStudentSelect() {
   const currentTeacher = getCurrentTeacher();
   const studentIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.studentId));
   const students = state.students
-    .filter(s => studentIdsWithWrong.has(s.id) && (!currentTeacher || s.teacher === currentTeacher))
+    .filter(s => studentIdsWithWrong.has(s.id) && (!currentTeacher || hasAllAccess() || s.teacher === currentTeacher))
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   sel.innerHTML = students.length
     ? students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
