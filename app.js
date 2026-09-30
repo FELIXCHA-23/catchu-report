@@ -268,6 +268,18 @@ function displayName(name) {
   return String(name || '').replace(/\d+$/, '');
 }
 
+// 학교명 끝의 초/중/고와 학년 앞의 초/중/고가 겹치면(예: "도담초"+"초5") 하나로 합침 — "도담초5"
+function schoolGradeText(school, grade) {
+  school = String(school || '').trim();
+  grade = String(grade || '').trim();
+  if (!school) return grade || '-';
+  if (!grade) return school;
+  if (['초', '중', '고'].includes(school.slice(-1)) && school.slice(-1) === grade.slice(0, 1)) {
+    return school + grade.slice(1);
+  }
+  return school + grade;
+}
+
 function hasBatchim(str) {
   const c = String(str).trim().slice(-1).charCodeAt(0);
   if (c < 0xAC00 || c > 0xD7A3) return false;
@@ -2360,7 +2372,7 @@ async function pdfAddCoverPage(pdf, student, points) {
   const period = points.length ? `${points[0].date} – ${points[points.length - 1].date}` : '';
   const teacherTxt = student.teacher ? escapeHtml(teacherDisplayName(student.teacher)) + ' ' + teacherTitle(student.teacher) : '-';
   // "서인천 고1"처럼 띄어쓰지 않고 "서인천고1"처럼 붙여서 씀
-  const schoolGradeTxt = escapeHtml([student.school, student.grade].filter(Boolean).join('')) || '-';
+  const schoolGradeTxt = escapeHtml(schoolGradeText(student.school, student.grade));
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed; left:-99999px; top:0;';
   wrap.innerHTML = `
