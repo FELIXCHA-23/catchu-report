@@ -16,7 +16,7 @@ const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALP
 const TEACHER_OPTIONS = ['차성빈','방희진','문태민','목윤재','오민경'];
 const CLASS_TEACHER_MAP = {
   'MM1-BETA': '문태민', 'MM2-GAMMA': '문태민', 'TM1-GAMMA': '문태민', 'TM2-GAMMA': '문태민',
-  'MP-INDV1': '문태민', 'MP-INDV2': '문태민', 'TP-INDV1': '오민경', 'TP-INDV2': '오민경',
+  'MP-INDV1': '문태민', 'TP-INDV1': '문태민', 'MP-INDV2': '오민경', 'TP-INDV2': '오민경',
   'MH1-GAMMA': '목윤재', 'TH1-BETA': '목윤재', 'MM3-BETA': '목윤재', 'TM3-GAMMA': '목윤재',
   'MH2-GAMMA': '방희진', 'TH2-BETA': '방희진',
   'MH2-ALPHA': '차성빈', 'TH1-ALPHA': '차성빈', 'SH2-ALPHA': '차성빈',
@@ -2605,6 +2605,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     toast('백업 파일을 내보냈어요.');
+  });
+
+  document.getElementById('exportRosterBtn').addEventListener('click', () => {
+    // 채점 기록 없이 이름·학교·학년·반·담당 선생님만 담음 — "학생 명단 가져오기"에 그대로 쓸 수 있는 형식
+    const roster = filterByCurrentTeacher(state.students).map(s => ({
+      name: s.name, grade: s.grade || '', school: s.school || '', class: s.class || '', teacher: s.teacher || '',
+    }));
+    const blob = new Blob([JSON.stringify(roster, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date();
+    const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    a.href = url; a.download = `${stamp}학생명단${getCurrentTeacher() ? '_' + getCurrentTeacher() : ''}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(`학생 명단 ${roster.length}명을 내보냈어요.`);
   });
 
   document.getElementById('importFile').addEventListener('change', e => {
