@@ -1878,59 +1878,78 @@ function computeStrengthWatch(typeStats) {
 // "[수업 태도 · 학습 성향]" 칸에 선생님이 눌러서 고를 수 있는 예시 문장들 — 이 앱은 태도 데이터가 없으므로
 // 실제로 관찰하신 내용에 맞는 문장만 선생님이 골라 쓰도록 함 (자동으로 넣지 않음)
 const ATTITUDE_HEADING = '[수업 태도 · 학습 성향]';
+// text: 처음 넣을 때 쓰는 완결된 문장("-습니다." 등으로 끝남)
+// clause: 뒤에 다른 문장을 같은 결로 이어 붙일 때 쓰는 연결형("-고,"로 끝남 — "-습니다/-ㅂ니다"를 떼고 고쳐 씀)
+// polarity: 'positive'(강점·장점) / 'caution'(보완이 필요한 부분) — 문장을 이어 붙일 때 결이 바뀌는지 판단하는 데 씀
 const ATTITUDE_PHRASES = [
   { cat: '수업 참여', items: [
-    '수업 시간에 적극적으로 참여하며 배운 내용을 스스로 정리하려는 모습이 좋습니다.',
-    '모르는 부분이 생기면 주저하지 않고 질문하는 태도가 큰 장점입니다.',
-    '차분하게 수업을 듣고 필기를 성실하게 해 나가고 있습니다.',
-    '처음에는 조용했지만 최근 들어 수업 중 발표와 질문이 눈에 띄게 늘었습니다.',
-    '설명을 들으면 바로 자기 방식으로 다시 풀어보려는 의욕이 느껴집니다.',
+    { text: '수업 시간에 적극적으로 참여하며 배운 내용을 스스로 정리하려는 모습이 좋습니다.', clause: '수업 시간에 적극적으로 참여하며 배운 내용을 스스로 정리하려는 모습이 좋고,', polarity: 'positive' },
+    { text: '모르는 부분이 생기면 주저하지 않고 질문하는 태도가 큰 장점입니다.', clause: '모르는 부분이 생기면 주저하지 않고 질문하는 태도가 큰 장점이고,', polarity: 'positive' },
+    { text: '차분하게 수업을 듣고 필기를 성실하게 해 나가고 있습니다.', clause: '차분하게 수업을 듣고 필기를 성실하게 해 나가고 있고,', polarity: 'positive' },
+    { text: '처음에는 조용했지만 최근 들어 수업 중 발표와 질문이 눈에 띄게 늘었습니다.', clause: '처음에는 조용했지만 최근 들어 수업 중 발표와 질문이 눈에 띄게 늘었고,', polarity: 'positive' },
+    { text: '설명을 들으면 바로 자기 방식으로 다시 풀어보려는 의욕이 느껴집니다.', clause: '설명을 들으면 바로 자기 방식으로 다시 풀어보려는 의욕이 느껴지고,', polarity: 'positive' },
   ]},
   { cat: '집중력', items: [
-    '문제를 풀 때 몰입하는 힘이 좋아 어려운 문제에도 끝까지 매달리는 편입니다.',
-    '집중이 잘 되는 날은 실력이 그대로 나오는데, 컨디션에 따라 집중의 폭이 조금 달라지는 편입니다.',
-    '수업 후반부에 집중력이 조금 흐트러지는 때가 있어 호흡을 나눠 지도하고 있습니다.',
-    '한번 집중하면 주변에 흔들리지 않고 끝까지 풀어내는 힘이 있습니다.',
+    { text: '문제를 풀 때 몰입하는 힘이 좋아 어려운 문제에도 끝까지 매달리는 편입니다.', clause: '문제를 풀 때 몰입하는 힘이 좋아 어려운 문제에도 끝까지 매달리는 편이고,', polarity: 'positive' },
+    { text: '집중이 잘 되는 날은 실력이 그대로 나오는데, 컨디션에 따라 집중의 폭이 조금 달라지는 편입니다.', clause: '집중이 잘 되는 날은 실력이 그대로 나오는데, 컨디션에 따라 집중의 폭이 조금 달라지는 편이고,', polarity: 'caution' },
+    { text: '수업 후반부에 집중력이 조금 흐트러지는 때가 있어 호흡을 나눠 지도하고 있습니다.', clause: '수업 후반부에 집중력이 조금 흐트러지는 때가 있어 호흡을 나눠 지도하고 있고,', polarity: 'caution' },
+    { text: '한번 집중하면 주변에 흔들리지 않고 끝까지 풀어내는 힘이 있습니다.', clause: '한번 집중하면 주변에 흔들리지 않고 끝까지 풀어내는 힘이 있고,', polarity: 'positive' },
   ]},
   { cat: '풀이 습관', items: [
-    '풀이 과정을 꼼꼼하게 적는 습관이 잡혀 있어 실수가 적은 편입니다.',
-    '이해가 빠른 만큼 서두르다 아는 문제에서 실수하는 경우가 있어, 검산하는 습관을 함께 잡아가고 있습니다.',
-    '문제를 끝까지 읽고 조건을 정리하는 연습을 하며 눈에 띄게 안정되고 있습니다.',
-    '어려운 문제 앞에서 쉽게 포기하지 않고 다른 방법을 시도해 보는 끈기가 있습니다.',
-    '풀이 과정을 생략하고 답만 적는 경향이 있어, 과정을 차근차근 쓰도록 지도하고 있습니다.',
+    { text: '풀이 과정을 꼼꼼하게 적는 습관이 잡혀 있어 실수가 적은 편입니다.', clause: '풀이 과정을 꼼꼼하게 적는 습관이 잡혀 있어 실수가 적은 편이고,', polarity: 'positive' },
+    { text: '이해가 빠른 만큼 서두르다 아는 문제에서 실수하는 경우가 있어, 검산하는 습관을 함께 잡아가고 있습니다.', clause: '이해가 빠른 만큼 서두르다 아는 문제에서 실수하는 경우가 있어, 검산하는 습관을 함께 잡아가고 있고,', polarity: 'caution' },
+    { text: '문제를 끝까지 읽고 조건을 정리하는 연습을 하며 눈에 띄게 안정되고 있습니다.', clause: '문제를 끝까지 읽고 조건을 정리하는 연습을 하며 눈에 띄게 안정되고 있고,', polarity: 'positive' },
+    { text: '어려운 문제 앞에서 쉽게 포기하지 않고 다른 방법을 시도해 보는 끈기가 있습니다.', clause: '어려운 문제 앞에서 쉽게 포기하지 않고 다른 방법을 시도해 보는 끈기가 있고,', polarity: 'positive' },
+    { text: '풀이 과정을 생략하고 답만 적는 경향이 있어, 과정을 차근차근 쓰도록 지도하고 있습니다.', clause: '풀이 과정을 생략하고 답만 적는 경향이 있어, 과정을 차근차근 쓰도록 지도하고 있고,', polarity: 'caution' },
   ]},
   { cat: '과제 · 재시험', items: [
-    '과제와 재시험을 빠짐없이 성실하게 해오고 있습니다.',
-    '틀린 문제를 스스로 다시 풀어보며 오답을 바로잡으려는 자세가 좋습니다.',
-    '재시험에서 이전에 틀렸던 유형을 잘 바로잡는 모습을 보여 주고 있습니다.',
-    '과제 수행이 들쑥날쑥한 편이라, 꾸준히 이어갈 수 있도록 함께 관리하고 있습니다.',
+    { text: '과제와 재시험을 빠짐없이 성실하게 해오고 있습니다.', clause: '과제와 재시험을 빠짐없이 성실하게 해오고 있고,', polarity: 'positive' },
+    { text: '틀린 문제를 스스로 다시 풀어보며 오답을 바로잡으려는 자세가 좋습니다.', clause: '틀린 문제를 스스로 다시 풀어보며 오답을 바로잡으려는 자세가 좋고,', polarity: 'positive' },
+    { text: '재시험에서 이전에 틀렸던 유형을 잘 바로잡는 모습을 보여 주고 있습니다.', clause: '재시험에서 이전에 틀렸던 유형을 잘 바로잡는 모습을 보여 주고 있고,', polarity: 'positive' },
+    { text: '과제 수행이 들쑥날쑥한 편이라, 꾸준히 이어갈 수 있도록 함께 관리하고 있습니다.', clause: '과제 수행이 들쑥날쑥한 편이라, 꾸준히 이어갈 수 있도록 함께 관리하고 있고,', polarity: 'caution' },
   ]},
   { cat: '자신감 · 성향', items: [
-    '차분하고 신중한 성향으로, 확실히 이해한 뒤에 넘어가는 학습 스타일입니다.',
-    '도전적인 문제를 좋아해서 어려운 문제를 만났을 때 오히려 의욕을 보입니다.',
-    '실력에 비해 자신감이 조금 낮은 편이라, 작은 성공 경험을 쌓아 주며 격려하고 있습니다.',
-    '성취감을 느끼면 더 열심히 하는 성향이라 목표를 작게 나누어 지도하고 있습니다.',
-    '친구들과 함께 풀이를 공유하는 활동에서 특히 이해가 깊어지는 모습을 보입니다.',
-    '스스로 목표를 세우고 꾸준히 노력하는 모습이 인상적입니다.',
+    { text: '차분하고 신중한 성향으로, 확실히 이해한 뒤에 넘어가는 학습 스타일입니다.', clause: '차분하고 신중한 성향으로, 확실히 이해한 뒤에 넘어가는 학습 스타일이고,', polarity: 'positive' },
+    { text: '도전적인 문제를 좋아해서 어려운 문제를 만났을 때 오히려 의욕을 보입니다.', clause: '도전적인 문제를 좋아해서 어려운 문제를 만났을 때 오히려 의욕을 보이고,', polarity: 'positive' },
+    { text: '실력에 비해 자신감이 조금 낮은 편이라, 작은 성공 경험을 쌓아 주며 격려하고 있습니다.', clause: '실력에 비해 자신감이 조금 낮은 편이라, 작은 성공 경험을 쌓아 주며 격려하고 있고,', polarity: 'caution' },
+    { text: '성취감을 느끼면 더 열심히 하는 성향이라 목표를 작게 나누어 지도하고 있습니다.', clause: '성취감을 느끼면 더 열심히 하는 성향이라 목표를 작게 나누어 지도하고 있고,', polarity: 'positive' },
+    { text: '친구들과 함께 풀이를 공유하는 활동에서 특히 이해가 깊어지는 모습을 보입니다.', clause: '친구들과 함께 풀이를 공유하는 활동에서 특히 이해가 깊어지는 모습을 보이고,', polarity: 'positive' },
+    { text: '스스로 목표를 세우고 꾸준히 노력하는 모습이 인상적입니다.', clause: '스스로 목표를 세우고 꾸준히 노력하는 모습이 인상적이고,', polarity: 'positive' },
   ]},
 ];
 
-// 문장 두 개 이상을 고르면 그냥 나란히 찍어 붙이지 않고, 자연스러운 접속어로 이어서 한 문단처럼 읽히게 함
-// (이미 쓰인 문장 수에 맞춰 접속어를 돌아가며 씀 — 매번 "또한"만 반복되지 않도록)
-const ATTITUDE_CONNECTORS = ['또한 ', '그리고 ', '특히 ', '아울러 '];
+// 지금 의견 칸 맨 끝에 어떤 예시 문장이 붙어 있는지 찾을 때 씀 (카테고리 구분 없이 평평하게 모음)
+const ATTITUDE_PHRASE_LIST = ATTITUDE_PHRASES.flatMap(g => g.items);
+// 같은 결(긍정→긍정, 주의→주의)이 이어질 때 쓰는 접속어 — 문장을 그대로 두고 새 문장으로 이어붙일 때만 씀
+const ATTITUDE_CONNECTORS_SAME = ['또한 ', '그리고 ', '특히 ', '아울러 '];
+// 결이 바뀔 때(강점 다음에 보완할 점 등) 쓰는 역접 접속어
+const ATTITUDE_CONNECTORS_CONTRAST = ['다만 ', '그러나 ', '하지만 '];
 
-// 예시 문장을 "[수업 태도 · 학습 성향]" 아래에 이어붙임 — 제목이 없으면 새로 만들고, 처음 들어 있던 안내 문구는 지움
+// 예시 문장을 "[수업 태도 · 학습 성향]" 아래에 이어붙임 — 제목이 없으면 새로 만들고, 처음 들어 있던 안내 문구는 지움.
+// 바로 앞에 붙은 문장과 같은 결이면 "-습니다"를 "-고,"로 바꿔 한 문장처럼 이어 붙이고, 결이 바뀌면 새 문장으로
+// 끊고 역접 접속어로 시작함. 선생님이 글을 직접 고쳐서 끝 문장을 못 찾으면(패턴이 안 맞으면) 안전하게
+// 접속어만 붙여 새 문장으로 추가함.
 function insertAttitudePhrase(text, phrase) {
   const idx = text.indexOf(ATTITUDE_HEADING);
-  if (idx < 0) return text.replace(/\s+$/, '') + '\n\n' + ATTITUDE_HEADING + '\n' + phrase;
+  if (idx < 0) return text.replace(/\s+$/, '') + '\n\n' + ATTITUDE_HEADING + '\n' + phrase.text;
   const head = text.slice(0, idx + ATTITUDE_HEADING.length);
   let body = text.slice(idx + ATTITUDE_HEADING.length).trim();
   if (body.startsWith('이 부분은 선생님이 직접 관찰하신')) body = '';
-  if (body.includes(phrase)) return head + '\n' + body;
-  if (!body) return head + '\n' + phrase;
+  if (body.includes(phrase.text)) return head + '\n' + body;
+  if (!body) return head + '\n' + phrase.text;
+
   const sentenceCount = (body.match(/[.!?]\s*/g) || []).length;
-  const connector = ATTITUDE_CONNECTORS[sentenceCount % ATTITUDE_CONNECTORS.length];
-  return head + '\n' + body + ' ' + connector + phrase;
+  const prev = ATTITUDE_PHRASE_LIST.find(p => body.endsWith(p.text));
+  if (!prev) {
+    const connector = ATTITUDE_CONNECTORS_SAME[sentenceCount % ATTITUDE_CONNECTORS_SAME.length];
+    return head + '\n' + body + ' ' + connector + phrase.text;
+  }
+  if (prev.polarity === phrase.polarity) {
+    const merged = body.slice(0, body.length - prev.text.length) + prev.clause;
+    return head + '\n' + merged + ' ' + phrase.text;
+  }
+  const connector = ATTITUDE_CONNECTORS_CONTRAST[sentenceCount % ATTITUDE_CONNECTORS_CONTRAST.length];
+  return head + '\n' + body + ' ' + connector + phrase.text;
 }
 
 // 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
@@ -2233,7 +2252,7 @@ function renderReportTab() {
       <details class="manual-fallback no-print attitude-picker">
         <summary>수업 태도 · 학습 성향 예시 문장 (눌러서 추가, 아래 의견에 그대로 들어가요)</summary>
         <p class="field-hint" style="margin:6px 0;">실제로 관찰하신 내용과 맞는 문장만 골라주세요. 추가된 뒤에도 자유롭게 고칠 수 있어요.</p>
-        ${ATTITUDE_PHRASES.map((g, gi) => `<div class="attitude-group"><b>${g.cat}</b>${g.items.map((p, pi) => `<button type="button" class="phrase-chip" data-g="${gi}" data-p="${pi}">${escapeHtml(p)}</button>`).join('')}</div>`).join('')}
+        ${ATTITUDE_PHRASES.map((g, gi) => `<div class="attitude-group"><b>${g.cat}</b>${g.items.map((p, pi) => `<button type="button" class="phrase-chip" data-g="${gi}" data-p="${pi}">${escapeHtml(p.text)}</button>`).join('')}</div>`).join('')}
       </details>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
