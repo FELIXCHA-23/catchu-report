@@ -373,11 +373,34 @@ function initTabs() {
   });
 }
 function switchTab(name) {
+  // 예시보고서는 별도 패널 없이 보고서 패널을 그대로 재사용 — 포맷이 바뀌어도 항상 실제 보고서와 동일하게 유지됨
+  const panelId = name === 'example' ? 'report' : name;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + panelId));
   if (name === 'score') renderScoreTab();
   if (name === 'retest') renderRetestTab();
   if (name === 'report') renderReportTab();
+  if (name === 'example') openExampleReport();
+}
+
+// 이미 채점이 들어가 있는 학생 중 회차가 가장 많은 학생을 골라, 그 학생의 전체 기간으로 보고서를 미리 보여줌
+function openExampleReport() {
+  const withScores = s => ({ s, rounds: studentScoredRounds(s.id) });
+  let pool = filterByCurrentTeacher(state.students).map(withScores).filter(x => x.rounds.length > 0);
+  if (!pool.length) pool = state.students.map(withScores).filter(x => x.rounds.length > 0);
+  if (!pool.length) {
+    document.getElementById('reportStudentSel').value = '';
+    renderReportTab();
+    document.getElementById('reportOutput').innerHTML = '<div class="card empty-state">아직 채점된 학생이 없어서 예시보고서를 만들 수 없어요. 채점 입력 후 다시 눌러주세요.</div>';
+    return;
+  }
+  pool.sort((a, b) => b.rounds.length - a.rounds.length);
+  const best = pool[0];
+  document.getElementById('reportStudentSel').value = best.s.id;
+  renderReportTab();
+  document.getElementById('reportFromSel').value = best.rounds[0].round.id;
+  document.getElementById('reportToSel').value = best.rounds[best.rounds.length - 1].round.id;
+  renderReportTab();
 }
 
 /* ================= 학생 관리 ================= */
@@ -2104,7 +2127,9 @@ function renderReportTab() {
   }
 
   out.innerHTML = `
-    <div class="sample-flag no-print">실제 데이터 기반 보고서 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요</div>
+    <div class="sample-flag no-print">${document.querySelector('.tab-btn.active')?.dataset.tab === 'example'
+      ? `예시보고서 · ${escapeHtml(displayName(student.name))} 학생의 실제 채점 기록으로 만든 보고서 형식 샘플이에요 · 학부모용 PDF에는 이 안내가 빠져요`
+      : '실제 데이터 기반 보고서 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요'}</div>
     <div class="card">
       <div class="masthead">
         <div>
