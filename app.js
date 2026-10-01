@@ -1915,6 +1915,10 @@ const ATTITUDE_PHRASES = [
   ]},
 ];
 
+// 문장 두 개 이상을 고르면 그냥 나란히 찍어 붙이지 않고, 자연스러운 접속어로 이어서 한 문단처럼 읽히게 함
+// (이미 쓰인 문장 수에 맞춰 접속어를 돌아가며 씀 — 매번 "또한"만 반복되지 않도록)
+const ATTITUDE_CONNECTORS = ['또한 ', '그리고 ', '특히 ', '아울러 '];
+
 // 예시 문장을 "[수업 태도 · 학습 성향]" 아래에 이어붙임 — 제목이 없으면 새로 만들고, 처음 들어 있던 안내 문구는 지움
 function insertAttitudePhrase(text, phrase) {
   const idx = text.indexOf(ATTITUDE_HEADING);
@@ -1923,7 +1927,10 @@ function insertAttitudePhrase(text, phrase) {
   let body = text.slice(idx + ATTITUDE_HEADING.length).trim();
   if (body.startsWith('이 부분은 선생님이 직접 관찰하신')) body = '';
   if (body.includes(phrase)) return head + '\n' + body;
-  return head + '\n' + (body ? body + ' ' : '') + phrase;
+  if (!body) return head + '\n' + phrase;
+  const sentenceCount = (body.match(/[.!?]\s*/g) || []).length;
+  const connector = ATTITUDE_CONNECTORS[sentenceCount % ATTITUDE_CONNECTORS.length];
+  return head + '\n' + body + ' ' + connector + phrase;
 }
 
 // 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
@@ -1958,7 +1965,12 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
   const recentDeltas = [];
   for (let i = 1; i < recentPts.length; i++) recentDeltas.push(recentPts[i].pct - recentPts[i - 1].pct);
   const recentTrend = recentDeltas.length ? recentDeltas.reduce((a, b) => a + b, 0) / recentDeltas.length : (last - first);
-  const overallVerb = recentTrend > 1 ? `${first}% → ${last}%로 상승 흐름이에요` : recentTrend < -1 ? `${first}% → ${last}%로 하락 흐름이에요` : `${first}%에서 ${last}%로, 큰 변화 없이 비슷한 수준을 유지하고 있어요`;
+  // 숫자·%는 거의 안 쓰고 선생님이 직접 쓴 편지처럼 — 상승폭 크기에 따라 표현 세기만 다르게 함
+  const overallVerb = recentTrend > 5 ? '이번 기간 동안 눈에 띄게 좋아지는 모습을 보였어요'
+    : recentTrend > 1 ? '이번 기간 동안 조금씩 꾸준히 좋아지고 있어요'
+    : recentTrend < -5 ? '이번 기간 동안 조금 주춤하는 모습도 있었지만, 다시 끌어올리는 중이에요'
+    : recentTrend < -1 ? '이번 기간 동안 살짝 흔들리는 모습도 있었어요'
+    : '이번 기간 동안 비슷한 수준을 꾸준히 유지하고 있어요';
 
   const withDelta = typeStats.filter(t => t.delta !== null);
   const strengths = withDelta.filter(t => t.last >= 90 && t.delta >= 0).sort((a, b) => b.last - a.last);
@@ -1968,10 +1980,10 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
   const nameList = arr => arr.map(t => t.name).join(', ');
 
   const parts = [];
-  parts.push(`${josa(name, '은', '는')} ${points.length}회차 동안 전체 정답률이 ${overallVerb}.`);
-  if (strengths.length) parts.push(`특히 ${nameList(strengths)} 유형은 ${strengths[0].last}% 수준까지 올라오며 확실히 자리를 잡았습니다.`);
-  if (improving.length) parts.push(`${nameList(improving)} 유형도 ${improving.map(t => (t.delta > 0 ? '+' : '') + t.delta + '%p').join(', ')} 상승하며 꾸준히 좋아지는 중이에요.`);
-  if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 ${watch.map(t => t.avg + '%').join(', ')} 수준에서 정체되어 있어, 다음 학습에서 가장 집중적으로 다룰 예정입니다.`);
+  parts.push(`${josa(name, '은', '는')} ${overallVerb}.`);
+  if (strengths.length) parts.push(`특히 ${nameList(strengths)} 유형은 이제 믿고 맡길 만큼 탄탄해졌어요.`);
+  if (improving.length) parts.push(`${nameList(improving)} 유형도 눈에 띄게 좋아지고 있어요.`);
+  if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 다음 학습에서 함께 좀 더 다져가면 좋을 부분이에요.`);
   if (!strengths.length && !improving.length && !watch.length) parts.push('아직 뚜렷한 강점·약점 유형을 판단하기엔 데이터가 조금 더 필요해요.');
 
   if (difficulty && difficulty.avgWrong !== null && difficulty.avgCorrect !== null) {
@@ -1980,10 +1992,13 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
   }
   if (unitBreakdown && unitBreakdown.length) {
     const weakest = [...unitBreakdown].sort((a, b) => a.pct - b.pct)[0];
-    if (weakest.pct < 70) parts.push(`단원 중에서는 ${weakest.unit}이(가) ${weakest.pct}%로 가장 취약해 보완이 필요해요.`);
+    if (weakest.pct < 70) parts.push(`단원 중에서는 ${josa(weakest.unit, '을', '를')} 다음에 함께 좀 더 채워가면 좋겠어요.`);
   }
   if (retest && retest.items.length) {
-    parts.push(`재시험에서는 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항을 정답으로 전환했어요.`);
+    const retestPhrase = retest.overallPct >= 90 ? '재시험에서는 틀렸던 문항들을 거의 다 스스로 바로잡아냈어요.'
+      : retest.overallPct >= 60 ? '재시험에서는 틀렸던 문항 중 상당수를 스스로 바로잡아냈어요.'
+      : '재시험에서는 틀렸던 문항들을 다시 짚어보며 차근차근 보완해가고 있어요.';
+    parts.push(retestPhrase);
   }
 
   return greeting + '\n\n' + parts.join(' ') + attitudeNote;
