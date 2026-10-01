@@ -383,23 +383,38 @@ function switchTab(name) {
   if (name === 'example') openExampleReport();
 }
 
-// 이미 채점이 들어가 있는 학생 중 회차가 가장 많은 학생을 골라, 그 학생의 전체 기간으로 보고서를 미리 보여줌
+// 어느 브라우저에서 열어도 항상 같은 모습으로 보이는 고정 예시 학생 — 실제 학생이 아니라 코드에 박아둔
+// 가상의 데이터라서 localStorage 용량을 전혀 쓰지 않고, 학생목록·채점입력 등 실제 데이터 화면에는 나타나지 않음
+const EXAMPLE_STUDENT_ID = 'ex_student_hong';
+const EXAMPLE_STUDENT = { id: EXAMPLE_STUDENT_ID, name: '홍길동', grade: '중2', class: '', teacher: '', school: '' };
+const EXAMPLE_TYPES = [
+  { name: '부등식의 해', unit: '일차부등식 - 일차부등식의 풀이 - 부등식의 해와 성질', questions: [1, 2, 3, 4] },
+  { name: '연립방정식의 풀이', unit: '연립일차방정식 - 연립방정식의 풀이 - 가감법과 대입법', questions: [5, 6, 7, 8] },
+  { name: '일차함수의 그래프', unit: '일차함수와 그래프 - 일차함수의 그래프 - 그래프의 절편과 기울기', questions: [9, 10, 11, 12] },
+  { name: '도형의 닮음', unit: '도형의 닮음 - 닮은 도형의 성질 - 삼각형의 닮음 조건', questions: [13, 14, 15, 16] },
+  { name: '자료의 정리와 해석', unit: '확률과 통계 - 자료의 정리와 해석 - 도수분포표와 히스토그램', questions: [17, 18, 19, 20] },
+];
+const EXAMPLE_DIFFICULTY = { 1: 2, 2: 3, 3: 2, 4: 4, 5: 3, 6: 4, 7: 2, 8: 3, 9: 2, 10: 3, 11: 4, 12: 3, 13: 3, 14: 2, 15: 4, 16: 3, 17: 2, 18: 3, 19: 3, 20: 4 };
+const EXAMPLE_COMPETENCY = { 1: '문제해결', 2: '문제해결', 3: '문제해결', 4: '문제해결', 5: '추론', 6: '추론', 7: '추론', 8: '추론', 9: '의사소통', 10: '의사소통', 11: '의사소통', 12: '의사소통', 13: '연결', 14: '연결', 15: '연결', 16: '연결', 17: '정보처리', 18: '정보처리', 19: '정보처리', 20: '정보처리' };
+// 기간 누적으로 실력이 느는 흐름(특히 "도형의 닮음"은 처음엔 약했다가 강점으로)과, 끝까지 보완이 필요한
+// "자료의 정리와 해석"을 함께 보여주도록 오답을 일부러 짜 넣음 — 날짜는 보고서 기본 기간 안에 들어오게 맞춤
+const EXAMPLE_ROUND_DEFS = [
+  { id: 'ex_r1', date: '2026-08-21', title: '8월3주차 중2(예시)', wrong: [3, 6, 8, 14, 15, 16, 18, 19] },
+  { id: 'ex_r2', date: '2026-08-28', title: '8월4주차 중2(예시)', wrong: [3, 8, 14, 15, 18, 19] },
+  { id: 'ex_r3', date: '2026-09-04', title: '9월1주차 중2(예시)', wrong: [8, 14, 19, 20] },
+  { id: 'ex_r4', date: '2026-09-11', title: '9월2주차 중2(예시)', wrong: [6, 19, 20] },
+  { id: 'ex_r5', date: '2026-09-18', title: '9월3주차 중2(예시)', wrong: [8, 19, 20] },
+];
+const EXAMPLE_ROUNDS = EXAMPLE_ROUND_DEFS.map(r => ({
+  id: r.id, date: r.date, title: r.title, grade: EXAMPLE_STUDENT.grade, total: 20,
+  types: EXAMPLE_TYPES, difficulty: EXAMPLE_DIFFICULTY, competency: EXAMPLE_COMPETENCY,
+}));
+const EXAMPLE_RESULTS = EXAMPLE_ROUND_DEFS.map(r => ({ id: 'ex_res_' + r.id, studentId: EXAMPLE_STUDENT_ID, roundId: r.id, wrong: r.wrong }));
+
+// 예시보고서 탭 전용 — 고정 예시 학생을 보고서 선택창에 골라두기만 하면, 나머지는 실제 보고서와 완전히 동일한
+// 경로(renderReportTab)로 그려짐
 function openExampleReport() {
-  const withScores = s => ({ s, rounds: studentScoredRounds(s.id) });
-  let pool = filterByCurrentTeacher(state.students).map(withScores).filter(x => x.rounds.length > 0);
-  if (!pool.length) pool = state.students.map(withScores).filter(x => x.rounds.length > 0);
-  if (!pool.length) {
-    document.getElementById('reportStudentSel').value = '';
-    renderReportTab();
-    document.getElementById('reportOutput').innerHTML = '<div class="card empty-state">아직 채점된 학생이 없어서 예시보고서를 만들 수 없어요. 채점 입력 후 다시 눌러주세요.</div>';
-    return;
-  }
-  pool.sort((a, b) => b.rounds.length - a.rounds.length);
-  const best = pool[0];
-  document.getElementById('reportStudentSel').value = best.s.id;
-  renderReportTab();
-  document.getElementById('reportFromSel').value = best.rounds[0].round.id;
-  document.getElementById('reportToSel').value = best.rounds[best.rounds.length - 1].round.id;
+  document.getElementById('reportStudentSel').value = EXAMPLE_STUDENT_ID;
   renderReportTab();
 }
 
@@ -880,10 +895,12 @@ function populateReportStudentSel() {
   const eligible = filterByCurrentTeacher(state.students)
     .slice()
     .sort((a, b) => (state.studentDone[b.id] ? 1 : 0) - (state.studentDone[a.id] ? 1 : 0));
-  sel.innerHTML = eligible.length
+  const realOptionsHtml = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}${state.studentDone[s.id] ? ' (완)' : ''}</option>`).join('')
     : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
-  if (eligible.some(s => s.id === prev)) sel.value = prev;
+  // 실제 학생이 없어도 예시보고서는 항상 고를 수 있도록 고정 옵션을 하나 더 붙여둠
+  sel.innerHTML = realOptionsHtml + `<option value="${EXAMPLE_STUDENT_ID}">${escapeHtml(EXAMPLE_STUDENT.name)} (예시보고서 샘플)</option>`;
+  if (eligible.some(s => s.id === prev) || prev === EXAMPLE_STUDENT_ID) sel.value = prev;
 }
 
 // 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N-M주차"는 하나로 묶여요)
@@ -1527,6 +1544,9 @@ function displayGradeTier(studentId, pct) {
 
 // 학생이 실제로 채점 기록을 가진 회차만, 날짜순으로 반환 (리포트 기간 선택 드롭다운에 사용)
 function studentScoredRounds(studentId) {
+  if (studentId === EXAMPLE_STUDENT_ID) {
+    return EXAMPLE_ROUNDS.map(r => ({ round: r, label: roundLabel(r), result: EXAMPLE_RESULTS.find(x => x.roundId === r.id) }));
+  }
   const ascRounds = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
   return ascRounds
     .map(r => ({ round: r, label: roundLabel(r), result: state.results.find(x => x.studentId === studentId && x.roundId === r.id) }))
@@ -1534,7 +1554,7 @@ function studentScoredRounds(studentId) {
 }
 
 function computeStudentReport(studentId, fromRoundId, toRoundId) {
-  const student = state.students.find(s => s.id === studentId);
+  const student = studentId === EXAMPLE_STUDENT_ID ? EXAMPLE_STUDENT : state.students.find(s => s.id === studentId);
   if (!student) return null;
   const withResult = studentScoredRounds(studentId);
   let fromIdx = fromRoundId ? withResult.findIndex(x => x.round.id === fromRoundId) : 0;
@@ -1612,8 +1632,9 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
 function computeRetestSummary(studentId, points) {
   const items = [];
   let sumOriginal = 0, sumStillWrong = 0;
+  const resultsSource = studentId === EXAMPLE_STUDENT_ID ? EXAMPLE_RESULTS : state.results;
   points.forEach(p => {
-    const result = state.results.find(r => r.studentId === studentId && r.roundId === p.roundId);
+    const result = resultsSource.find(r => r.studentId === studentId && r.roundId === p.roundId);
     const originalWrong = result ? result.wrong.length : 0;
     if (!originalWrong) return;
     const attempts = state.retests.filter(rt => rt.studentId === studentId && rt.roundId === p.roundId).sort((a, b) => a.date.localeCompare(b.date));
@@ -2127,8 +2148,8 @@ function renderReportTab() {
   }
 
   out.innerHTML = `
-    <div class="sample-flag no-print">${document.querySelector('.tab-btn.active')?.dataset.tab === 'example'
-      ? `예시보고서 · ${escapeHtml(displayName(student.name))} 학생의 실제 채점 기록으로 만든 보고서 형식 샘플이에요 · 학부모용 PDF에는 이 안내가 빠져요`
+    <div class="sample-flag no-print">${studentId === EXAMPLE_STUDENT_ID
+      ? '예시보고서 · 실제 학생이 아닌 가상의 예시(홍길동)로 만든 보고서 형식 샘플이에요 · 어느 컴퓨터에서 열어도 항상 똑같이 보여요 · 학부모용 PDF에는 이 안내가 빠져요'
       : '실제 데이터 기반 보고서 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요'}</div>
     <div class="card">
       <div class="masthead">
