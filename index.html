@@ -25,7 +25,7 @@
     <button class="tab-btn" data-tab="score">채점 입력</button>
     <button class="tab-btn" data-tab="retest">재시험</button>
     <button class="tab-btn" data-tab="report">보고서</button>
-    <button class="tab-btn" data-tab="rounds">시험지</button>
+    <button class="tab-btn" data-tab="rounds" style="margin-left:auto;">시험지</button>
     <button class="tab-btn" data-tab="data">데이터 관리</button>
   </nav>
 </header>
@@ -68,7 +68,7 @@
       <h2>학생 목록</h2>
       <p class="card-sub">상단의 담당 선생님을 선택하면 그 선생님 학생만 보여요 (선택 안 하면 전체 보기).</p>
       <div class="inline-form" style="margin-bottom:10px;">
-        <input type="text" id="studentSearchInput" placeholder="이름 검색 (초성만 입력해도 돼요, 예: ㅊㅇㅎ)">
+        <input type="text" id="studentSearchInput" placeholder="이름 검색 (초성 가능, 예: ㅊㅇㅎ)" style="min-width:240px;">
       </div>
       <div id="studentListWrap"></div>
     </div>
@@ -281,6 +281,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=109"></script>
+<script src="app.js?v=110"></script>
 </body>
 </html>

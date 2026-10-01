@@ -874,6 +874,8 @@ function scoreRoundGroups(grade) {
 // 학년 상관없이 바로바로 채점해야 해서, 학생이 배정되기 전에도 학년 선택지가 미리 떠 있어야 함
 const ELEMENTARY_GRADES = ['초3', '초4', '초5', '초6'];
 const ELEMENTARY_ALL_ACCESS_TEACHERS = ['문태민', '오민경'];
+// 초3~고3 전체 — 전체 권한 선생님(차성빈)은 아직 등록된 시험지가 하나도 없는 학년도 다 보이게 함
+const ALL_GRADES = ['초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'];
 
 function populateScoreGradeSel() {
   const sel = document.getElementById('scoreGradeSel');
@@ -886,7 +888,10 @@ function populateScoreGradeSel() {
   let grades = getCurrentTeacher() && !hasAllAccess()
     ? roundGrades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g))
     : roundGrades;
-  if (ELEMENTARY_ALL_ACCESS_TEACHERS.includes(getCurrentTeacher())) {
+  if (hasAllAccess()) {
+    // 전체 권한 선생님은 학년 전부(초3~고3)를 항상 열어둠 — 시험지가 아직 없는 학년도 미리 보여야 함
+    grades = Array.from(new Set([...grades, ...ALL_GRADES]));
+  } else if (ELEMENTARY_ALL_ACCESS_TEACHERS.includes(getCurrentTeacher())) {
     // 그 학년에 아직 등록된 시험지(회차)가 없어도 학년 자체는 미리 열어둠 — 학생이 들어오면 바로 쓸 수 있게
     grades = Array.from(new Set([...grades, ...ELEMENTARY_GRADES]));
   }
@@ -968,7 +973,12 @@ function renderStudentResetPanel() {
 
   // 채점을 한 번도 안 한 학생도 반에 있으면 "0개 회차 채점됨"으로 그대로 보여줘서, 진행중 목록만 봐도
   // 그 반 학생이 전부 다 있는지(아직 손도 안 댄 학생이 누군지) 알 수 있게 함
-  const allStudents = filterByCurrentTeacher(state.students)
+  // 전체 권한 선생님(차성빈)은 여기서만 예외 — 다른 선생님 담당으로 이미 정해진 학생은 안 보이게 하고,
+  // 담당이 아직 없는 학생과 본인 담당 학생만 보여줌 (다른 선생님 현황까지 여기 다 뒤섞이지 않게)
+  const studentsForPanel = hasAllAccess()
+    ? state.students.filter(s => !s.teacher || s.teacher === getCurrentTeacher())
+    : filterByCurrentTeacher(state.students);
+  const allStudents = studentsForPanel
     .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
 
   if (!allStudents.length) {
