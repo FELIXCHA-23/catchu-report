@@ -15,7 +15,8 @@ const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
 const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALPHA','MH2-GAMMA','TM1-GAMMA','TM2-GAMMA','TM3-GAMMA','TH1-BETA','TH2-BETA','TH1-ALPHA','SH2-ALPHA','MP-INDV1','MP-INDV2','TP-INDV1','TP-INDV2'];
 const TEACHER_OPTIONS = ['차성빈','방희진','문태민','목윤재','오민경'];
 const CLASS_TEACHER_MAP = {
-  'MM1-BETA': '문태민', 'MM2-GAMMA': '문태민', 'TM1-GAMMA': '문태민', 'TM2-GAMMA': '문태민', 'ME-INDV': '문태민',
+  'MM1-BETA': '문태민', 'MM2-GAMMA': '문태민', 'TM1-GAMMA': '문태민', 'TM2-GAMMA': '문태민',
+  'MP-INDV1': '문태민', 'MP-INDV2': '문태민', 'TP-INDV1': '오민경', 'TP-INDV2': '오민경',
   'MH1-GAMMA': '목윤재', 'TH1-BETA': '목윤재', 'MM3-BETA': '목윤재', 'TM3-GAMMA': '목윤재',
   'MH2-GAMMA': '방희진', 'TH2-BETA': '방희진',
   'MH2-ALPHA': '차성빈', 'TH1-ALPHA': '차성빈', 'SH2-ALPHA': '차성빈',
