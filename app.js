@@ -867,6 +867,11 @@ function scoreRoundGroups(grade) {
   return dates.map(date => ({ date, label: dateToWeekLabel(date), rounds: rounds.filter(r => r.date === date) }));
 }
 
+// 담당 학생이 아직 없는 학년이라도 초등 학년은 항상 다 열어두는 선생님 — 신입생 입학테스트를
+// 학년 상관없이 바로바로 채점해야 해서, 학생이 배정되기 전에도 학년 선택지가 미리 떠 있어야 함
+const ELEMENTARY_GRADES = ['초3', '초4', '초5', '초6'];
+const ELEMENTARY_ALL_ACCESS_TEACHERS = ['문태민', '오민경'];
+
 function populateScoreGradeSel() {
   const sel = document.getElementById('scoreGradeSel');
   const prev = sel.value;
@@ -875,9 +880,12 @@ function populateScoreGradeSel() {
   // 담당 선생님이 선택돼 있으면, 그 선생님 학생 중 아무도 없는 학년은 다운드롭에서 아예 뺌
   // (시험 응시 학년이 따로 설정된 학생은 examGrade 기준으로 매칭 — 위 채점 대상 매칭 로직과 동일)
   const myStudents = filterByCurrentTeacher(state.students);
-  const grades = getCurrentTeacher() && !hasAllAccess()
+  let grades = getCurrentTeacher() && !hasAllAccess()
     ? roundGrades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g))
     : roundGrades;
+  if (ELEMENTARY_ALL_ACCESS_TEACHERS.includes(getCurrentTeacher())) {
+    grades = Array.from(new Set([...grades, ...roundGrades.filter(g => ELEMENTARY_GRADES.includes(g))]));
+  }
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   sel.innerHTML = grades.length
     ? grades.map(g => `<option value="${g}">${g}</option>`).join('')
