@@ -1032,7 +1032,7 @@ function renderStudentResetPanel() {
   const rosterHTML = `<div class="reset-roster-bar">
     <div class="reset-roster-group todo"><b>진행중 ${activeStudents.length}명</b><span>${activeStudents.length ? activeStudents.map(s => escapeHtml(s.name)).join(', ') : '없음'}</span></div>
     <div class="reset-roster-group done"><b>완료 ${doneStudents.length}명</b><span>${doneStudents.length ? doneStudents.map(s => escapeHtml(s.name)).join(', ') : '없음'}</span></div>
-    ${totalDoneCount ? `<button type="button" class="btn ghost no-print" id="resetAllDoneBtn" style="margin-top:8px;">완료 전체 해제 (전체 선생님 ${totalDoneCount}명 — 새 기간 시작할 때)</button>` : ''}
+    ${totalDoneCount ? `<button type="button" class="btn danger no-print" id="resetAllDoneBtn" style="margin-top:8px; align-self:flex-start;">전체완료해제 (${totalDoneCount}명)</button>` : ''}
   </div>`;
 
   const activeHTML = groupByClass(activeStudents).map(g => `
@@ -1054,16 +1054,16 @@ function renderStudentResetPanel() {
   wrap.innerHTML = rosterHTML + activeHTML + doneHTML;
 
   // 새 기간(다음 달 등) 데이터를 다시 모으기 시작할 때, 지난번에 표시해둔 완료를 한 번에 다 풀 수 있게 함 —
-  // 지금 선택된 선생님 필터와 무관하게 "전체 선생님"의 완료를 다 풀어줌 (월이 바뀌면 모두 다시 진행중이어야 하므로)
+  // 지금 선택된 선생님 필터와 무관하게 이 컴퓨터에 있는 완료를 다 풀어줌 (선생님마다 컴퓨터가 따로라 "전체"라고 안 써도 됨)
   const resetAllDoneBtn = document.getElementById('resetAllDoneBtn');
   if (resetAllDoneBtn) {
     resetAllDoneBtn.addEventListener('click', () => {
-      if (!confirm(`전체 선생님의 완료 표시 ${totalDoneCount}명을 모두 진행중으로 되돌릴까요? (되돌릴 수 없어요)`)) return;
+      if (!confirm(`완료 표시 ${totalDoneCount}명을 모두 진행중으로 되돌릴까요? (되돌릴 수 없어요)`)) return;
       state.studentDone = {};
       saveState();
       renderStudentResetPanel();
       populateReportStudentSel();
-      toast(`전체 선생님의 완료 표시 ${totalDoneCount}명을 모두 풀었어요.`);
+      toast(`완료 표시 ${totalDoneCount}명을 모두 풀었어요.`);
     });
   }
 
