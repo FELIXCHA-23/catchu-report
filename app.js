@@ -12,7 +12,7 @@ const COMPETENCY_DESCRIPTIONS = {
   '정보처리': '실생활·수학적 상황의 자료를 탐색·수집·처리해 합리적으로 판단하고, 교구·공학 도구로 추상적 내용을 시각화해 직관적으로 이해하며 기르는 능력',
 };
 const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
-const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALPHA','MH2-GAMMA','TM1-GAMMA','TM2-GAMMA','TM3-GAMMA','TH1-BETA','TH2-BETA','TH1-ALPHA','SH2-ALPHA','ME-INDV'];
+const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALPHA','MH2-GAMMA','TM1-GAMMA','TM2-GAMMA','TM3-GAMMA','TH1-BETA','TH2-BETA','TH1-ALPHA','SH2-ALPHA','ME-INDV','MP-INDV1','TP-INDV2'];
 const TEACHER_OPTIONS = ['차성빈','방희진','문태민','목윤재','오민경'];
 const CLASS_TEACHER_MAP = {
   'MM1-BETA': '문태민', 'MM2-GAMMA': '문태민', 'TM1-GAMMA': '문태민', 'TM2-GAMMA': '문태민', 'ME-INDV': '문태민',
