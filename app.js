@@ -2608,8 +2608,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('exportRosterBtn').addEventListener('click', () => {
-    // 채점 기록 없이 이름·학교·학년·반·담당 선생님만 담음 — "학생 명단 가져오기"에 그대로 쓸 수 있는 형식
-    const roster = filterByCurrentTeacher(state.students).map(s => ({
+    // 채점 기록 없이 이름·학교·학년·반·담당 선생님만 담음 — "학생 명단 가져오기"에 그대로 쓸 수 있는 형식.
+    // 상단에 담당 선생님이 선택되어 있어도 그 필터와 무관하게 항상 전체 학생을 내보냄
+    const roster = state.students.map(s => ({
       name: s.name, grade: s.grade || '', school: s.school || '', class: s.class || '', teacher: s.teacher || '',
     }));
     const blob = new Blob([JSON.stringify(roster, null, 2)], { type: 'application/json' });
@@ -2617,7 +2618,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const a = document.createElement('a');
     const d = new Date();
     const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    a.href = url; a.download = `${stamp}학생명단${getCurrentTeacher() ? '_' + getCurrentTeacher() : ''}.json`;
+    a.href = url; a.download = `${stamp}학생명단_전체.json`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     toast(`학생 명단 ${roster.length}명을 내보냈어요.`);
