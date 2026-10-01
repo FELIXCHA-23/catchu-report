@@ -884,7 +884,8 @@ function populateScoreGradeSel() {
     ? roundGrades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g))
     : roundGrades;
   if (ELEMENTARY_ALL_ACCESS_TEACHERS.includes(getCurrentTeacher())) {
-    grades = Array.from(new Set([...grades, ...roundGrades.filter(g => ELEMENTARY_GRADES.includes(g))]));
+    // 그 학년에 아직 등록된 시험지(회차)가 없어도 학년 자체는 미리 열어둠 — 학생이 들어오면 바로 쓸 수 있게
+    grades = Array.from(new Set([...grades, ...ELEMENTARY_GRADES]));
   }
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   sel.innerHTML = grades.length
