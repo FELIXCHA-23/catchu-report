@@ -507,7 +507,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!s.name) return;
           const exists = state.students.some(x => x.name === s.name && x.class === s.class);
           if (exists) { skipped++; return; }
-          state.students.push({ id: uid(), name: s.name, grade: s.grade || '', class: s.class || '', teacher: s.teacher || '', school: s.school || '' });
+          // 담당 선생님을 안 적어서 가져와도, 반 이름이 매칭표에 있으면 그 자리에서 바로 채워줌 (버튼을 따로 안 눌러도 되게)
+          const teacher = s.teacher || CLASS_TEACHER_MAP[s.class] || '';
+          state.students.push({ id: uid(), name: s.name, grade: s.grade || '', class: s.class || '', teacher, school: s.school || '' });
           added++;
         });
         saveState();
