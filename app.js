@@ -381,13 +381,32 @@ function switchTab(name) {
 
 /* ================= 학생 관리 ================= */
 
+// 한글 음절에서 초성만 뽑아냄 (완성형 한글이 아닌 글자는 그대로 둠) — "최유빈" → "ㅊㅇㅂ"
+const CHOSEONG_LIST = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+function toChoseong(str) {
+  return Array.from(str).map(ch => {
+    const code = ch.charCodeAt(0);
+    return (code >= 0xAC00 && code <= 0xD7A3) ? CHOSEONG_LIST[Math.floor((code - 0xAC00) / 588)] : ch;
+  }).join('');
+}
+// 검색어가 전부 초성 자음이면(예: "ㅊㅇㅎ") 이름의 초성끼리 비교하고, 아니면 이름에 그대로 포함되는지 봄
+function studentMatchesSearch(name, query) {
+  const q = query.trim();
+  if (!q) return true;
+  if (name.includes(q)) return true;
+  if (/^[ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ]+$/.test(q)) return toChoseong(name).includes(q);
+  return false;
+}
+
 function renderStudents() {
   const wrap = document.getElementById('studentListWrap');
-  const filtered = filterByCurrentTeacher(state.students);
+  const searchInput = document.getElementById('studentSearchInput');
+  const query = searchInput ? searchInput.value : '';
+  const filtered = filterByCurrentTeacher(state.students).filter(s => studentMatchesSearch(s.name, query));
   if (!state.students.length) {
     wrap.innerHTML = '<div class="empty-state">아직 등록된 학생이 없어요. 위에서 학생을 추가해보세요.</div>';
   } else if (!filtered.length) {
-    wrap.innerHTML = '<div class="empty-state">해당 선생님 담당 학생이 없어요.</div>';
+    wrap.innerHTML = `<div class="empty-state">${query.trim() ? '검색 결과가 없어요.' : '해당 선생님 담당 학생이 없어요.'}</div>`;
   } else {
     const rows = filtered.map(s => `
       <tr>
@@ -2706,6 +2725,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setCurrentTeacher(e.target.value);
     renderAll();
   });
+  document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
   await syncSharedRounds();
   renderAll();
 });
