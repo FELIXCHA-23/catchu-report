@@ -673,9 +673,10 @@ function resetRoundForm() {
 // "1회차, 2회차..." 순번 대신, 시험지에 인쇄된 것과 같은 "월-주차"로 표기 (그 달의 몇 번째 금요일인지로 계산)
 function dateToWeekLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
-  const month = d.getMonth() + 1;
-  const weekOfMonth = Math.ceil(d.getDate() / 7);
-  return `${month}-${weekOfMonth}주차`;
+  // 월~일을 한 주로 보고 그 주 수요일이 속한 달·주차로 표기 — 10월 첫 금요일(10/2)이 "10-1"이 아니라 "9-5주차"로 이어지게 함
+  const mondayIdx = (d.getDay() + 6) % 7;
+  const wed = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayIdx + 2);
+  return `${wed.getMonth() + 1}-${Math.ceil(wed.getDate() / 7)}주차`;
 }
 
 function roundLabel(round) {
@@ -969,6 +970,9 @@ function populateScoreExamSel() {
   populateScoreStudentSelect();
 }
 
+const ENTRANCE_CLASS = '입학테스트';
+function isEntranceRound(r) { return /입학\s*(테스트|TEST)/i.test(r.title || ''); }
+
 // 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
 // 개별시험지(studentId 지정된 회차)는 그 학생 한 명만 보여줌
 function populateScoreStudentSelect() {
@@ -979,10 +983,13 @@ function populateScoreStudentSelect() {
   // 실수로 잘못 배정했을 때 여기서 바로 다른 학생으로 바꿀 수 있게 함(배정된 학생이 기본 선택값)
   // 시험 응시 학년(examGrade)이 따로 설정된 학생은(예: 중3인데 고1 시험지를 보는 경우) 그 학년 기준으로 매칭
   let eligible = round && round.grade ? state.students.filter(s => (s.examGrade || s.grade) === round.grade) : state.students;
+  const entrance = !!round && isEntranceRound(round);
+  // 입학테스트 시험지는 "입학테스트" 반 학생에게만 보임
+  if (entrance) eligible = eligible.filter(s => s.class === ENTRANCE_CLASS);
   eligible = filterByCurrentTeacher(eligible);
   sel.innerHTML = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
-    : `<option value="">${round && round.grade ? escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
+    : `<option value="">${round && round.grade ? (entrance ? ENTRANCE_CLASS + ' 반 ' : '') + escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
   if (round && round.individual && round.studentId && eligible.some(s => s.id === round.studentId)) sel.value = round.studentId;
   else if (eligible.some(s => s.id === prev)) sel.value = prev;
 }
