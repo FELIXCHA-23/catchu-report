@@ -972,6 +972,7 @@ function populateScoreExamSel() {
 
 const ENTRANCE_CLASS = '입학테스트';
 function isEntranceRound(r) { return /입학\s*(테스트|TEST)/i.test(r.title || ''); }
+function isEntranceStudent(s) { return !!s && s.class === ENTRANCE_CLASS; }
 
 // 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
 // 개별시험지(studentId 지정된 회차)는 그 학생 한 명만 보여줌
@@ -1971,6 +1972,10 @@ function buildGreeting(student, points) {
   const nick = given + (hasBatchim(given) ? '이' : '');
   const teacher = student.teacher || getCurrentTeacher();
   const teacherTxt = teacher ? `${teacherDisplayName(teacher)} ${teacherTitle(teacher)}` : '선생님';
+  // 입학테스트 반 학생은 아직 다닌 적이 없으므로 "지난 N주간 / 담임" 대신 입학테스트 결과 안내로 시작함
+  if (isEntranceStudent(student)) {
+    return `안녕하세요! ${given} 학부모님. 캐슬수학${teacher ? ' ' + teacherTxt : ''}입니다.\n${nick}의 입학테스트 결과를 안내드립니다.`;
+  }
   const dateOf = p => { const r = state.rounds.find(x => x.id === p.roundId); return r ? new Date(r.date + 'T00:00:00') : null; };
   const d1 = dateOf(points[0]), d2 = dateOf(points[points.length - 1]);
   const weeks = d1 && d2 ? Math.max(1, Math.round((d2 - d1) / (7 * 86400000)) + 1) : points.length;
@@ -1981,6 +1986,27 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
   const name = displayName(student.name);
   const greeting = buildGreeting(student, points);
   const attitudeNote = '\n\n[수업 태도 · 학습 성향]\n이 부분은 선생님이 직접 관찰하신 내용으로 채워주세요 — 수업 참여도, 질문하는 태도, 과제·재시험 성실도, 성향(꼼꼼함/급함 등) 등을 자유롭게 적어보세요.';
+  if (isEntranceStudent(student)) {
+    // 입학테스트는 성장 추이가 아니라 "지금 실력의 첫 진단"이므로, 변화·추세 표현 없이 현재 수준과 앞으로의 출발점만 씀
+    const overall = Math.round(points.reduce((a, p) => a + p.pct, 0) / points.length);
+    const known = typeStats.filter(t => t.last !== null);
+    const strong = known.filter(t => t.last >= 90).sort((a, b) => b.last - a.last);
+    const weak = known.filter(t => t.last < 70).sort((a, b) => a.last - b.last);
+    const nameList = arr => arr.map(t => t.name).join(', ');
+    const eParts = [];
+    eParts.push(overall >= 90 ? `${josa(name, '은', '는')} 입학테스트에서 전반적으로 탄탄한 기본기를 보여줬어요.`
+      : overall >= 75 ? `${josa(name, '은', '는')} 입학테스트에서 대체로 안정적인 기본기를 보여줬어요.`
+      : overall >= 60 ? `${josa(name, '은', '는')} 입학테스트에서 기본 개념은 잡혀 있고, 조금 더 다져가면 좋을 부분도 함께 확인됐어요.`
+      : `${josa(name, '은', '는')} 입학테스트를 통해 지금 실력의 출발점을 정확히 확인했어요. 기초부터 차근차근 함께 쌓아가면 충분히 좋아질 수 있어요.`);
+    if (strong.length) eParts.push(`특히 ${nameList(strong)} 유형은 이미 잘 갖추고 있었어요.`);
+    if (weak.length) eParts.push(`${nameList(weak)} 유형은 입학 후 가장 먼저 함께 다져갈 부분으로 보고 있어요.`);
+    if (!strong.length && !weak.length) eParts.push('유형별로 크게 두드러지는 부분 없이 고르게 확인됐어요.');
+    if (difficulty && difficulty.avgWrong !== null && difficulty.avgCorrect !== null && difficulty.avgWrong > difficulty.avgCorrect + 0.5) {
+      eParts.push('어려운 문제에서는 조금 어려워하는 모습이 있어, 그 부분을 단계별로 지도할 계획이에요.');
+    }
+    eParts.push('이 결과를 바탕으로 학생에게 맞는 수업 계획을 세워 지도하겠습니다.');
+    return greeting + '\n\n' + eParts.join(' ') + attitudeNote;
+  }
   if (points.length < 2) {
     return `${greeting}\n\n${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.${attitudeNote}`;
   }
@@ -2384,6 +2410,34 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
   const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
   const difficultyLine = difficulty ? `난이도: 전체 평균 ${difficulty.avgAll}/6, 정답 문항 평균 ${difficulty.avgCorrect ?? '—'}, 오답 문항 평균 ${difficulty.avgWrong ?? '—'}` : '';
   const retestLine = retest && retest.items.length ? `재시험: 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환` : '';
+  if (isEntranceStudent(student)) {
+    const entranceTypeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: ${t.avg}%`).join('\n');
+    return `당신은 수학학원 선생님입니다. 아래는 아직 학원에 다니지 않은 신입 예정 학생이 본 "입학테스트" 결과예요. 이 결과를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
+
+[가장 중요한 점]
+- 이 학생은 지금까지 우리 학원에 다닌 적이 없습니다. "그동안", "지난 몇 주간", "꾸준히 좋아지고 있다", "성장", "향상", "추이", "변화", "이전보다"처럼 다녀온 학생에게 쓰는 표현은 절대 쓰지 마세요. 오직 입학테스트 한 번으로 확인한 "지금의 실력"과 "앞으로 어떻게 시작할지"만 쓰세요.
+
+[문체]
+- 인사말("안녕하세요" 등)과 자기소개는 앞에 따로 붙으니 쓰지 말고, 바로 본문부터 시작하세요.
+- 따뜻하고 정중한 존댓말("~했어요", "~하고 있습니다", "~해 보려고 합니다")로, 선생님이 직접 쓴 편지처럼 쓰세요.
+- 숫자와 퍼센트는 거의 쓰지 마세요. 전체 수준을 말할 때 꼭 필요한 경우에만 한두 개 넣고, 나머지는 말로 풀어주세요. 유형별 퍼센트를 나열하거나 "%p" 표기는 절대 쓰지 마세요.
+- "하락", "부진", "취약", "떨어진다" 같은 딱딱하거나 부정적인 단어는 피하고, 보완할 점은 "입학 후 함께 채워갈 부분", "차근차근 다져갈 부분"처럼 앞으로의 과제로 표현하세요. 다만 사실과 다르게 과장하거나 근거 없이 칭찬하지는 마세요.
+
+[내용]
+- 입학테스트에서 확인된 현재 수준과 잘 갖추고 있는 부분을 먼저, 그다음 입학 후 먼저 보완할 부분, 마지막에 이 결과를 바탕으로 한 수업 시작 계획을 한 문장으로 쓰세요.
+- 데이터에 없는 사실(수업 태도, 숙제, 성격, 과거 학습 이력, 있었던 일 등)은 절대 지어내지 마세요. 이 앱은 그런 정보를 갖고 있지 않습니다.
+- 마지막 줄에 "[수업 태도 · 학습 성향]"이라는 제목만 쓰고, 그 아래는 선생님이 직접 채울 수 있도록 비워두세요.
+- 결과는 본문 텍스트만 출력하세요 (따옴표, 마크다운, 별도 제목 없이 — 단, 마지막의 "[수업 태도 · 학습 성향]" 제목 줄은 그대로 출력하세요).
+
+학생: ${displayName(student.name)} (입학테스트 응시)
+입학테스트 전체 정답률: ${overallPct}%
+잘 갖춘 유형: ${strengths.length ? strengths.map(t => t.name).join(', ') : '없음'}
+입학 후 먼저 다질 유형: ${watch.length ? watch.map(t => t.name).join(', ') : '없음'}
+${difficultyLine}
+
+유형별 상세:
+${entranceTypeLines}`;
+  }
   return `당신은 학생을 직접 가르치는 수학학원 담임 선생님입니다. 아래는 캐치유테스트에서 한 학생의 최근 학습 데이터예요. 이 데이터를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
 
 [문체]
