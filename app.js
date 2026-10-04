@@ -2725,7 +2725,9 @@ async function exportReportPDF() {
     const lastPoint = data.points[data.points.length - 1];
     const lastRound = lastPoint ? state.rounds.find(r => r.id === lastPoint.roundId) : null;
     const reportMonth = lastRound ? new Date(lastRound.date + 'T00:00:00').getMonth() + 1 : '';
-    pdf.save(`${reportMonth ? reportMonth + '월' : ''}캐치유분석보고서_${displayName(data.student.name)}.pdf`);
+    pdf.save(isEntranceStudent(data.student)
+      ? `캐슬수학입학테스트_${displayName(data.student.name)}.pdf`
+      : `${reportMonth ? reportMonth + '월' : ''}캐치유분석보고서_${displayName(data.student.name)}.pdf`);
     status.style.color = 'var(--good)';
     status.textContent = 'PDF를 저장했어요.';
   } catch (err) {
