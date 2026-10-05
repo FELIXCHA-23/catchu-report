@@ -386,7 +386,7 @@ function switchTab(name) {
 // 어느 브라우저에서 열어도 항상 같은 모습으로 보이는 고정 예시 학생 — 실제 학생이 아니라 코드에 박아둔
 // 가상의 데이터라서 localStorage 용량을 전혀 쓰지 않고, 학생목록·채점입력 등 실제 데이터 화면에는 나타나지 않음
 const EXAMPLE_STUDENT_ID = 'ex_student_hong';
-const EXAMPLE_STUDENT = { id: EXAMPLE_STUDENT_ID, name: '차캐슬', grade: '중2', class: '', teacher: '', school: '' };
+const EXAMPLE_STUDENT = { id: EXAMPLE_STUDENT_ID, name: '차캐슬', grade: '중2', class: '', teacher: '차성빈', school: '' };
 const EXAMPLE_TYPES = [
   { name: '부등식의 해', unit: '일차부등식 - 일차부등식의 풀이 - 부등식의 해와 성질', questions: [1, 2, 3, 4] },
   { name: '연립방정식의 풀이', unit: '연립일차방정식 - 연립방정식의 풀이 - 가감법과 대입법', questions: [5, 6, 7, 8] },
