@@ -386,7 +386,7 @@ function switchTab(name) {
 // 어느 브라우저에서 열어도 항상 같은 모습으로 보이는 고정 예시 학생 — 실제 학생이 아니라 코드에 박아둔
 // 가상의 데이터라서 localStorage 용량을 전혀 쓰지 않고, 학생목록·채점입력 등 실제 데이터 화면에는 나타나지 않음
 const EXAMPLE_STUDENT_ID = 'ex_student_hong';
-const EXAMPLE_STUDENT = { id: EXAMPLE_STUDENT_ID, name: '홍길동', grade: '중2', class: '', teacher: '', school: '' };
+const EXAMPLE_STUDENT = { id: EXAMPLE_STUDENT_ID, name: '차캐슬', grade: '중2', class: '', teacher: '', school: '' };
 const EXAMPLE_TYPES = [
   { name: '부등식의 해', unit: '일차부등식 - 일차부등식의 풀이 - 부등식의 해와 성질', questions: [1, 2, 3, 4] },
   { name: '연립방정식의 풀이', unit: '연립일차방정식 - 연립방정식의 풀이 - 가감법과 대입법', questions: [5, 6, 7, 8] },
@@ -2216,7 +2216,7 @@ function renderReportTab() {
 
   out.innerHTML = `
     <div class="sample-flag no-print">${studentId === EXAMPLE_STUDENT_ID
-      ? '예시보고서 · 실제 학생이 아닌 가상의 예시(홍길동)로 만든 보고서 형식 샘플이에요 · 어느 컴퓨터에서 열어도 항상 똑같이 보여요 · 학부모용 PDF에는 이 안내가 빠져요'
+      ? '예시보고서 · 실제 학생이 아닌 가상의 예시(차캐슬)로 만든 보고서 형식 샘플이에요 · 어느 컴퓨터에서 열어도 항상 똑같이 보여요 · 학부모용 PDF에는 이 안내가 빠져요'
       : '실제 데이터 기반 보고서 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요'}</div>
     <div class="card">
       <div class="masthead">
