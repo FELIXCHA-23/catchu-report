@@ -170,8 +170,12 @@ ${knownUnits.map(u => '- ' + u).join('\n')}` : ''}
   - 연결: 실생활 소재의 문장제(word problem)처럼 수학을 현실 상황과 이어서 푸는 문제, 서로 다른 단원·영역의 개념이 한 문제에 함께 쓰이는 융합 문제(예: 함수+도형, 방정식+통계), 배운 개념을 다른 단원 개념과 연결지어야 하는 문제는 모두 연결로 판단하세요
   - 정보처리: 표·통계·여러 조건 등 주어진 자료를 정리·계산해서 처리하는 문제, 공식에 값을 대입해 기계적으로 계산하는 문제
 
+시험지 맨 위 제목에 "9월 5주차"처럼 주차가 인쇄돼 있으면, 그 주차를 week에 "9-5" 형식(월-주차 숫자)으로, 시험지에 인쇄된 제목을 printedTitle에 그대로 적어주세요. 주차가 인쇄돼 있지 않으면 week는 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
+
 아래 JSON 형식으로만 응답하세요. 다른 설명이나 마크다운 없이 JSON 객체만 출력하세요:
 {
+  "week": "9-5",
+  "printedTitle": "[캐치유] 9월 5주차",
   "total": ${total},
   "types": [
     { "name": "유형명", "unit": "대단원 - 중단원 - 소단원", "questions": [1,2,3] }
@@ -179,6 +183,43 @@ ${knownUnits.map(u => '- ' + u).join('\n')}` : ''}
   "difficulty": { "1": 2, "2": 3 },
   "competency": { "1": "문제해결", "2": "추론" }
 }`;
+
+// "9-5주차" 같은 표기에 해당하는 금요일을 날짜 목록에서 찾음. 주차에는 연도가 없어서 같은 표기가 다른 해에도 있으므로,
+// 오늘 기준 최근 10주 ~ 앞으로 5주 안에서 오늘과 가장 가까운 금요일만 고름 (엉뚱하게 먼 날짜로 맞추는 실수를 막기 위함)
+function findFridayOptionForWeek(dateSel, label) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const DAY = 86400000;
+  const candidates = Array.from(dateSel.options).filter(o => {
+    if (dateToWeekLabel(o.value) !== label) return false;
+    const diffDays = (new Date(o.value + 'T00:00:00') - today) / DAY;
+    return diffDays >= -70 && diffDays <= 35;
+  });
+  candidates.sort((a, b) => Math.abs(new Date(a.value + 'T00:00:00') - today) - Math.abs(new Date(b.value + 'T00:00:00') - today));
+  return candidates[0] || null;
+}
+
+// AI가 시험지에서 읽은 주차(week "9-5")로 날짜를 그 주 금요일에 맞추고, 제목에 주차가 없으면 시험지에 인쇄된 제목을 넣음.
+// 파일 이름 등으로 이미 들어간 제목의 주차와 시험지에 인쇄된 주차가 다르면 인쇄된 쪽을 따르고 경고 문구를 돌려줌.
+function applyPrintedWeek(json) {
+  if (editingRoundId) return '';
+  const wk = String(json.week || '').match(/^\s*(\d{1,2})\s*[-월]\s*(\d)/);
+  if (!wk) return ' (시험지에 주차가 안 보여서 날짜는 직접 확인해주세요)';
+  const label = `${parseInt(wk[1], 10)}-${wk[2]}주차`;
+  const titleInput = document.getElementById('roundTitle');
+  const weekRe = /(\d{1,2})\s*(?:월|-)\s*(\d)\s*주\s*차/;
+  let note = '';
+  const typed = titleInput.value.match(weekRe);
+  const typedLabel = typed ? `${parseInt(typed[1], 10)}-${typed[2]}주차` : '';
+  if (typedLabel && typedLabel !== label) note = ` ⚠ 제목(${typedLabel})과 시험지에 적힌 주차(${label})가 달라요. 시험지 기준으로 맞췄으니 확인해주세요.`;
+  const printed = String(json.printedTitle || '').trim();
+  const dateSel = document.getElementById('roundDate');
+  const opt = findFridayOptionForWeek(dateSel, label);
+  // 날짜를 못 찾았으면 제목도 바꾸지 않음 (제목과 날짜가 서로 다른 주차를 가리키는 일이 없도록)
+  if (!opt) return ` (시험지의 ${label}에 맞는 최근 날짜를 못 찾았어요. 날짜를 직접 골라주세요)`;
+  if ((!typedLabel || typedLabel !== label) && printed && weekRe.test(printed)) titleInput.value = printed;
+  dateSel.value = opt.value;
+  return ` · 시험지에 적힌 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.` + note;
+}
 
 async function analyzeExamWithAI() {
   const btn = document.getElementById('aiAnalyzeBtn');
@@ -221,9 +262,10 @@ async function analyzeExamWithAI() {
     pendingDifficulty = (json.difficulty && typeof json.difficulty === 'object') ? json.difficulty : null;
     pendingCompetency = (json.competency && typeof json.competency === 'object') ? json.competency : null;
     updateCoverageHint();
+    const weekNote = applyPrintedWeek(json);
     document.getElementById('manualFallback').open = true;
-    status.style.color = 'var(--good)';
-    status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.' + usageCostText(usage);
+    status.style.color = weekNote.includes('⚠') || weekNote.includes('직접') ? 'var(--warn-ink)' : 'var(--good)';
+    status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.' + weekNote + usageCostText(usage);
     toast('AI 분석이 끝났어요.');
   } catch (err) {
     console.error(err);
@@ -938,7 +980,7 @@ function syncRoundDateFromTitle() {
   if (!m) return;
   const label = `${parseInt(m[1], 10)}-${m[2]}주차`;
   const dateSel = document.getElementById('roundDate');
-  const opt = Array.from(dateSel.options).find(o => dateToWeekLabel(o.value) === label);
+  const opt = findFridayOptionForWeek(dateSel, label);
   if (!opt || dateSel.value === opt.value) return;
   dateSel.value = opt.value;
   toast(`제목의 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.`);
