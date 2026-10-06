@@ -86,7 +86,9 @@ const API_KEY_STORAGE = 'catchu_api_key'; // 별도 저장 — 백업 파일(sta
 function getApiKey() { try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch (e) { return ''; } }
 function setApiKey(key) { try { localStorage.setItem(API_KEY_STORAGE, key); } catch (e) {} }
 
-async function callClaudeAPI({ content, maxTokens = 2000 }) {
+// effort: 모델이 답하기 전에 "생각"하는 깊이(low/medium/high). 이 모델은 생각에 쓴 토큰도 max_tokens에서 같이 깎이므로,
+// 단순 분류·글쓰기에는 낮춰야 생각만 하다가 한도가 차서 답이 잘리는 일이 없음
+async function callClaudeAPI({ content, maxTokens = 16000, effort = 'medium' }) {
   const key = getApiKey();
   if (!key) throw new Error('API 키가 설정되지 않았어요. "API 키 설정"에서 먼저 입력해주세요.');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -100,6 +102,7 @@ async function callClaudeAPI({ content, maxTokens = 2000 }) {
     body: JSON.stringify({
       model: 'claude-sonnet-5',
       max_tokens: maxTokens,
+      output_config: { effort },
       messages: [{ role: 'user', content }],
     }),
   });
@@ -120,7 +123,7 @@ function extractJson(text, stopReason) {
   try {
     return JSON.parse(t);
   } catch (err) {
-    if (stopReason === 'max_tokens') throw new Error('응답이 길어서 도중에 잘렸어요. 문항 수가 많은 시험지라 그래요 — 다시 시도해보세요.');
+    if (stopReason === 'max_tokens') throw new Error('AI가 분석하다가 길이 한도에 걸려 답이 잘렸어요. 다시 한 번 눌러주세요.');
     throw new Error('AI 응답을 이해하지 못했어요. 다시 시도해주세요.');
   }
 }
@@ -169,10 +172,13 @@ async function analyzeExamWithAI() {
   status.style.color = 'var(--muted)';
   status.textContent = '분석 중이에요... (몇 초에서 1분 정도 걸려요)';
   try {
-    const { text, stopReason } = await callClaudeAPI({
-      content: [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total) }],
-      maxTokens: 8000,
-    });
+    const analysisContent = [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total) }];
+    let { text, stopReason } = await callClaudeAPI({ content: analysisContent, maxTokens: 16000, effort: 'medium' });
+    if (stopReason === 'max_tokens') {
+      // 생각에 토큰을 다 써서 답이 잘린 경우 — 생각을 줄이고 한도를 늘려 자동으로 한 번 더 시도함
+      status.textContent = '분석이 길어져서 한 번 더 시도하고 있어요...';
+      ({ text, stopReason } = await callClaudeAPI({ content: analysisContent, maxTokens: 24000, effort: 'low' }));
+    }
     const json = extractJson(text, stopReason);
     if (!Array.isArray(json.types) || !json.types.length) throw new Error('분석 결과가 비어있어요. 시험지 사진이 잘 보이는지 확인해주세요.');
     document.getElementById('typeRows').innerHTML = '';
@@ -2386,7 +2392,7 @@ function renderReportTab() {
       status.textContent = '작성 중이에요...';
       try {
         const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest);
-        const { text, stopReason } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 4000 });
+        const { text, stopReason } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 16000, effort: 'low' });
         if (!text.trim()) throw new Error(stopReason === 'max_tokens' ? 'AI가 답을 쓰기 전에 길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답이 비어 있어요. 다시 눌러주세요.');
         noteInput.value = buildGreeting(student, points) + '\n\n' + text.trim();
         state.teacherNotes[studentId] = noteInput.value;
