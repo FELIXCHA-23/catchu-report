@@ -724,34 +724,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ================= 회차 · 시험지 ================= */
 
-const COMPETENCY_OPTIONS = ['', '문제해결', '추론', '의사소통', '연결', '정보처리'];
-
-// 문항별 역량 맵에서, 이 유형에 속한 문항들이 가장 많이 갖는 역량을 보여줌(수정 화면 프리필용, 편집 시 참고만)
-function majorityCompetency(round, type) {
-  if (!round.competency) return '';
-  const counts = {};
-  type.questions.forEach(q => {
-    const c = round.competency[q] ?? round.competency[String(q)];
-    if (c) counts[c] = (counts[c] || 0) + 1;
-  });
-  const entries = Object.entries(counts);
-  if (!entries.length) return '';
-  entries.sort((a, b) => b[1] - a[1]);
-  return entries[0][1] === type.questions.length ? entries[0][0] : '';
-}
-
-function addTypeRow(name = '', range = '', unit = '', competency = '') {
+// 핵심역량은 문항별로 AI가 정한 값(round.competency)을 그대로 쓰고, 유형 줄에서 따로 고르지 않음
+function addTypeRow(name = '', range = '', unit = '') {
   const wrap = document.getElementById('typeRows');
   const idx = wrap.children.length;
   const row = document.createElement('div');
   row.className = 'type-row';
-  const compOptions = COMPETENCY_OPTIONS.map(c => `<option value="${c}"${c === competency ? ' selected' : ''}>${c ? COMPETENCY_LABELS[c] : '역량 일괄지정(선택)'}</option>`).join('');
   row.innerHTML = `
     <span class="type-swatch" style="background:${TYPE_COLORS[idx % TYPE_COLORS.length]}"></span>
     <input type="text" class="type-name" placeholder="유형명 (예: 도형)" value="${escapeHtml(name)}">
     <input type="text" class="type-range" placeholder="문항 번호 (예: 7-12)" value="${escapeHtml(range)}">
     <input type="text" class="type-unit" placeholder="교육과정 단원 (선택, 예: 분수의 덧셈과 뺄셈)" value="${escapeHtml(unit)}">
-    <select class="type-competency">${compOptions}</select>
     <button type="button" class="icon-btn" data-remove-type>✕</button>
   `;
   row.querySelector('[data-remove-type]').addEventListener('click', () => { row.remove(); updateCoverageHint(); });
@@ -765,8 +748,7 @@ function readTypeRows() {
     const name = row.querySelector('.type-name').value.trim();
     const questions = parseRange(row.querySelector('.type-range').value);
     const unit = row.querySelector('.type-unit').value.trim();
-    const competency = row.querySelector('.type-competency').value;
-    return { name, questions, unit, competency, color: TYPE_COLORS[i % TYPE_COLORS.length] };
+    return { name, questions, unit, color: TYPE_COLORS[i % TYPE_COLORS.length] };
   }).filter(t => t.name && t.questions.length);
 }
 
@@ -919,7 +901,7 @@ function renderRounds() {
     document.getElementById('roundTotal').value = r.total;
     document.getElementById('roundTitle').value = r.title || '';
     document.getElementById('typeRows').innerHTML = '';
-    r.types.forEach(t => addTypeRow(t.name, rangeToString(t.questions), t.unit || '', majorityCompetency(r, t)));
+    r.types.forEach(t => addTypeRow(t.name, rangeToString(t.questions), t.unit || ''));
     updateCoverageHint();
     renderExamFileInfo();
     document.getElementById('manualFallback').open = true;
@@ -990,11 +972,8 @@ document.addEventListener('DOMContentLoaded', () => {
     types.forEach(t => t.questions.forEach(q => covered.add(q)));
     if (covered.size !== total) toast(`참고: ${covered.size}/${total} 문항만 유형에 배정되었어요.`);
 
-    // 문항별 역량: AI/JSON이 준 값을 기본으로, 유형 행에서 직접 고른 값이 있으면 그 유형의 문항들에 덮어씀
-    const rowOverrides = {};
-    let hasRowOverride = false;
-    types.forEach(t => { if (t.competency) { hasRowOverride = true; t.questions.forEach(q => { rowOverrides[q] = t.competency; }); } });
-    const mergedCompetency = (pendingCompetency || hasRowOverride) ? { ...(pendingCompetency || {}), ...rowOverrides } : null;
+    // 문항별 역량은 AI/JSON이 정한 값을 그대로 저장 (수정할 때 새로 분석하지 않으면 기존 값 유지)
+    const mergedCompetency = pendingCompetency || null;
 
     let savedRound;
     if (editingRoundId) {
