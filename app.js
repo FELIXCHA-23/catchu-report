@@ -113,7 +113,22 @@ async function callClaudeAPI({ content, maxTokens = 16000, effort = 'medium' }) 
   }
   const data = await res.json();
   const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text || '').join('');
-  return { text, stopReason: data.stop_reason };
+  return { text, stopReason: data.stop_reason, usage: data.usage || null };
+}
+
+// 사용량(토큰)과 예상 비용 표시 — 모델 단가(100만 토큰당 입력 $2, 출력 $10)와 환율(1달러=1,400원 가정) 기준의 어림값.
+// 출력 토큰에는 AI가 "생각"하는 데 쓴 토큰도 포함되어 있음(같은 단가로 청구됨)
+const API_PRICE_USD_PER_MTOK = { input: 2, output: 10 };
+const KRW_PER_USD = 1400;
+function addUsage(a, b) {
+  return { input_tokens: (a?.input_tokens || 0) + (b?.input_tokens || 0), output_tokens: (a?.output_tokens || 0) + (b?.output_tokens || 0) };
+}
+function usageCostText(u) {
+  if (!u) return '';
+  const inTok = u.input_tokens || 0, outTok = u.output_tokens || 0;
+  const won = (inTok * API_PRICE_USD_PER_MTOK.input + outTok * API_PRICE_USD_PER_MTOK.output) / 1e6 * KRW_PER_USD;
+  const wonTxt = won < 1 ? '1원 미만' : `약 ${Math.round(won).toLocaleString('ko-KR')}원`;
+  return ` · 사용량: 입력 ${inTok.toLocaleString('ko-KR')} + 출력 ${outTok.toLocaleString('ko-KR')} 토큰, ${wonTxt}`;
 }
 
 function extractJson(text, stopReason) {
@@ -185,14 +200,18 @@ async function analyzeExamWithAI() {
   btn.disabled = true;
   status.style.color = 'var(--muted)';
   status.textContent = '분석 중이에요... (몇 초에서 1분 정도 걸려요)';
+  let usage = null;
   try {
     const examGrade = document.getElementById('roundGrade').value;
     const analysisContent = [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total, knownUnitsForGrade(examGrade), examGrade) }];
-    let { text, stopReason } = await callClaudeAPI({ content: analysisContent, maxTokens: 16000, effort: 'medium' });
+    let { text, stopReason, usage: u1 } = await callClaudeAPI({ content: analysisContent, maxTokens: 16000, effort: 'medium' });
+    usage = u1;
     if (stopReason === 'max_tokens') {
       // 생각에 토큰을 다 써서 답이 잘린 경우 — 생각을 줄이고 한도를 늘려 자동으로 한 번 더 시도함
       status.textContent = '분석이 길어져서 한 번 더 시도하고 있어요...';
-      ({ text, stopReason } = await callClaudeAPI({ content: analysisContent, maxTokens: 24000, effort: 'low' }));
+      const retry = await callClaudeAPI({ content: analysisContent, maxTokens: 24000, effort: 'low' });
+      text = retry.text; stopReason = retry.stopReason;
+      usage = addUsage(usage, retry.usage); // 재시도분까지 합산
     }
     const json = extractJson(text, stopReason);
     if (!Array.isArray(json.types) || !json.types.length) throw new Error('분석 결과가 비어있어요. 시험지 사진이 잘 보이는지 확인해주세요.');
@@ -204,12 +223,12 @@ async function analyzeExamWithAI() {
     updateCoverageHint();
     document.getElementById('manualFallback').open = true;
     status.style.color = 'var(--good)';
-    status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.';
+    status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.' + usageCostText(usage);
     toast('AI 분석이 끝났어요.');
   } catch (err) {
     console.error(err);
     status.style.color = 'var(--critical)';
-    status.textContent = '분석 실패: ' + err.message;
+    status.textContent = '분석 실패: ' + err.message + usageCostText(usage);
   } finally {
     btn.disabled = false;
   }
@@ -2533,20 +2552,22 @@ function renderReportTab() {
       aiCommentBtn.disabled = true;
       status.style.color = 'var(--muted)';
       status.textContent = '작성 중이에요...';
+      let commentUsageText = '';
       try {
         const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest);
-        const { text, stopReason } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 16000, effort: 'low' });
+        const { text, stopReason, usage } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 16000, effort: 'low' });
+        commentUsageText = usageCostText(usage);
         if (!text.trim()) throw new Error(stopReason === 'max_tokens' ? 'AI가 답을 쓰기 전에 길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답이 비어 있어요. 다시 눌러주세요.');
         noteInput.value = buildGreeting(student, points) + '\n\n' + text.trim();
         state.teacherNotes[studentId] = noteInput.value;
         saveState();
         out.querySelector('.print-only').innerHTML = escapeHtml(noteInput.value).replace(/\n/g, '<br>');
         status.style.color = 'var(--good)';
-        status.textContent = '작성 완료! 내용을 확인하고 필요하면 수정하세요.';
+        status.textContent = '작성 완료! 내용을 확인하고 필요하면 수정하세요.' + commentUsageText;
       } catch (err) {
         console.error(err);
         status.style.color = 'var(--critical)';
-        status.textContent = '작성 실패: ' + err.message;
+        status.textContent = '작성 실패: ' + err.message + commentUsageText;
       } finally {
         aiCommentBtn.disabled = false;
       }
