@@ -909,16 +909,33 @@ function renderRounds() {
   }));
 }
 
+// 시험지 제목에 "9월5주차", "[9-5주차]" 같은 주차가 적혀 있으면 날짜를 그 주 금요일로 자동 선택함 —
+// 날짜 목록은 오늘 기준 "다가오는 금요일"이 기본이라, 지난 금요일 시험지를 올릴 때 날짜를 잘못 두는 일을 막기 위함.
+// 새 회차를 만들 때만 적용하고(수정 중인 회차의 날짜는 건드리지 않음), 목록에서 찾지 못하면 아무것도 바꾸지 않음
+function syncRoundDateFromTitle() {
+  if (editingRoundId) return;
+  const title = document.getElementById('roundTitle').value;
+  const m = title.match(/(\d{1,2})\s*(?:월|-)\s*(\d)\s*주\s*차/);
+  if (!m) return;
+  const label = `${parseInt(m[1], 10)}-${m[2]}주차`;
+  const dateSel = document.getElementById('roundDate');
+  const opt = Array.from(dateSel.options).find(o => dateToWeekLabel(o.value) === label);
+  if (!opt || dateSel.value === opt.value) return;
+  dateSel.value = opt.value;
+  toast(`제목의 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.`);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('addTypeRowBtn').addEventListener('click', () => addTypeRow());
   document.getElementById('roundTotal').addEventListener('input', updateCoverageHint);
   document.getElementById('roundGradeFilter').addEventListener('change', renderRounds);
+  document.getElementById('roundTitle').addEventListener('change', syncRoundDateFromTitle);
 
   document.getElementById('examFileInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
     const titleInput = document.getElementById('roundTitle');
-    if (titleInput && !titleInput.value.trim()) titleInput.value = file.name.replace(/\.[^.]+$/, '');
+    if (titleInput && !titleInput.value.trim()) { titleInput.value = file.name.replace(/\.[^.]+$/, ''); syncRoundDateFromTitle(); }
     if (file.size > MAX_EXAM_FILE_BYTES) {
       pendingExamFile = { name: file.name, dataUrl: null, size: file.size };
       renderExamFileInfo();
