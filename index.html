@@ -268,6 +268,15 @@
       <button type="button" class="btn danger" id="resetBtn">전체 데이터 초기화</button>
     </div>
     <div class="card">
+      <h2>시험지 자동 공유 (GitHub)</h2>
+      <p class="card-sub">토큰을 넣어두면 "시험지" 탭에서 회차를 저장할 때 모든 선생님 화면에 자동으로 열려요 (1~2분 뒤). 시험지 원본 이미지와 학생 정보는 올라가지 않고, 유형·단원·난이도만 공유돼요. 토큰은 이 컴퓨터에만 저장되고 백업 파일에는 포함되지 않아요. 토큰이 없으면 예전처럼 이 컴퓨터에만 저장돼요.</p>
+      <div class="inline-form">
+        <input type="password" id="ghTokenInput" placeholder="github_pat_..." style="min-width:260px;">
+        <button type="button" class="btn ghost" id="saveGhTokenBtn">저장 · 연결 확인</button>
+        <span id="ghTokenStatus" class="field-hint"></span>
+      </div>
+    </div>
+    <div class="card">
       <h2>API 키 설정</h2>
       <p class="card-sub">console.anthropic.com에서 발급받은 API 키를 입력하면, 회차·시험지 탭에서 "AI로 자동 분석" 버튼으로 문항을 바로 분석할 수 있어요. 이 컴퓨터에만 저장되고, 백업 파일에는 포함되지 않아요.</p>
       <div class="inline-form">
@@ -282,6 +291,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=123"></script>
+<script src="app.js?v=124"></script>
 </body>
 </html>
