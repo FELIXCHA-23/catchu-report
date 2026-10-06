@@ -128,9 +128,23 @@ function extractJson(text, stopReason) {
   }
 }
 
-const EXAM_ANALYSIS_PROMPT_TEMPLATE = total => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다.
+// 이 학년에서 이미 등록된 시험지가 쓰고 있는 "대단원 - 중단원" 이름 목록 — 같은 단원은 항상 같은 이름으로 쓰게 해서
+// 보고서 카드가 이름 차이(띄어쓰기·표현) 때문에 쪼개지지 않게 함
+function knownUnitsForGrade(grade) {
+  if (!grade) return [];
+  const set = new Set();
+  state.rounds.filter(r => r.grade === grade).forEach(r => (r.types || []).forEach(t => {
+    const parts = (t.unit || '').split(' - ').map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 2) set.add(parts.slice(0, 2).join(' - '));
+  }));
+  return Array.from(set).sort().slice(0, 60);
+}
+
+const EXAM_ANALYSIS_PROMPT_TEMPLATE = (total, knownUnits = [], grade = '') => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다.
 시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 "대단원 - 중단원 - 소단원" 3단계로 판단해주세요 (예: "도함수의 활용 - 접선의 방정식과 평균값 정리 - 접선의 기울기"). 대단원·중단원은 교과서의 큰 챕터/절 단위로 크게 잡고, 소단원에 문항의 구체적인 개념을 적으세요.
-유형은 너무 잘게 쪼개지 말고 굵직하게 묶어주세요 — 같은 단원 안에서는 유형이 2~3개를 넘지 않도록 통합해주세요 (예: "원의 접선의 방정식(1)", "(2)", "(3)"처럼 세분화된 소유형들은 "원의 접선의 방정식" 하나로 합치는 식).
+유형명(name)은 시험지에 문항마다 인쇄된 유형 이름이 있으면 그 이름을 그대로 쓰세요. 이름이 같거나 "(1)", "(2)", "①"처럼 번호만 다른 것은 하나의 유형으로 합쳐서 문항 번호를 한데 묶으세요 (예: "원의 접선의 방정식(1)", "(2)", "(3)" → "원의 접선의 방정식" 하나). 인쇄된 유형 이름이 없을 때만 직접 굵직하게 묶어주세요 (같은 단원 안에서 유형이 2~3개를 넘지 않게).${knownUnits.length ? `
+같은 단원은 항상 같은 이름으로 써야 합니다. 이 학년(${grade})에서 이미 쓰고 있는 "대단원 - 중단원" 목록이에요. 문항이 이 중 어느 단원에 해당하면 철자와 띄어쓰기까지 목록의 이름을 글자 그대로 쓰고, 어느 것에도 맞지 않는 새 단원일 때만 새 이름을 만드세요:
+${knownUnits.map(u => '- ' + u).join('\n')}` : ''}
 또한 문항 하나하나마다(전체 문항 각각에 대해) 다음 두 가지를 판단해주세요:
 - 난이도: 문항별 정답률이 시험지에 표시되어 있다면 그 정답률을 기준으로 아래 표에 따라 매겨주세요. 정답률 정보가 없다면(신규 시험지 등) 문제 내용을 보고 합리적으로 추정해주세요.
   95% 이상 → 1(하) · 85~95% → 2(중하) · 70~85% → 3(중) · 60~70% → 4(중상) · 50~60% → 5(상) · 50% 미만 → 6(최상)
@@ -172,7 +186,8 @@ async function analyzeExamWithAI() {
   status.style.color = 'var(--muted)';
   status.textContent = '분석 중이에요... (몇 초에서 1분 정도 걸려요)';
   try {
-    const analysisContent = [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total) }];
+    const examGrade = document.getElementById('roundGrade').value;
+    const analysisContent = [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total, knownUnitsForGrade(examGrade), examGrade) }];
     let { text, stopReason } = await callClaudeAPI({ content: analysisContent, maxTokens: 16000, effort: 'medium' });
     if (stopReason === 'max_tokens') {
       // 생각에 토큰을 다 써서 답이 잘린 경우 — 생각을 줄이고 한도를 늘려 자동으로 한 번 더 시도함
