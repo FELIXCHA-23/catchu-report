@@ -138,6 +138,7 @@ input:focus, select:focus, button:focus-visible {
   margin-top: 12px; padding: 14px; border: 1px dashed var(--border); border-radius: 10px;
   background: var(--surface-page); display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
 }
+.upload-box.drag-over { border-color: var(--accent); border-style: solid; background: var(--accent-fill); }
 .ai-import-box {
   margin-top: 10px; padding: 14px; border-radius: 10px;
   background: var(--accent-fill); display: flex; flex-direction: column; gap: 8px; align-items: flex-start;

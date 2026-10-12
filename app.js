@@ -11,7 +11,12 @@ const COMPETENCY_DESCRIPTIONS = {
   '연결': '영역·학년군 안팎의 개념을 유기적으로 연계해 새 지식을 만들고\n실생활·타 교과와 이어 수학의 쓸모를 깨달으며 기르는 능력',
   '정보처리': '실생활·수학적 상황의 자료를 탐색·수집·처리해 합리적으로 판단하고, 교구·공학 도구로 추상적 내용을 시각화해 직관적으로 이해하며 기르는 능력',
 };
-const MAX_EXAM_FILE_BYTES = 4 * 1024 * 1024;
+// 시험지 파일은 두 가지로 다룸:
+// - 분석용(AI에 보내기): 최대 20MB까지 받음. 큰 사진은 자동으로 줄여서(AI가 받는 이미지 한도 5MB 이내) 씀
+// - 보관용(이 컴퓨터 저장공간에 남기기): 1MB 이하일 때만. 브라우저 저장공간이 총 5MB 정도라, 큰 파일을 남기면 학생·채점 기록 저장이 실패함
+const MAX_ANALYZE_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_FOR_AI_BYTES = 3.5 * 1024 * 1024;
+const MAX_EXAM_FILE_BYTES = 1 * 1024 * 1024;
 const STANDARD_CLASSES = ['MM1-BETA','MM2-GAMMA','MM3-BETA','MH1-GAMMA','MH2-ALPHA','MH2-GAMMA','TM1-GAMMA','TM2-GAMMA','TM3-GAMMA','TH1-BETA','TH2-BETA','TH1-ALPHA','SH2-ALPHA','MP-INDV1','MP-INDV2','TP-INDV1','TP-INDV2','입학테스트'];
 const TEACHER_OPTIONS = ['차성빈','방희진','문태민','목윤재','오민경'];
 const CLASS_TEACHER_MAP = {
@@ -202,6 +207,7 @@ function findFridayOptionForWeek(dateSel, label) {
 // 파일 이름 등으로 이미 들어간 제목의 주차와 시험지에 인쇄된 주차가 다르면 인쇄된 쪽을 따르고 경고 문구를 돌려줌.
 function applyPrintedWeek(json) {
   if (editingRoundId) return '';
+  if (isElementaryGrade(document.getElementById('roundGrade').value)) return ' (초등은 날짜별 회차라서 날짜를 직접 골라주세요)';
   const wk = String(json.week || '').match(/^\s*(\d{1,2})\s*[-월]\s*(\d)/);
   if (!wk) return ' (시험지에 주차가 안 보여서 날짜는 직접 확인해주세요)';
   const label = `${parseInt(wk[1], 10)}-${wk[2]}주차`;
@@ -225,7 +231,7 @@ async function analyzeExamWithAI() {
   const btn = document.getElementById('aiAnalyzeBtn');
   const status = document.getElementById('aiAnalyzeStatus');
   if (!pendingExamFile || !pendingExamFile.dataUrl) {
-    status.textContent = '먼저 시험지를 업로드해주세요 (4MB 이하 이미지를 권장해요).';
+    status.textContent = '먼저 시험지를 업로드해주세요 (이미지나 PDF, 20MB 이하).';
     status.style.color = 'var(--critical)';
     return;
   }
@@ -537,6 +543,41 @@ function populateFridaySelect(selectEl, keepValue) {
   else selectEl.value = toISODate(nearestFriday);
 }
 
+const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'];
+function weekdayKo(iso) { return WEEKDAY_KO[new Date(iso + 'T00:00:00').getDay()]; }
+// 초등은 금요일 주간 시험이 아니라 등원하는 날마다 시험을 보므로 회차를 날짜(요일)로 지정함
+function isElementaryGrade(g) { return /^초/.test(g || ''); }
+const ELEMENTARY_DAILY_UNTIL = '2026-12-18'; // 이 날짜까지는 등원일마다 시험
+
+// 초등: 월~금 모든 평일을 고를 수 있는 목록 (지난 30일 ~ 12월 18일, 그 뒤여도 최소 2주 앞까지). 기본 선택은 오늘(평일이 아니면 다음 평일)
+function populateDailySelect(selectEl, keepValue) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(today.getDate() - 30);
+  const minEnd = new Date(today); minEnd.setDate(today.getDate() + 14);
+  const until = new Date(ELEMENTARY_DAILY_UNTIL + 'T00:00:00');
+  const end = until > minEnd ? until : minEnd;
+  const days = [];
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    if (d.getDay() >= 1 && d.getDay() <= 5) days.push(new Date(d));
+  }
+  const options = days.map(d => `<option value="${toISODate(d)}">${String(d.getMonth() + 1).padStart(2, '0')}월 ${String(d.getDate()).padStart(2, '0')}일 (${WEEKDAY_KO[d.getDay()]})</option>`);
+  if (keepValue && !days.some(d => toISODate(d) === keepValue)) {
+    options.unshift(`<option value="${keepValue}">${keepValue} (${weekdayKo(keepValue)})</option>`);
+  }
+  selectEl.innerHTML = options.join('');
+  const def = new Date(today);
+  while (def.getDay() === 0 || def.getDay() === 6) def.setDate(def.getDate() + 1);
+  selectEl.value = keepValue || toISODate(def);
+}
+
+// 학년에 맞는 날짜 목록: 초등은 요일별(매일), 그 외는 금요일만
+function populateRoundDateSelect(selectEl, grade, keepValue) {
+  const daily = isElementaryGrade(grade);
+  if (daily) populateDailySelect(selectEl, keepValue);
+  else populateFridaySelect(selectEl, keepValue);
+  selectEl.dataset.mode = daily ? 'daily' : 'friday';
+}
+
 function parseRange(str) {
   const set = new Set();
   String(str || '').split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
@@ -823,25 +864,76 @@ function updateCoverageHint() {
   hint.style.color = covered.size === total && total > 0 ? 'var(--good)' : 'var(--warn-ink)';
 }
 
+function readFileAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// 사진을 AI가 받는 한도(이미지 5MB) 안으로 줄임 — 긴 변 2400px부터 시작해 용량이 안 들어오면 더 줄임. 글자·수식이 읽히는 선에서 멈춤
+async function shrinkImageForAI(file) {
+  const bitmap = await createImageBitmap(file);
+  let maxSide = 2400, quality = 0.85, blob = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    if (blob && blob.size <= MAX_IMAGE_FOR_AI_BYTES) break;
+    maxSide = Math.round(maxSide * 0.8);
+    quality = Math.max(0.7, quality - 0.05);
+  }
+  if (bitmap.close) bitmap.close();
+  return blob;
+}
+
+// 올린 파일을 분석에 쓸 수 있는 형태로 준비함. 큰 사진은 줄이고, PDF는 그대로 둠(20MB 이하만 여기까지 옴)
+async function prepareExamFileForAI(file) {
+  const isImage = (file.type || '').startsWith('image/');
+  if (isImage && file.size > MAX_IMAGE_FOR_AI_BYTES) {
+    const blob = await shrinkImageForAI(file);
+    if (!blob || blob.size > 5 * 1024 * 1024) throw new Error('image too large');
+    return { name: file.name, dataUrl: await readFileAsDataUrl(blob), size: blob.size, resized: true, originalSize: file.size };
+  }
+  return { name: file.name, dataUrl: await readFileAsDataUrl(file), size: file.size };
+}
+
+// 이 컴퓨터에 남겨둘 시험지 정보 — 작은 파일만 내용까지 보관하고, 큰 파일은 이름·용량만 남김(저장공간 보호)
+function storableExamFile(f) {
+  if (!f) return null;
+  if (f.dataUrl && f.size <= MAX_EXAM_FILE_BYTES) return { name: f.name, dataUrl: f.dataUrl, size: f.size };
+  return { name: f.name, dataUrl: null, size: f.originalSize || f.size };
+}
+
 function renderExamFileInfo() {
   const info = document.getElementById('examFileInfo');
   const thumb = document.getElementById('examThumb');
   if (!pendingExamFile) {
-    info.textContent = '아직 업로드된 시험지가 없어요.';
+    info.textContent = '아직 업로드된 시험지가 없어요. 위 버튼을 누르거나, 파일을 이 상자 위로 끌어다 놓아도 돼요.';
     thumb.style.display = 'none';
     return;
   }
   const sizeTxt = (pendingExamFile.size / 1024 / 1024).toFixed(1) + 'MB';
+  const bigNote = pendingExamFile.size > MAX_EXAM_FILE_BYTES ? ' · AI 분석에는 쓸 수 있고, 용량이 커서 이 컴퓨터에는 저장하지 않아요' : '';
   if (pendingExamFile.dataUrl && pendingExamFile.dataUrl.startsWith('data:image')) {
     thumb.src = pendingExamFile.dataUrl;
     thumb.style.display = 'block';
-    info.textContent = `${pendingExamFile.name} (${sizeTxt})`;
+    const resizedNote = pendingExamFile.resized ? ` (원본 ${(pendingExamFile.originalSize / 1024 / 1024).toFixed(1)}MB를 줄임)` : '';
+    info.textContent = `${pendingExamFile.name} (${sizeTxt})${resizedNote}${bigNote}`;
   } else if (pendingExamFile.dataUrl) {
     thumb.style.display = 'none';
-    info.textContent = `${pendingExamFile.name} (${sizeTxt}) · PDF 첨부됨`;
+    info.textContent = `${pendingExamFile.name} (${sizeTxt}) · PDF 첨부됨${bigNote}`;
   } else {
     thumb.style.display = 'none';
-    info.textContent = `${pendingExamFile.name} (${sizeTxt}) · 용량이 커서 미리보기는 생략했어요`;
+    info.textContent = `${pendingExamFile.name} (${sizeTxt}) · 용량이 커서 파일 내용은 저장하지 않았어요 (이름만 기록)`;
   }
 }
 
@@ -851,7 +943,7 @@ function resetRoundForm() {
   pendingDifficulty = null;
   pendingCompetency = null;
   document.getElementById('roundForm').reset();
-  populateFridaySelect(document.getElementById('roundDate'));
+  populateRoundDateSelect(document.getElementById('roundDate'), '');
   document.getElementById('roundGrade').value = '';
   document.getElementById('roundTotal').value = 30;
   document.getElementById('roundTitle').value = '';
@@ -957,7 +1049,7 @@ function renderRounds() {
     if (!r) return;
     editingRoundId = r.id;
     pendingExamFile = r.examFile || null;
-    populateFridaySelect(document.getElementById('roundDate'), r.date);
+    populateRoundDateSelect(document.getElementById('roundDate'), r.grade, r.date);
     document.getElementById('roundGrade').value = r.grade || '';
     document.getElementById('roundTotal').value = r.total;
     document.getElementById('roundTitle').value = r.title || '';
@@ -975,6 +1067,7 @@ function renderRounds() {
 // 새 회차를 만들 때만 적용하고(수정 중인 회차의 날짜는 건드리지 않음), 목록에서 찾지 못하면 아무것도 바꾸지 않음
 function syncRoundDateFromTitle() {
   if (editingRoundId) return;
+  if (isElementaryGrade(document.getElementById('roundGrade').value)) return; // 초등은 금요일 주간 시험이 아니라 날짜별 회차
   const title = document.getElementById('roundTitle').value;
   const m = title.match(/(\d{1,2})\s*(?:월|-)\s*(\d)\s*주\s*차/);
   if (!m) return;
@@ -991,24 +1084,68 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('roundTotal').addEventListener('input', updateCoverageHint);
   document.getElementById('roundGradeFilter').addEventListener('change', renderRounds);
   document.getElementById('roundTitle').addEventListener('change', syncRoundDateFromTitle);
+  // 학년을 바꾸면 날짜 목록도 바뀜 (초등: 매일 / 그 외: 금요일만).
+  // 같은 종류끼리(초등→초등, 금요일 목록→금요일 목록) 바꿀 땐 고른 날짜를 유지하고,
+  // 종류가 바뀔 땐 새 목록의 기본값(초등은 오늘, 그 외는 가까운 금요일)으로 시작함
+  document.getElementById('roundGrade').addEventListener('change', () => {
+    const dateSel = document.getElementById('roundDate');
+    const grade = document.getElementById('roundGrade').value;
+    const wasDaily = dateSel.dataset.mode === 'daily';
+    const willBeDaily = isElementaryGrade(grade);
+    populateRoundDateSelect(dateSel, grade, wasDaily === willBeDaily ? dateSel.value : undefined);
+    syncRoundDateFromTitle();
+  });
+
+  // 파일을 마우스로 끌어다 놓기 — 업로드 상자 위에 놓으면 "파일 선택"과 똑같이 처리됨(같은 입력칸에 넣고 change 이벤트 전달).
+  // 상자를 놓치면 브라우저가 파일을 열어버려서 작업 중이던 화면이 사라지므로, 파일을 끄는 동안에는 페이지 전체에서 기본 동작을 막음
+  const dropBox = document.querySelector('#panel-rounds .upload-box');
+  const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+  ['dragover', 'drop'].forEach(type => window.addEventListener(type, e => { if (hasFiles(e)) e.preventDefault(); }));
+  if (dropBox) {
+    ['dragenter', 'dragover'].forEach(type => dropBox.addEventListener(type, e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dropBox.classList.add('drag-over');
+    }));
+    dropBox.addEventListener('dragleave', e => {
+      if (!dropBox.contains(e.relatedTarget)) dropBox.classList.remove('drag-over');
+    });
+    dropBox.addEventListener('drop', e => {
+      dropBox.classList.remove('drag-over');
+      const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+      if (!files.length) return;
+      const file = files.find(f => f.type === 'application/pdf' || (f.type || '').startsWith('image/'));
+      if (!file) { toast('이미지(JPG·PNG)나 PDF 파일만 올릴 수 있어요.'); return; }
+      if (files.length > 1) toast('시험지는 한 번에 한 개씩만 올릴 수 있어서 첫 파일만 넣었어요.');
+      const input = document.getElementById('examFileInput');
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
 
   document.getElementById('examFileInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
     const titleInput = document.getElementById('roundTitle');
     if (titleInput && !titleInput.value.trim()) { titleInput.value = file.name.replace(/\.[^.]+$/, ''); syncRoundDateFromTitle(); }
-    if (file.size > MAX_EXAM_FILE_BYTES) {
-      pendingExamFile = { name: file.name, dataUrl: null, size: file.size };
+    if (file.size > MAX_ANALYZE_FILE_BYTES) {
+      pendingExamFile = null;
       renderExamFileInfo();
-      toast('파일이 너무 커서 미리보기 저장은 생략했어요 (기록용으로 이름만 남겨요).');
+      toast(`파일이 너무 커요 (${(file.size / 1024 / 1024).toFixed(1)}MB). 20MB 이하로 올려주세요. 사진이면 해상도를 낮춰 다시 찍거나, PDF면 용량을 줄여주세요.`);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingExamFile = { name: file.name, dataUrl: reader.result, size: file.size };
+    prepareExamFileForAI(file).then(prepared => {
+      pendingExamFile = prepared;
       renderExamFileInfo();
-    };
-    reader.readAsDataURL(file);
+      if (prepared.resized) toast(`사진이 커서 AI 분석용으로 ${(prepared.size / 1024 / 1024).toFixed(1)}MB로 줄였어요.`);
+    }).catch(err => {
+      console.error(err);
+      pendingExamFile = null;
+      renderExamFileInfo();
+      toast('파일을 읽지 못했어요. 다른 파일로 다시 시도해주세요.');
+    });
   });
 
   document.getElementById('mappingFileInput').addEventListener('change', e => {
@@ -1056,12 +1193,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let savedRound;
     if (editingRoundId) {
       const r = state.rounds.find(x => x.id === editingRoundId);
-      r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = pendingExamFile || null; r.title = title || undefined;
+      r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = storableExamFile(pendingExamFile); r.title = title || undefined;
       if (pendingDifficulty) r.difficulty = pendingDifficulty;
       if (mergedCompetency) r.competency = mergedCompetency;
       savedRound = r;
     } else {
-      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: pendingExamFile || null, difficulty: pendingDifficulty || undefined, competency: mergedCompetency || undefined };
+      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: pendingDifficulty || undefined, competency: mergedCompetency || undefined };
       state.rounds.push(savedRound);
     }
     saveState();
@@ -1160,7 +1297,7 @@ function populateScoreRoundGroupSel() {
   const prev = sel.value;
   const groups = grade ? scoreRoundGroups(grade) : [];
   sel.innerHTML = groups.length
-    ? [...groups].reverse().map(g => `<option value="${g.date}">${g.label} (${shortDate(g.date)})</option>`).join('')
+    ? [...groups].reverse().map(g => `<option value="${g.date}">${g.label} (${shortDate(g.date)}${isElementaryGrade(grade) ? ' ' + weekdayKo(g.date) : ''})</option>`).join('')
     : '<option value="">회차가 없어요</option>';
   if (groups.some(g => g.date === prev)) sel.value = prev;
   populateScoreExamSel();
@@ -1197,6 +1334,13 @@ function populateScoreStudentSelect() {
   const entrance = !!round && isEntranceRound(round);
   // 입학테스트 시험지는 "입학테스트" 반 학생에게만 보임
   if (entrance) eligible = eligible.filter(s => s.class === ENTRANCE_CLASS);
+  // 초등 날짜별 회차: M으로 시작하는 반(월수반)은 월·수 시험지에만, T로 시작하는 반(화목반)은 화·목 시험지에만 열림.
+  // 반이 M/T로 시작하지 않는 학생과 개별시험지·입학테스트, 그리고 월수/화목이 아닌 날(금 등)의 시험지는 제한하지 않음
+  if (round && isElementaryGrade(round.grade) && !round.individual && !entrance) {
+    const wd = new Date(round.date + 'T00:00:00').getDay();
+    if (wd === 1 || wd === 3) eligible = eligible.filter(s => !/^T/i.test(s.class || ''));
+    else if (wd === 2 || wd === 4) eligible = eligible.filter(s => !/^M/i.test(s.class || ''));
+  }
   eligible = filterByCurrentTeacher(eligible);
   sel.innerHTML = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
