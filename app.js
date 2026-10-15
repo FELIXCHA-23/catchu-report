@@ -2938,8 +2938,15 @@ function pdfFlushPage(pdf, ctx, justify) {
 async function pdfAddCoverPage(pdf, student, points) {
   const period = points.length ? `${points[0].date} – ${points[points.length - 1].date}` : '';
   const teacherTxt = student.teacher ? escapeHtml(teacherDisplayName(student.teacher)) + ' ' + teacherTitle(student.teacher) : '-';
-  // "서인천 고1"처럼 띄어쓰지 않고 "서인천고1"처럼 붙여서 씀
-  const schoolGradeTxt = escapeHtml(schoolGradeText(student.school, student.grade));
+  // 입학테스트 반 학생은 "캐치유테스트 분석보고서 / 측정 기간 N회차 / 담임" 대신 입학테스트 결과 표지를 따로 씀
+  const entrance = isEntranceStudent(student);
+  const fmtFull = iso => { const d = new Date(iso + 'T00:00:00'); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; };
+  const testDates = Array.from(new Set(points.map(p => { const r = state.rounds.find(x => x.id === p.roundId); return r ? r.date : null; }).filter(Boolean))).sort();
+  const takenTxt = testDates.length ? (testDates.length === 1 ? fmtFull(testDates[0]) : `${fmtFull(testDates[0])} – ${fmtFull(testDates[testDates.length - 1])}`) : escapeHtml(period);
+  const coverTitle = entrance ? '입학테스트 결과 보고서' : '캐치유테스트 분석보고서';
+  const infoItems = entrance
+    ? [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['응시일', takenTxt], ['담당', student.teacher ? teacherTxt : '캐슬수학']]
+    : [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['측정 기간', `${escapeHtml(period)} (${points.length}회차)`], ['담임', teacherTxt]];
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed; left:-99999px; top:0;';
   wrap.innerHTML = `
@@ -2954,15 +2961,13 @@ async function pdfAddCoverPage(pdf, student, points) {
           <div style="text-align:center;">
             <div style="width:70px; height:3px; background:#c8102e; margin:0 auto 30px;"></div>
             <div style="font-size:46px; font-weight:800; color:#0b0b0b; margin-bottom:16px;">${escapeHtml(displayName(student.name))}</div>
-            <div style="font-family:'Gowun Dodum',sans-serif; font-weight:400; font-size:23px; color:#52514e;">캐치유테스트 분석보고서</div>
+            <div style="font-family:'Gowun Dodum',sans-serif; font-weight:400; font-size:23px; color:#52514e;">${coverTitle}</div>
             <div style="width:70px; height:3px; background:#c8102e; margin:30px auto 0;"></div>
           </div>
           <div style="width:100%;">
             <div style="border-top:1px solid #ddddd3; margin-bottom:22px;"></div>
             <div style="display:flex; justify-content:center; gap:64px; font-size:14px; color:#3a3a3a; text-align:center;">
-              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">학교/학년</div>${schoolGradeTxt}</div>
-              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">측정 기간</div>${escapeHtml(period)} (${points.length}회차)</div>
-              <div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">담임</div>${teacherTxt}</div>
+              ${infoItems.map(([label, value]) => `<div><div style="color:#c8102e; font-weight:700; font-size:11.5px; letter-spacing:0.04em; margin-bottom:6px;">${label}</div>${value}</div>`).join('')}
             </div>
           </div>
         </div>
