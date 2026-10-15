@@ -155,13 +155,16 @@
   <section class="tab-panel" id="panel-score">
     <div class="card">
       <h2>채점 입력</h2>
-      <p class="card-sub">학년 · 회차 · 시험지 · 학생을 차례로 선택하고, 틀린 문항 번호를 클릭하세요.</p>
+      <p class="card-sub">학년 · 주차(또는 달력에서 날짜) · 시험지 · 학생을 차례로 선택하고, 틀린 문항 번호를 클릭하세요.</p>
       <div class="inline-form">
         <select id="scoreGradeSel"></select>
-        <select id="scoreRoundGroupSel"></select>
+        <select id="scoreWeekSel" title="몇월 몇주차"></select>
+        <input type="date" id="scoreDateInput" title="달력에서 날짜 선택">
+        <input type="hidden" id="scoreRoundGroupSel">
         <select id="scoreRoundSel"></select>
         <select id="scoreStudentSel"></select>
       </div>
+      <div id="scoreDateHint" class="field-hint" style="margin-top:6px;"></div>
       <div id="scoreGridWrap"></div>
       <div class="inline-form" style="margin-top:10px;">
         <input type="text" id="quickWrongInput" placeholder="오답 번호 + Enter">
@@ -291,6 +294,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=133"></script>
+<script src="app.js?v=134"></script>
 </body>
 </html>

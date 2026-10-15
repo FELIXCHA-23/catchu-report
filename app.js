@@ -1304,15 +1304,48 @@ function populateScoreGradeSel() {
   populateScoreRoundGroupSel();
 }
 
-function populateScoreRoundGroupSel() {
+// 주차 드롭다운(몇월 몇주차) + 달력(날짜)로 회차를 고름. 실제 값은 숨은 입력(scoreRoundGroupSel)에 날짜로 저장됨.
+// requested: 선택하고 싶은 날짜 — 그 날 시험이 없으면 같은 주차에서 가장 가까운 시험일로 맞추고 안내함
+function populateScoreRoundGroupSel(requested) {
   const grade = document.getElementById('scoreGradeSel').value;
-  const sel = document.getElementById('scoreRoundGroupSel');
-  const prev = sel.value;
+  const hidden = document.getElementById('scoreRoundGroupSel');
+  const weekSel = document.getElementById('scoreWeekSel');
+  const dateInp = document.getElementById('scoreDateInput');
+  const hint = document.getElementById('scoreDateHint');
   const groups = grade ? scoreRoundGroups(grade) : [];
-  sel.innerHTML = groups.length
-    ? [...groups].reverse().map(g => `<option value="${g.date}">${g.label} (${shortDate(g.date)}${isElementaryGrade(grade) ? ' ' + weekdayKo(g.date) : ''})</option>`).join('')
+  const dayTxt = d => `${shortDate(d)}(${weekdayKo(d)})`;
+
+  const weeks = [];
+  [...groups].reverse().forEach(g => { if (!weeks.includes(g.label)) weeks.push(g.label); });
+  weekSel.innerHTML = weeks.length
+    ? weeks.map(w => `<option value="${w}">${w}</option>`).join('')
     : '<option value="">회차가 없어요</option>';
-  if (groups.some(g => g.date === prev)) sel.value = prev;
+
+  // 학년을 바꿔서 이전 선택 날짜가 이 학년에 없을 때는 "없다"고 하지 않고 가장 최근 시험으로 자연스럽게 이동함
+  let want = requested || hidden.value;
+  let use = '', note = '';
+  if (groups.length) {
+    if (want && groups.some(g => g.date === want)) use = want;
+    else if (want && requested) {
+      const sameWeek = groups.filter(g => g.label === dateToWeekLabel(want));
+      if (sameWeek.length) {
+        const t = new Date(want + 'T00:00:00').getTime();
+        use = sameWeek.reduce((a, b) => Math.abs(new Date(a.date + 'T00:00:00') - t) <= Math.abs(new Date(b.date + 'T00:00:00') - t) ? a : b).date;
+        note = `${dayTxt(want)}에는 시험이 없어서, 같은 주차의 ${dayTxt(use)} 시험을 보여드려요.`;
+      } else {
+        note = `${dateToWeekLabel(want)}(${dayTxt(want)})에는 등록된 시험지가 없어요.`;
+      }
+    } else use = groups[groups.length - 1].date;
+  }
+  hidden.value = use;
+  if (use) {
+    weekSel.value = dateToWeekLabel(use);
+    dateInp.value = use;
+  } else {
+    dateInp.value = want || '';
+  }
+  const weekDates = use ? groups.filter(g => g.label === dateToWeekLabel(use)).map(g => dayTxt(g.date)) : [];
+  hint.textContent = note || (weekDates.length ? `이 주차 시험일: ${weekDates.join(' · ')}` : (groups.length ? '' : '이 학년은 아직 등록된 시험지가 없어요.'));
   populateScoreExamSel();
 }
 
@@ -1608,7 +1641,18 @@ function updateScoreSummary() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreGradeSel').addEventListener('change', () => { populateScoreRoundGroupSel(); renderScoreTab(); });
-  document.getElementById('scoreRoundGroupSel').addEventListener('change', () => { populateScoreExamSel(); renderScoreTab(); });
+  // 주차를 바꾸면 그 주차의 가장 늦은 시험일로, 달력에서 날짜를 고르면 그 날짜로 이동
+  document.getElementById('scoreWeekSel').addEventListener('change', () => {
+    const grade = document.getElementById('scoreGradeSel').value;
+    const label = document.getElementById('scoreWeekSel').value;
+    const inWeek = scoreRoundGroups(grade).filter(g => g.label === label);
+    if (inWeek.length) populateScoreRoundGroupSel(inWeek[inWeek.length - 1].date);
+    renderScoreTab();
+  });
+  document.getElementById('scoreDateInput').addEventListener('change', () => {
+    const v = document.getElementById('scoreDateInput').value;
+    if (v) { populateScoreRoundGroupSel(v); renderScoreTab(); }
+  });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', () => {
     // 개별시험지를 실수로 잘못된 학생에게 배정했을 때, 여기서 다른 학생을 고르면 바로 재배정함.
