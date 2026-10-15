@@ -268,7 +268,11 @@ async function analyzeExamWithAI() {
     pendingDifficulty = (json.difficulty && typeof json.difficulty === 'object') ? json.difficulty : null;
     pendingCompetency = (json.competency && typeof json.competency === 'object') ? json.competency : null;
     updateCoverageHint();
-    const weekNote = applyPrintedWeek(json);
+    let weekNote = applyPrintedWeek(json);
+    if (isElementaryGrade(document.getElementById('roundGrade').value)) {
+      pendingDifficulty = elementaryFixedDifficulty(parseInt(document.getElementById('roundTotal').value, 10) || total);
+      weekNote += ' · 초등 시험지라 난이도는 "중하"로 고정했어요.';
+    }
     document.getElementById('manualFallback').open = true;
     status.style.color = weekNote.includes('⚠') || weekNote.includes('직접') ? 'var(--warn-ink)' : 'var(--good)';
     status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.' + weekNote + usageCostText(usage);
@@ -548,6 +552,12 @@ function weekdayKo(iso) { return WEEKDAY_KO[new Date(iso + 'T00:00:00').getDay()
 // 초등은 금요일 주간 시험이 아니라 등원하는 날마다 시험을 보므로 회차를 날짜(요일)로 지정함
 function isElementaryGrade(g) { return /^초/.test(g || ''); }
 const ELEMENTARY_DAILY_UNTIL = '2026-12-18'; // 이 날짜까지는 등원일마다 시험
+// 초등 시험지의 문항별 난이도는 전부 2("중하")로 고정
+function elementaryFixedDifficulty(total) {
+  const d = {};
+  for (let q = 1; q <= (total || 30); q++) d[q] = 2;
+  return d;
+}
 
 // 초등: 월~금 모든 평일을 고를 수 있는 목록 (지난 30일 ~ 12월 18일, 그 뒤여도 최소 2주 앞까지). 기본 선택은 오늘(평일이 아니면 다음 평일)
 function populateDailySelect(selectEl, keepValue) {
@@ -1190,15 +1200,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // 문항별 역량은 AI/JSON이 정한 값을 그대로 저장 (수정할 때 새로 분석하지 않으면 기존 값 유지)
     const mergedCompetency = pendingCompetency || null;
 
+    // 초등 시험지는 문항별 난이도를 따로 매기지 않고 전부 "중하"(2)로 고정함
+    const finalDifficulty = isElementaryGrade(grade) ? elementaryFixedDifficulty(total) : pendingDifficulty;
+
     let savedRound;
     if (editingRoundId) {
       const r = state.rounds.find(x => x.id === editingRoundId);
       r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = storableExamFile(pendingExamFile); r.title = title || undefined;
-      if (pendingDifficulty) r.difficulty = pendingDifficulty;
+      if (finalDifficulty) r.difficulty = finalDifficulty;
       if (mergedCompetency) r.competency = mergedCompetency;
       savedRound = r;
     } else {
-      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: pendingDifficulty || undefined, competency: mergedCompetency || undefined };
+      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined };
       state.rounds.push(savedRound);
     }
     saveState();
