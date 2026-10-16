@@ -372,3 +372,15 @@ table.report-table td.watch-cell { color: var(--warn-ink); font-weight: 700; }
   .tab-panel#panel-report { display: flex !important; }
   .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
 }
+
+/* 보고서 요소별 "PDF 포함" 체크박스 — 끈 요소는 화면에서 흐리게, PDF/인쇄에서는 빠짐 */
+[data-rkey] { position: relative; }
+.rk-toggle { position: absolute; top: 6px; right: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+.rk-toggle input { margin: 0; cursor: pointer; }
+.rk-off > *:not(.rk-toggle) { opacity: 0.3; }
+.exporting-pdf .rk-off { display: none !important; }
+.exporting-pdf .pill-row { grid-template-columns: repeat(var(--pill-n, 5), 1fr); }
+@media print {
+  .rk-off { display: none !important; }
+  .pill-row { grid-template-columns: repeat(var(--pill-n, 5), 1fr); }
+}

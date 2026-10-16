@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=63">
+<link rel="stylesheet" href="style.css?v=64">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -222,6 +222,7 @@
         <span class="field-hint">부터</span>
         <select id="reportToSel"></select>
         <span class="field-hint">까지</span>
+        <label class="field-hint" style="display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="pdfCoverToggle" checked> 겉표지 포함</label>
         <button type="button" class="btn primary" id="pdfExportBtn">⬇ PDF로 저장</button>
         <span id="pdfExportStatus" class="field-hint"></span>
       </div>
@@ -294,6 +295,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=134"></script>
+<script src="app.js?v=135"></script>
 </body>
 </html>

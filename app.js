@@ -457,6 +457,8 @@ function loadState() {
       if (!data.teacherNotes) data.teacherNotes = {};
       if (!data.retests) data.retests = [];
       if (!data.gradeOverrides) data.gradeOverrides = {};
+      if (!data.difficultyOverrides) data.difficultyOverrides = {};
+      if (!data.reportHidden) data.reportHidden = {};
       if (!data.sharedRoundIds) data.sharedRoundIds = [];
       if (!data.studentDone) data.studentDone = {};
       if (!data.studentMemo) data.studentMemo = {};
@@ -464,7 +466,7 @@ function loadState() {
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, sharedRoundIds: [], studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, sharedRoundIds: [], studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
 }
 
 function saveState() {
@@ -1391,7 +1393,12 @@ function populateScoreStudentSelect() {
   sel.innerHTML = eligible.length
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
     : `<option value="">${round && round.grade ? (entrance ? ENTRANCE_CLASS + ' 반 ' : '') + escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
+  // 시험지에 학생 힌트(이름 한 글자)가 있으면, 후보 중 그 글자가 이름에 들어간 학생이 딱 한 명일 때 그 학생을 기본으로 골라줌
+  // (공용 파일에는 이름 전체를 올리지 않으므로 힌트만 담김. 틀리면 선생님이 바로 다른 학생을 고르면 됨)
+  const hint = round ? (round.hintName || (round.individual && !round.studentId ? round.studentName : '')) : '';
+  const hinted = hint ? eligible.filter(s => (s.name || '').includes(hint)) : [];
   if (round && round.individual && round.studentId && eligible.some(s => s.id === round.studentId)) sel.value = round.studentId;
+  else if (hinted.length === 1) sel.value = hinted[0].id;
   else if (eligible.some(s => s.id === prev)) sel.value = prev;
 }
 
@@ -2032,7 +2039,10 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
   const classAvgOverall = computeClassAverageOverall(roundIds, studentId);
 
   // difficulty (optional; only present if the round data was tagged via AI-import)
-  const diff = computeDifficultyBreakdown(windowed);
+  // 강사가 보고서 화면에서 "평균 난이도"를 직접 정해둔 경우(시험지에 난이도가 없어도) 그 값을 전체 평균으로 씀
+  const rawDiff = computeDifficultyBreakdown(windowed);
+  const diffOverride = state.difficultyOverrides ? state.difficultyOverrides[studentId] : null;
+  const diff = diffOverride ? { avgCorrect: null, avgWrong: null, ...(rawDiff || {}), avgAll: +diffOverride, manual: true } : rawDiff;
 
   // curriculum-unit rollup (optional; only present once types carry a `unit`)
   const unitBreakdown = computeUnitBreakdown(windowed);
@@ -2494,6 +2504,57 @@ function populateReportRoundSelects() {
   }
 }
 
+// 보고서의 각 요소(카드·타일)마다 "PDF 포함" 체크박스를 달아서, 필요 없는 건 빼고 PDF로 저장할 수 있게 함.
+// 체크를 끈 요소는 화면에서 흐리게 보이고 PDF에서 빠짐. 학생마다 따로 기억해둠(state.reportHidden)
+const REPORT_PART_NAMES = {
+  masthead: '제목 영역', pillGrade: '예상 등급', pillRate: '정답률', pillCount: '채점 문항 수', pillDiff: '시험 난이도', pillDelta: '상승/최고 기록',
+  trend: '전체 정답률 추이', note: '선생님 의견', sw: '대표 강점·취약 유형', extend: '추가 추이 그래프', types: '유형별 정답률',
+  retest: '재시험 결과', unit: '단원별 학습성과', diff: '난이도 분석', radar: '핵심역량', table: '회차별 상세 기록',
+};
+function updateReportPillColumns(out) {
+  const row = out.querySelector('.pill-row');
+  if (!row) return;
+  const n = Array.from(row.children).filter(el => !el.classList.contains('rk-off')).length;
+  row.style.setProperty('--pill-n', Math.max(1, n));
+}
+function setupReportPartToggles(out, studentId) {
+  const hiddenList = state.reportHidden[studentId] || [];
+  out.querySelectorAll('[data-rkey]').forEach(el => {
+    const key = el.dataset.rkey;
+    const label = document.createElement('label');
+    label.className = 'rk-toggle no-print';
+    label.title = REPORT_PART_NAMES[key] ? `${REPORT_PART_NAMES[key]} — 체크를 끄면 PDF에서 빠져요` : 'PDF에 포함';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !hiddenList.includes(key);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' PDF 포함'));
+    el.appendChild(label);
+    el.classList.toggle('rk-off', !cb.checked);
+    cb.addEventListener('change', () => {
+      const list = (state.reportHidden[studentId] || []).filter(k => k !== key);
+      if (!cb.checked) list.push(key);
+      if (list.length) state.reportHidden[studentId] = list; else delete state.reportHidden[studentId];
+      saveState();
+      el.classList.toggle('rk-off', !cb.checked);
+      updateReportPillColumns(out);
+    });
+  });
+  updateReportPillColumns(out);
+
+  // 겉표지도 요소 중 하나 — 보고서 생성 카드의 "겉표지 포함" 체크박스로 빼고 넣음
+  const coverToggle = document.getElementById('pdfCoverToggle');
+  if (coverToggle) {
+    coverToggle.checked = !hiddenList.includes('cover');
+    coverToggle.onchange = () => {
+      const list = (state.reportHidden[studentId] || []).filter(k => k !== 'cover');
+      if (!coverToggle.checked) list.push('cover');
+      if (list.length) state.reportHidden[studentId] = list; else delete state.reportHidden[studentId];
+      saveState();
+    };
+  }
+}
+
 function renderReportTab() {
   const out = document.getElementById('reportOutput');
   const studentId = document.getElementById('reportStudentSel').value;
@@ -2550,7 +2611,7 @@ function renderReportTab() {
   const headCells = points.map(p => `<th>${escapeHtml(p.label)}<br>${escapeHtml(p.date)}</th>`).join('');
 
   const retestSection = retest.items.length ? `
-    <div class="card">
+    <div class="card" data-rkey="retest">
       <h2>재시험 결과</h2>
       <p class="card-sub">오답 문항을 쌍둥이문제로 다시 본 기록 · 메인 정답률과 별도로 집계돼요</p>
       <p class="card-sub">재시험에서의 재오답을 포함한 모든 오답 문항은 개별첨삭이 완료되었으며, 끝까지 추적 관리합니다.</p>
@@ -2569,7 +2630,7 @@ function renderReportTab() {
     </div>` : '';
 
   const unitSection = unitBreakdown.length ? `
-    <div class="card">
+    <div class="card" data-rkey="unit">
       <h2>단원별 학습성과</h2>
       <p class="card-sub">2022 개정 교육과정 단원 기준 · 기간 누적</p>
       ${unitBreakdown.map(u => `
@@ -2582,13 +2643,13 @@ function renderReportTab() {
     </div>` : '';
 
   const diffSection = difficulty ? `
-    <div class="card">
+    <div class="card" data-rkey="diff">
       <h2>난이도 분석</h2>
-      <p class="card-sub no-print">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시돼요</p>
+      <p class="card-sub no-print">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시돼요${difficulty.manual ? ' · 전체 평균은 강사가 직접 정한 값이에요' : ''}</p>
       <div class="diff-row">
         <div class="diff-tile"><div class="label">전체 평균 난이도</div><div class="value tnum">${difficulty.avgAll}</div></div>
-        <div class="diff-tile"><div class="label">정답 문항 평균 난이도</div><div class="value tnum" style="color:var(--good)">${difficulty.avgCorrect ?? '—'}</div></div>
-        <div class="diff-tile"><div class="label">오답 문항 평균 난이도</div><div class="value tnum" style="color:var(--critical)">${difficulty.avgWrong ?? '—'}</div></div>
+        ${difficulty.avgCorrect !== null ? `<div class="diff-tile"><div class="label">정답 문항 평균 난이도</div><div class="value tnum" style="color:var(--good)">${difficulty.avgCorrect}</div></div>` : ''}
+        ${difficulty.avgWrong !== null ? `<div class="diff-tile"><div class="label">오답 문항 평균 난이도</div><div class="value tnum" style="color:var(--critical)">${difficulty.avgWrong}</div></div>` : ''}
       </div>
       ${difficulty.avgWrong !== null && difficulty.avgCorrect !== null ? `<p class="comment" style="margin-top:10px;">${
         difficulty.avgWrong > difficulty.avgCorrect + 0.5
@@ -2602,7 +2663,7 @@ function renderReportTab() {
   const competencyLegend = `<div class="competency-legend">${Object.keys(COMPETENCY_LABELS).map(c => `
       <div class="competency-legend-item"><b>${escapeHtml(COMPETENCY_LABELS[c])}</b> — ${escapeHtml(COMPETENCY_DESCRIPTIONS[c]).replace(/\n/g, '<br>')}</div>`).join('')}</div>`;
   const radarSection = competencyStats.length >= 3 ? `
-    <div class="card">
+    <div class="card" data-rkey="radar">
       <h2>핵심역량</h2>
       <p class="card-sub">2022 개정 수학과목 5대 핵심역량 기준${competencyHasAnyData ? '' : ' · 아직 역량이 태그된 시험지가 없어요'}</p>
       <div class="radar-wrap">${buildRadarSVG(competencyStats)}</div>
@@ -2625,11 +2686,18 @@ function renderReportTab() {
     extendPoints = computeStudentReport(studentId, extendFromId, extendToId).points;
   }
 
+  // 평균 난이도 조절칸 — 1.0(하)~6.0(최상)을 0.5 단위로 고를 수 있음. 비워두면 시험지에 태그된 난이도로 자동 계산
+  const diffOverrideVal = state.difficultyOverrides[studentId];
+  const diffOptions = Array.from({ length: 11 }, (_, i) => 1 + i * 0.5).map(v => {
+    const lo = difficultyLabelByN(Math.floor(v)), hi = difficultyLabelByN(Math.ceil(v));
+    return `<option value="${v}"${Number(diffOverrideVal) === v ? ' selected' : ''}>${v.toFixed(1)} · ${lo === hi ? lo : lo + '~' + hi}</option>`;
+  }).join('');
+
   out.innerHTML = `
     <div class="sample-flag no-print">${studentId === EXAMPLE_STUDENT_ID
       ? '예시보고서 · 실제 학생이 아닌 가상의 예시(차캐슬)로 만든 보고서 형식 샘플이에요 · 어느 컴퓨터에서 열어도 항상 똑같이 보여요 · 학부모용 PDF에는 이 안내가 빠져요'
       : '실제 데이터 기반 보고서 미리보기 · 강사용 화면이며 학부모용 PDF에는 이 안내와 일부 내부 설명이 빠져요'}</div>
-    <div class="card">
+    <div class="card" data-rkey="masthead">
       <div class="masthead">
         <div>
           <div class="brand-line">${logoBlock()}</div>
@@ -2644,7 +2712,7 @@ function renderReportTab() {
       </div>
     </div>
     <div class="pill-row">
-      <div class="pill-tile"><span class="pill-tag" style="background:var(--accent)">예상 등급</span>
+      <div class="pill-tile" data-rkey="pillGrade"><span class="pill-tag" style="background:var(--accent)">예상 등급</span>
         <div class="pill-value tnum" style="font-size:${grade.label.includes('~') ? 17 : 21}px; white-space:nowrap;">${grade.label}</div>
         <div class="pill-compare">예상</div>
         <div class="no-print" style="margin-top:8px;">
@@ -2654,30 +2722,36 @@ function renderReportTab() {
           </select>
         </div>
       </div>
-      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">정답률</span>
+      <div class="pill-tile" data-rkey="pillRate"><span class="pill-tag" style="background:var(--good)">정답률</span>
         <div class="pill-value tnum">${overallPct}%</div>
       </div>
-      <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>
+      <div class="pill-tile" data-rkey="pillCount"><span class="pill-tag" style="background:var(--type-2)">${totalQ}문항 채점</span>
         <div class="pill-value tnum">${totalQ}</div>
         <div class="pill-compare">기간 내 채점된 문항 수</div>
       </div>
-      <div class="pill-tile"><span class="pill-tag" style="background:${!difficulty ? 'var(--muted)' : difficulty.avgAll <= 2 ? 'var(--good)' : difficulty.avgAll <= 4 ? 'var(--type-2)' : 'var(--critical)'}">시험 난이도</span>
+      <div class="pill-tile" data-rkey="pillDiff"><span class="pill-tag" style="background:${!difficulty ? 'var(--muted)' : difficulty.avgAll <= 2 ? 'var(--good)' : difficulty.avgAll <= 4 ? 'var(--type-2)' : 'var(--critical)'}">시험 난이도</span>
         <div class="pill-value tnum">${difficulty ? difficultyLabelByN(difficulty.avgAll) : '—'}</div>
         <div class="pill-compare">${difficulty ? `평균 ${difficulty.avgAll} / 6` : '난이도 정보 없음'}</div>
+        <div class="no-print" style="margin-top:8px;">
+          <select id="difficultyOverrideSel" style="font-size:12px; padding:4px 6px; min-width:auto;">
+            <option value="">평균 난이도 자동 계산</option>
+            ${diffOptions}
+          </select>
+        </div>
       </div>
       ${delta <= 0 ? (() => {
         // 오르지 않은 경우(0 이하)엔 변화량 대신 이 기간 최고 기록을 보여줌 (학부모에게 굳이 부담되는 숫자를 앞세우지 않기 위함)
         const best = points.reduce((a, b) => (b.pct > a.pct ? b : a), points[0]);
-        return `<div class="pill-tile"><span class="pill-tag" style="background:var(--good)">최고 기록</span>
+        return `<div class="pill-tile" data-rkey="pillDelta"><span class="pill-tag" style="background:var(--good)">최고 기록</span>
         <div class="pill-value tnum up">${best.pct}%</div>
         <div class="pill-compare"><span style="white-space:nowrap;">${best.label}</span><br><span style="white-space:nowrap;">이 기간 가장 높은 정답률</span></div>
       </div>`;
-      })() : `<div class="pill-tile"><span class="pill-tag" style="background:var(--good)">상승</span>
+      })() : `<div class="pill-tile" data-rkey="pillDelta"><span class="pill-tag" style="background:var(--good)">상승</span>
         <div class="pill-value tnum up">+${delta}%p</div>
         <div class="pill-compare"><span style="white-space:nowrap;">${first.label} ${first.pct}%</span><br><span style="white-space:nowrap;">→ ${last.label} ${last.pct}%</span></div>
       </div>`}
     </div>
-    <div class="card" id="trendChartCard">
+    <div class="card" id="trendChartCard" data-rkey="trend">
       <h2>전체 정답률 추이</h2>
       <p class="card-sub">회차별 ${points[points.length-1].total}문항 기준</p>
       <div class="chart-wrap" id="trendChartWrap">${buildMainChartSVG(points)}</div>
@@ -2685,7 +2759,7 @@ function renderReportTab() {
         <input type="checkbox" id="reportExtendTrendToggle"${extendChecked ? ' checked' : ''}> 다른 기간의 추이 그래프 추가로 보기
       </label>
     </div>
-    <div class="card" id="teacherNoteCard">
+    <div class="card" id="teacherNoteCard" data-rkey="note">
       <h2>선생님 의견</h2>
       <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
       <div class="inline-form no-print" style="margin-bottom:8px;">
@@ -2700,7 +2774,7 @@ function renderReportTab() {
       </details>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
-    <div class="card">
+    <div class="card" data-rkey="sw">
       <h2>대표 강점 · 취약 유형</h2>
       <p class="card-sub">선택한 기간 기준</p>
       <div class="summary-cols">
@@ -2708,7 +2782,7 @@ function renderReportTab() {
         <div class="summary-box watch"><h3>대표 취약 유형</h3>${watchHtml}</div>
       </div>
     </div>
-    ${extendChecked ? `<div class="card">
+    ${extendChecked ? `<div class="card" data-rkey="extend">
       <h2>추가 추이 그래프</h2>
       <p class="card-sub">${extendPoints.length ? `${escapeHtml(extendPoints[0].label)} – ${escapeHtml(extendPoints[extendPoints.length - 1].label)} 기준` : '채점 기록이 없어요'}</p>
       <div class="inline-form no-print" style="margin-bottom:10px;">
@@ -2719,7 +2793,7 @@ function renderReportTab() {
       </div>
       <div class="chart-wrap">${buildMainChartSVG(extendPoints)}</div>
     </div>` : ''}
-    <div class="card">
+    <div class="card" data-rkey="types">
       <h2>유형별 정답률</h2>
       <p class="card-sub">최근 정답률</p>
       <div class="type-grid">${typeCards}</div>
@@ -2728,7 +2802,7 @@ function renderReportTab() {
     ${unitSection}
     ${diffSection}
     ${radarSection}
-    <div class="card">
+    <div class="card" data-rkey="table">
       <h2>회차별 상세 기록</h2>
       <p class="card-sub">유형별 정답률(%)</p>
       <div class="table-wrap">
@@ -2739,6 +2813,19 @@ function renderReportTab() {
       </div>
     </div>
   `;
+
+  const difficultyOverrideSel = document.getElementById('difficultyOverrideSel');
+  if (difficultyOverrideSel) {
+    difficultyOverrideSel.addEventListener('change', () => {
+      const v = difficultyOverrideSel.value;
+      if (v) state.difficultyOverrides[studentId] = parseFloat(v);
+      else delete state.difficultyOverrides[studentId];
+      saveState();
+      renderReportTab();
+    });
+  }
+
+  setupReportPartToggles(out, studentId);
 
   const gradeOverrideSel = document.getElementById('gradeOverrideSel');
   if (gradeOverrideSel) {
@@ -3059,11 +3146,15 @@ async function exportReportPDF() {
       y: marginY, pageHasContent: false,
     };
 
-    await pdfAddCoverPage(pdf, data.student, data.points);
-    pdf.addPage();
-    // 겉표지 뒷면이 비도록 빈 페이지를 하나 더 끼워 넣음 — 양면 인쇄해도 겉표지는 단면으로 나오고,
-    // 본문은 그다음 용지 앞면부터 시작하게 됨
-    pdf.addPage();
+    // "겉표지 포함"을 끄면 겉표지와 뒷면 빈 페이지 없이 본문부터 바로 시작함
+    const includeCover = !((state.reportHidden[studentId] || []).includes('cover'));
+    if (includeCover) {
+      await pdfAddCoverPage(pdf, data.student, data.points);
+      pdf.addPage();
+      // 겉표지 뒷면이 비도록 빈 페이지를 하나 더 끼워 넣음 — 양면 인쇄해도 겉표지는 단면으로 나오고,
+      // 본문은 그다음 용지 앞면부터 시작하게 됨
+      pdf.addPage();
+    }
 
     // 카드(섹션) 단위로 따로 캡처해서, 한 페이지에 안 들어가면 카드 안의 항목(문항/행) 단위까지
     // 재귀적으로 쪼개 붙여서 어중간하게 잘리는 부분 없이 항상 항목 경계에서만 페이지가 넘어가게 함
@@ -3131,11 +3222,12 @@ async function exportReportPDF() {
     // 3번째 페이지(겉표지·공백페이지 다음, 본문 시작)부터 페이지 하단 가운데에 쪽번호를 매김 —
     // 겉표지·공백페이지는 숫자를 안 매기므로 본문 기준 1페이지부터 시작함
     const totalPages = pdf.getNumberOfPages();
-    for (let p = 3; p <= totalPages; p++) {
+    const bodyStart = includeCover ? 3 : 1;
+    for (let p = bodyStart; p <= totalPages; p++) {
       pdf.setPage(p);
       pdf.setFontSize(9);
       pdf.setTextColor(150, 150, 150);
-      pdf.text(`- ${p - 2} -`, 105, 291, { align: 'center' });
+      pdf.text(`- ${p - bodyStart + 1} -`, 105, 291, { align: 'center' });
     }
 
     // 파일명 맨 앞에 "발행월"을 붙임 — 리포트에 포함된 마지막 회차가 속한 달 기준
@@ -3208,6 +3300,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.teacherNotes) data.teacherNotes = {};
         if (!data.retests) data.retests = [];
         if (!data.gradeOverrides) data.gradeOverrides = {};
+        if (!data.difficultyOverrides) data.difficultyOverrides = {};
+        if (!data.reportHidden) data.reportHidden = {};
         if (!data.studentDone) data.studentDone = {};
         if (!data.studentMemo) data.studentMemo = {};
         if (!data.studentMemoRetest) data.studentMemoRetest = {};
@@ -3236,7 +3330,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
     saveState();
     renderAll();
     toast('초기화했어요.');
