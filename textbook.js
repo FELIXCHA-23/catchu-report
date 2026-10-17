@@ -7,7 +7,7 @@
  */
 
 let TB_BOOKS = [];
-const tbState = { bookId: '', studentId: '', pending: null };
+const tbState = { school: '', grade: '', bookId: '', studentId: '', tab: 'score', pending: null };
 
 async function loadTextbooks() {
   try {
@@ -162,7 +162,7 @@ function tbParseRows(rows, students, book) {
   return { entries, unmatched, ambiguous: Array.from(ambiguous) };
 }
 
-/* ---------- 화면 ---------- */
+/* ---------- 올린 파일/붙여넣은 내용 미리보기와 반영 ---------- */
 function tbRenderPreview() {
   const box = document.getElementById('tbPreview');
   const p = tbState.pending;
@@ -237,6 +237,27 @@ function tbHandlePaste() {
   tbRenderPreview();
 }
 
+/* ---------- 화면 ---------- */
+const TB_SCHOOLS = { '초등': ['초3', '초4', '초5', '초6'], '중등': ['중1', '중2', '중3'], '고등': ['고1', '고2', '고3'] };
+const tbOpenChapters = new Set();      // 펼쳐 둔 중단원 (처음에는 모두 접힘)
+const tbRange = { bookId: '', from: '', to: '' };
+
+function tbSchoolOf(b) { return b.school || (/^초/.test(b.grade) ? '초등' : /^중/.test(b.grade) ? '중등' : '고등'); }
+function tbBooksFor(school, grade) { return TB_BOOKS.filter(b => tbSchoolOf(b) === school && b.grade === grade); }
+function tbSelectBook(book) {
+  if (!book) { tbState.bookId = ''; return; }
+  tbState.bookId = book.id; tbState.school = tbSchoolOf(book); tbState.grade = book.grade;
+}
+function tbChapters(book) {
+  const map = new Map();
+  (book.chapters || []).forEach(c => map.set(c.ch, { ch: c.ch, title: c.title, types: [] }));
+  book.types.forEach(t => { if (!map.has(t.ch)) map.set(t.ch, { ch: t.ch, title: t.ch, types: [] }); map.get(t.ch).types.push(t); });
+  return Array.from(map.values());
+}
+function tbChapKey(book, ch) { return book.id + '|' + ch; }
+function tbBar(pct, color) { return typeof buildBarRow === 'function' ? buildBarRow(pct, color) : ''; }
+function tbPctColor(pct) { return pct < 70 ? 'var(--warn-dot)' : 'var(--accent)'; }
+
 function tbAnalysis(book, rec, from, to) {
   const wrong = new Set(rec ? rec.wrong : []);
   const rows = [];
@@ -248,100 +269,313 @@ function tbAnalysis(book, rec, from, to) {
   });
   return rows;
 }
-
-function renderTextbook() {
-  const root = document.getElementById('tbBody');
-  if (!root) return;
-  // 선택 칸 채우기
-  const bookSel = document.getElementById('tbBookSel');
-  if (!TB_BOOKS.length) {
-    bookSel.innerHTML = '<option value="">등록된 교재가 없어요</option>';
-    root.classList.add('tb-empty');
-    return;
-  }
-  root.classList.remove('tb-empty');
-  if (!TB_BOOKS.some(b => b.id === tbState.bookId)) tbState.bookId = TB_BOOKS[0].id;
-  bookSel.innerHTML = TB_BOOKS.map(b => `<option value="${b.id}">${escapeHtml(b.title)}</option>`).join('');
-  bookSel.value = tbState.bookId;
+function tbRangeOf(book) {
+  if (tbRange.bookId !== book.id) { tbRange.bookId = book.id; tbRange.from = book._min; tbRange.to = book._max; }
+  const f = parseInt(tbRange.from, 10), t = parseInt(tbRange.to, 10);
+  const from = Number.isFinite(f) ? f : book._min, to = Number.isFinite(t) ? t : book._max;
+  return { lo: Math.min(from, to), hi: Math.max(from, to) };
+}
+function tbChapterRows(book, rows) {
+  return tbChapters(book).map(c => {
+    const rs = rows.filter(r => r.t.ch === c.ch);
+    const n = rs.reduce((a, r) => a + r.n, 0), w = rs.reduce((a, r) => a + r.w, 0);
+    return { c, rs, n, w, pct: n ? Math.round(((n - w) / n) * 100) : 0 };
+  }).filter(x => x.n > 0);
+}
+function tbCurrent() {
   const book = tbBook();
-  tbTypeMap(book);
-
   const students = tbStudents();
-  const stuSel = document.getElementById('tbStudentSel');
-  if (!students.some(s => s.id === tbState.studentId)) tbState.studentId = students[0] ? students[0].id : '';
-  stuSel.innerHTML = students.length
-    ? students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
-    : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
-  stuSel.value = tbState.studentId;
-  document.getElementById('tbBookNote').textContent = book.note || '';
-
   const student = students.find(s => s.id === tbState.studentId) || null;
-  const rec = student ? tbRecord(student.id, book.id, false) : null;
-  const wrong = rec ? rec.wrong : [];
+  const rec = student && book ? tbRecord(student.id, book.id, false) : null;
+  return { book, students, student, rec, wrong: rec ? rec.wrong : [] };
+}
 
-  // 틀린 번호 목록 (유형별로 묶어서 표시, 누르면 지워짐)
+/* ----- 위쪽 선택 칸 (초·중·고 → 학년 → 교재 → 학생) ----- */
+function tbRenderSelectors() {
+  const $ = id => document.getElementById(id);
+  $('tbSchoolSel').innerHTML = Object.keys(TB_SCHOOLS).map(s => `<option value="${s}">${s}</option>`).join('');
+  $('tbSchoolSel').value = tbState.school;
+  $('tbGradeSel').innerHTML = TB_SCHOOLS[tbState.school].map(g => `<option value="${g}">${g}${tbBooksFor(tbState.school, g).length ? '' : ' (교재 없음)'}</option>`).join('');
+  $('tbGradeSel').value = tbState.grade;
+  const books = tbBooksFor(tbState.school, tbState.grade);
+  $('tbBookSel').innerHTML = books.length ? books.map(b => `<option value="${b.id}">${escapeHtml(b.title)}</option>`).join('') : '<option value="">이 학년에는 교재가 아직 없어요</option>';
+  $('tbBookSel').value = books.some(b => b.id === tbState.bookId) ? tbState.bookId : '';
+  const students = tbStudents();
+  const same = students.filter(s => (s.examGrade || s.grade) === tbState.grade), other = students.filter(s => (s.examGrade || s.grade) !== tbState.grade);
+  const opt = s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`;
+  $('tbStudentSel').innerHTML = students.length
+    ? (same.length ? `<optgroup label="${tbState.grade} 학생">${same.map(opt).join('')}</optgroup>` : '') + (other.length ? `<optgroup label="다른 학년 학생">${other.map(opt).join('')}</optgroup>` : '')
+    : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
+  if (!students.some(s => s.id === tbState.studentId)) tbState.studentId = (same[0] || other[0] || {}).id || '';
+  $('tbStudentSel').value = tbState.studentId;
+}
+
+/* ----- 왼쪽: 학년별 교재 목록 ----- */
+function tbRenderSide() {
+  const side = document.getElementById('tbSide');
+  side.innerHTML = '<h3 class="tb-side-title">교재 목록</h3>' + Object.entries(TB_SCHOOLS).map(([school, grades]) => `
+    <div class="tb-side-school"><div class="tb-side-school-name">${school}</div>
+    ${grades.map(g => {
+      const bs = tbBooksFor(school, g);
+      return `<div class="tb-side-grade"><div class="tb-side-grade-name">${g}</div>${bs.length ? bs.map(b => {
+        tbTypeMap(b);
+        return `<button type="button" class="tb-side-book${b.id === tbState.bookId ? ' active' : ''}" data-book="${b.id}">${escapeHtml(b.title)}<span>유형 ${b.types.length}개 · 문제 ${b._map.size}개</span></button>`;
+      }).join('') : '<div class="tb-side-empty">아직 올라온 교재가 없어요</div>'}</div>`;
+    }).join('')}</div>`).join('');
+  side.querySelectorAll('.tb-side-book').forEach(b => b.addEventListener('click', () => {
+    tbSelectBook(TB_BOOKS.find(x => x.id === b.dataset.book)); tbState.pending = null; renderTextbook();
+  }));
+}
+
+/* ----- 채점 입력 탭: 틀린 번호 목록 (중단원별로 접어둠) ----- */
+function tbRenderChips() {
+  const { book, student, wrong } = tbCurrent();
   const chips = document.getElementById('tbChips');
-  if (!student) chips.innerHTML = '<div class="empty">학생을 먼저 고르세요.</div>';
-  else if (!wrong.length) chips.innerHTML = '<div class="empty">아직 입력된 틀린 번호가 없어요.</div>';
-  else {
-    const byType = new Map();
-    wrong.forEach(n => { const t = book._map.get(n); if (!t) return; if (!byType.has(t)) byType.set(t, []); byType.get(t).push(n); });
-    chips.innerHTML = book.types.filter(t => byType.has(t)).map(t => `
-      <div class="tb-group"><div class="tb-group-title"><b>${escapeHtml(t.label)}</b> ${escapeHtml(t.name)} <span class="field-hint">${byType.get(t).length}개</span></div>
-      ${byType.get(t).map(n => `<button type="button" class="tb-chip" data-n="${n}" title="누르면 지워져요">${tbNum(n)} ✕</button>`).join('')}</div>`).join('');
-    chips.querySelectorAll('.tb-chip').forEach(b => b.addEventListener('click', () => {
-      const r = tbRecord(student.id, book.id, false);
-      if (!r) return;
-      r.wrong = r.wrong.filter(n => n !== +b.dataset.n);
-      saveState(); renderTextbook();
-    }));
-  }
-  document.getElementById('tbWrongSummary').textContent = student ? `${student.name} · 지금까지 모아둔 틀린 문제 ${wrong.length}개` : '';
+  document.getElementById('tbWrongSummary').textContent = student && book ? `${student.name} · ${book.title} · 모아둔 틀린 문제 ${wrong.length}개` : '';
+  if (!book) { chips.innerHTML = '<div class="empty">교재를 먼저 고르세요.</div>'; return; }
+  if (!student) { chips.innerHTML = '<div class="empty">학생을 먼저 고르세요.</div>'; return; }
+  if (!wrong.length) { chips.innerHTML = '<div class="empty">아직 입력된 틀린 번호가 없어요.</div>'; return; }
+  const map = tbTypeMap(book);
+  const byType = new Map();
+  wrong.forEach(n => { const t = map.get(n); if (!t) return; if (!byType.has(t)) byType.set(t, []); byType.get(t).push(n); });
+  const chaps = tbChapters(book).map(c => ({ c, ts: c.types.filter(t => byType.has(t)) })).filter(x => x.ts.length);
+  chips.innerHTML = `<div class="inline-form" style="margin-bottom:8px;"><button type="button" class="btn ghost" id="tbOpenAll">모두 펼치기</button><button type="button" class="btn ghost" id="tbCloseAll">모두 접기</button><span class="field-hint">단원을 누르면 유형별로 펼쳐져요</span></div>` +
+    chaps.map(({ c, ts }) => {
+      const cnt = ts.reduce((a, t) => a + byType.get(t).length, 0);
+      return `<details class="tb-chap" data-ck="${tbChapKey(book, c.ch)}"${tbOpenChapters.has(tbChapKey(book, c.ch)) ? ' open' : ''}>
+        <summary><span class="tb-chap-name">${escapeHtml(c.title)}</span><span class="field-hint">틀린 문제 ${cnt}개 · 유형 ${ts.length}개</span></summary>
+        <div class="tb-chap-body">${ts.map(t => `<div class="tb-group"><div class="tb-group-title"><b>${escapeHtml(t.label)}</b> ${escapeHtml(t.name)} <span class="field-hint">${byType.get(t).length}개</span></div>
+          ${byType.get(t).map(n => `<button type="button" class="tb-chip" data-n="${n}" title="누르면 지워져요">${tbNum(n)} ✕</button>`).join('')}</div>`).join('')}</div></details>`;
+    }).join('');
+  chips.querySelectorAll('.tb-chip').forEach(b => b.addEventListener('click', () => {
+    const r = tbRecord(student.id, book.id, false);
+    if (!r) return;
+    r.wrong = r.wrong.filter(n => n !== +b.dataset.n);
+    saveState(); renderTextbook();
+  }));
+  tbBindDetails(chips);
+  document.getElementById('tbOpenAll').addEventListener('click', () => { chaps.forEach(x => tbOpenChapters.add(tbChapKey(book, x.c.ch))); tbRenderChips(); });
+  document.getElementById('tbCloseAll').addEventListener('click', () => { chaps.forEach(x => tbOpenChapters.delete(tbChapKey(book, x.c.ch))); tbRenderChips(); });
+}
+function tbBindDetails(root) {
+  root.querySelectorAll('details.tb-chap').forEach(d => d.addEventListener('toggle', () => {
+    if (d.open) tbOpenChapters.add(d.dataset.ck); else tbOpenChapters.delete(d.dataset.ck);
+  }));
+}
 
-  // 분석
-  const fromEl = document.getElementById('tbFrom'), toEl = document.getElementById('tbTo');
-  if (!fromEl.value) fromEl.value = book._min;
-  if (!toEl.value) toEl.value = book._max;
-  const from = parseInt(fromEl.value, 10) || book._min, to = parseInt(toEl.value, 10) || book._max;
-  const lo = Math.min(from, to), hi = Math.max(from, to);
+/* ----- 분석 탭 ----- */
+function tbRenderAnalysis() {
   const out = document.getElementById('tbAnalysis');
-  if (!student) { out.innerHTML = ''; return; }
+  const { book, student, rec } = tbCurrent();
+  if (!book) { out.innerHTML = '<div class="empty">교재를 먼저 고르세요.</div>'; return; }
+  tbTypeMap(book);
+  const { lo, hi } = tbRangeOf(book);
+  document.getElementById('tbFrom').value = tbRange.from; document.getElementById('tbTo').value = tbRange.to;
+  if (!student) { out.innerHTML = '<div class="empty">학생을 먼저 고르세요.</div>'; return; }
   const rows = tbAnalysis(book, rec, lo, hi);
-  const totalN = rows.reduce((a, r) => a + r.n, 0), totalW = rows.reduce((a, r) => a + r.w, 0);
   if (!rows.length) { out.innerHTML = '<div class="empty">이 범위에 해당하는 문제가 없어요.</div>'; return; }
+  const totalN = rows.reduce((a, r) => a + r.n, 0), totalW = rows.reduce((a, r) => a + r.w, 0);
   const totalPct = totalN ? Math.round(((totalN - totalW) / totalN) * 100) : 0;
-  const bar = (pct, color) => (typeof buildBarRow === 'function' ? buildBarRow(pct, color) : '');
-  const weak = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 3);
-  const unitMap = new Map();
-  rows.forEach(r => {
-    const key = r.t.unit.split(' - ').slice(0, 2).join(' - ');
-    const u = unitMap.get(key) || { n: 0, w: 0 }; u.n += r.n; u.w += r.w; unitMap.set(key, u);
-  });
+  const weak = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 5);
+  const chapRows = tbChapterRows(book, rows);
   out.innerHTML = `
     <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
       <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">교재 정답률</span><div class="pill-value tnum">${totalPct}%</div><div class="pill-compare">${tbNum(lo)}~${tbNum(hi)}번 (${totalN}문제)</div></div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--critical)">틀린 문제</span><div class="pill-value tnum">${totalW}개</div><div class="pill-compare">범위 안에서</div></div>
     </div>
-    ${weak.length ? `<p class="comment" style="margin:0 0 10px;">많이 틀린 유형: ${weak.map(r => `<b>${escapeHtml(r.t.label)} ${escapeHtml(r.t.name)}</b> (${r.pct}%)`).join(' · ')}</p>` : '<p class="comment" style="margin:0 0 10px;">이 범위에서는 틀린 문제가 없어요.</p>'}
-    <h3 class="reset-class-title">단원별 합계 <span class="field-hint">(캐치유 단원과 같은 이름이라 보고서에서 합칠 수 있어요)</span></h3>
-    ${Array.from(unitMap.entries()).map(([k, u]) => { const pct = Math.round(((u.n - u.w) / u.n) * 100); return `
-      <div class="unit-row"><div class="unit-name">${escapeHtml(k)}</div><div class="unit-count">${u.n}문제</div>
-      <div class="unit-bar-wrap">${bar(pct, pct < 70 ? 'var(--warn-dot)' : 'var(--accent)')}</div><div class="unit-pct tnum">${pct}%</div></div>`; }).join('')}
-    <h3 class="reset-class-title" style="margin-top:14px;">유형별 정답률</h3>
-    ${rows.map(r => `
-      <div class="unit-row"><div class="unit-name"><b>${escapeHtml(r.t.label)}</b> ${escapeHtml(r.t.name)}</div><div class="unit-count">${r.w}/${r.n} 오답</div>
-      <div class="unit-bar-wrap">${bar(r.pct, r.pct < 70 ? 'var(--warn-dot)' : 'var(--accent)')}</div><div class="unit-pct tnum">${r.pct}%</div></div>`).join('')}`;
+    ${weak.length ? `<p class="comment" style="margin:0 0 12px;">많이 틀린 유형: ${weak.map(r => `<b>${escapeHtml(r.t.label)} ${escapeHtml(r.t.name)}</b> (${r.pct}%)`).join(' · ')}</p>` : '<p class="comment" style="margin:0 0 12px;">이 범위에서는 틀린 문제가 없어요.</p>'}
+    <h3 class="reset-class-title">단원별 정답률 <span class="field-hint">(단원을 누르면 유형이 펼쳐져요 · 캐치유 단원과 같은 이름으로 합쳐져요)</span></h3>
+    ${chapRows.map(({ c, rs, n, w, pct }) => `
+      <details class="tb-chap" data-ck="${tbChapKey(book, c.ch)}"${tbOpenChapters.has(tbChapKey(book, c.ch)) ? ' open' : ''}>
+        <summary><div class="unit-row" style="flex:1; margin:0;"><div class="unit-name">${escapeHtml(c.title)}</div><div class="unit-count">${w}/${n} 오답</div>
+          <div class="unit-bar-wrap">${tbBar(pct, tbPctColor(pct))}</div><div class="unit-pct tnum">${pct}%</div></div></summary>
+        <div class="tb-chap-body">${rs.map(r => `<div class="unit-row"><div class="unit-name"><b>${escapeHtml(r.t.label)}</b> ${escapeHtml(r.t.name)}</div><div class="unit-count">${r.w}/${r.n} 오답</div>
+          <div class="unit-bar-wrap">${tbBar(r.pct, tbPctColor(r.pct))}</div><div class="unit-pct tnum">${r.pct}%</div></div>`).join('')}</div>
+      </details>`).join('')}`;
+  tbBindDetails(out);
+}
+
+/* ----- 보고서 탭 ----- */
+const TB_REPORT_PARTS = { head: '제목 영역', pills: '요약 숫자', chap: '단원별 정답률', weak: '많이 틀린 유형', note: '선생님 의견', list: '틀린 문제 목록' };
+function tbNoteKey(studentId, bookId) { return studentId + '|' + bookId; }
+function tbBuildComment(student, book, rows, lo, hi) {
+  const name = displayName(student.name);
+  const totalN = rows.reduce((a, r) => a + r.n, 0), totalW = rows.reduce((a, r) => a + r.w, 0);
+  const weak = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 3);
+  if (!totalW) return `${name} 학생은 ${book.title} ${tbNum(lo)}~${tbNum(hi)}번 범위를 모두 정확하게 풀어냈어요. 지금처럼 꾸준히 이어가면서, 조금 더 어려운 문제에도 도전해 보면 좋겠어요.`;
+  return `${name} 학생은 ${book.title} ${tbNum(lo)}~${tbNum(hi)}번 범위에서 ${totalN}문제 중 ${totalW}문제를 틀렸어요. 특히 ${weak.map(r => `'${r.t.name}'`).join(', ')} 유형에서 오답이 모여 있어서, 해당 개념을 한 번 더 정리하고 대표문제부터 차근차근 다시 풀어보면 좋겠어요. 나머지 유형은 안정적으로 풀고 있으니 자신감을 가지고 이어가 봐요.`;
+}
+function tbRenderReport() {
+  const out = document.getElementById('tbReport');
+  const { book, student, rec, wrong } = tbCurrent();
+  if (!book || !student) { out.innerHTML = '<div class="card empty-state">교재와 학생을 먼저 고르세요.</div>'; return; }
+  tbTypeMap(book);
+  const { lo, hi } = tbRangeOf(book);
+  const rows = tbAnalysis(book, rec, lo, hi);
+  if (!rows.length) { out.innerHTML = '<div class="card empty-state">이 범위에 해당하는 문제가 없어요.</div>'; return; }
+  const totalN = rows.reduce((a, r) => a + r.n, 0), totalW = rows.reduce((a, r) => a + r.w, 0);
+  const totalPct = totalN ? Math.round(((totalN - totalW) / totalN) * 100) : 0;
+  const chapRows = tbChapterRows(book, rows);
+  const weak = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 8);
+  const weakChap = chapRows.filter(x => x.w > 0).sort((a, b) => a.pct - b.pct)[0];
+  const key = tbNoteKey(student.id, book.id);
+  if (!state.textbook.notes) state.textbook.notes = {};
+  const note = state.textbook.notes[key] != null ? state.textbook.notes[key] : tbBuildComment(student, book, rows, lo, hi);
+  const inRangeWrong = wrong.filter(n => n >= lo && n <= hi);
+  const map = book._map;
+  const byType = new Map();
+  inRangeWrong.forEach(n => { const t = map.get(n); if (!t) return; if (!byType.has(t)) byType.set(t, []); byType.get(t).push(n); });
+  const today = new Date();
+  const dateTxt = `${today.getFullYear()}.${today.getMonth() + 1}.${today.getDate()}`;
+
+  out.innerHTML = `
+    <div class="card" data-rkey="head">
+      <div class="masthead">
+        <div><div class="brand-line">${typeof logoBlock === 'function' ? logoBlock() : ''}</div><h2>교재 분석 보고서</h2></div>
+        <div class="meta">
+          <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
+          <div>${[student.school, student.grade].filter(Boolean).map(escapeHtml).join(' ')}</div>
+          ${student.teacher ? `<div>담임: ${escapeHtml(teacherDisplayName(student.teacher))} ${teacherTitle(student.teacher)}</div>` : ''}
+          <div>${escapeHtml(book.title)} · ${tbNum(lo)}~${tbNum(hi)}번</div>
+          <div>작성일 ${dateTxt}</div>
+        </div>
+      </div>
+    </div>
+    <div class="pill-row" data-rkey="pills" style="grid-template-columns:repeat(4, 1fr);">
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">교재 정답률</span><div class="pill-value tnum">${totalPct}%</div></div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--type-2)">푼 문제</span><div class="pill-value tnum">${totalN}</div><div class="pill-compare">범위 안의 문제 수</div></div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--critical)">틀린 문제</span><div class="pill-value tnum">${totalW}</div></div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--warn-dot)">보완이 필요한 단원</span><div class="pill-value" style="font-size:15px; line-height:1.3;">${weakChap ? escapeHtml(weakChap.c.title) : '없음'}</div>${weakChap ? `<div class="pill-compare">정답률 ${weakChap.pct}%</div>` : ''}</div>
+    </div>
+    <div class="card" data-rkey="chap">
+      <h2>단원별 정답률</h2>
+      <p class="card-sub">교재 ${tbNum(lo)}~${tbNum(hi)}번 기준</p>
+      ${chapRows.map(({ c, n, w, pct }) => `<div class="unit-row"><div class="unit-name">${escapeHtml(c.title)}</div><div class="unit-count">${w}/${n} 오답</div>
+        <div class="unit-bar-wrap">${tbBar(pct, tbPctColor(pct))}</div><div class="unit-pct tnum">${pct}%</div></div>`).join('')}
+    </div>
+    <div class="card" data-rkey="weak">
+      <h2>많이 틀린 유형</h2>
+      <p class="card-sub">정답률이 낮은 순서</p>
+      ${weak.length ? weak.map(r => `<div class="unit-row"><div class="unit-name"><b>${escapeHtml(r.t.label)}</b> ${escapeHtml(r.t.name)}</div><div class="unit-count">${r.w}/${r.n} 오답</div>
+        <div class="unit-bar-wrap">${tbBar(r.pct, tbPctColor(r.pct))}</div><div class="unit-pct tnum">${r.pct}%</div></div>`).join('') : '<div class="empty">이 범위에서는 틀린 문제가 없어요.</div>'}
+    </div>
+    <div class="card" id="tbNoteCard" data-rkey="note">
+      <h2>선생님 의견</h2>
+      <textarea class="teacher-note no-print" id="tbNoteInput" placeholder="선생님 의견을 입력하세요.">${escapeHtml(note)}</textarea>
+      <p class="comment print-only" id="tbNotePrint">${note ? escapeHtml(note).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
+    </div>
+    <div class="card" data-rkey="list">
+      <h2>틀린 문제 목록</h2>
+      <p class="card-sub">유형별로 정리했어요 · 보충 학습할 때 참고하세요</p>
+      ${byType.size ? book.types.filter(t => byType.has(t)).map(t => `<div class="tb-group"><div class="tb-group-title"><b>${escapeHtml(t.label)}</b> ${escapeHtml(t.name)}</div><div class="tb-numline">${byType.get(t).map(tbNum).join(', ')}</div></div>`).join('') : '<div class="empty">틀린 문제가 없어요.</div>'}
+    </div>`;
+
+  const noteInput = document.getElementById('tbNoteInput');
+  noteInput.addEventListener('change', () => {
+    state.textbook.notes[key] = noteInput.value; saveState();
+    document.getElementById('tbNotePrint').innerHTML = noteInput.value ? escapeHtml(noteInput.value).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)';
+    toast('선생님 의견을 저장했어요.');
+  });
+  tbSetupToggles(out, key);
+}
+// 보고서의 각 요소에 "PDF 포함" 체크박스를 달아서 필요 없는 건 빼고 저장할 수 있게 함 (학생·교재마다 기억)
+function tbSetupToggles(out, key) {
+  if (!state.textbook.hidden) state.textbook.hidden = {};
+  const hiddenList = state.textbook.hidden[key] || [];
+  out.querySelectorAll('[data-rkey]').forEach(el => {
+    const k = el.dataset.rkey;
+    const label = document.createElement('label');
+    label.className = 'rk-toggle no-print';
+    label.title = (TB_REPORT_PARTS[k] || '') + ' — 체크를 끄면 PDF에서 빠져요';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !hiddenList.includes(k);
+    label.appendChild(cb); label.appendChild(document.createTextNode(' PDF 포함'));
+    el.appendChild(label);
+    el.classList.toggle('rk-off', !cb.checked);
+    cb.addEventListener('change', () => {
+      const list = (state.textbook.hidden[key] || []).filter(x => x !== k);
+      if (!cb.checked) list.push(k);
+      if (list.length) state.textbook.hidden[key] = list; else delete state.textbook.hidden[key];
+      saveState(); el.classList.toggle('rk-off', !cb.checked);
+    });
+  });
+}
+async function tbExportPDF() {
+  const status = document.getElementById('tbReportStatus'), btn = document.getElementById('tbPdfBtn');
+  const target = document.getElementById('tbReport');
+  const { book, student } = tbCurrent();
+  if (!book || !student || !target.children.length || target.querySelector('.empty-state')) { status.textContent = '먼저 교재와 학생을 고르세요.'; return; }
+  if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') { status.style.color = 'var(--critical)'; status.textContent = 'PDF 기능을 불러오지 못했어요 (인터넷 연결을 확인해주세요).'; return; }
+  btn.disabled = true; status.style.color = 'var(--muted)'; status.textContent = 'PDF 생성 중이에요...';
+  document.body.classList.add('exporting-pdf');
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4', true);
+    const ctx = { scale: 3, marginX: 10, marginY: 10, gap: 4, contentWidth: 190, contentBottom: 287, pageContentH: 277, y: 10, pageHasContent: false };
+    const blocks = Array.from(target.children).filter(el => !el.classList.contains('no-print') && el.offsetHeight > 0);
+    for (const b of blocks) await pdfPlaceElement(pdf, b, ctx);
+    pdfFlushPage(pdf, ctx, false);
+    const total = pdf.getNumberOfPages();
+    for (let p = 1; p <= total; p++) { pdf.setPage(p); pdf.setFontSize(9); pdf.setTextColor(150, 150, 150); pdf.text(`- ${p} -`, 105, 291, { align: 'center' }); }
+    pdf.save(`교재분석_${displayName(student.name)}_${book.title.replace(/\s+/g, '')}.pdf`);
+    status.style.color = 'var(--good)'; status.textContent = 'PDF를 저장했어요.';
+  } catch (err) {
+    console.error(err); status.style.color = 'var(--critical)'; status.textContent = 'PDF 생성 실패: ' + err.message;
+  } finally {
+    document.body.classList.remove('exporting-pdf'); btn.disabled = false;
+  }
+}
+
+/* ----- 전체 그리기 ----- */
+function tbSwitchTab(name) {
+  tbState.tab = name;
+  document.querySelectorAll('[data-tbtab]').forEach(b => b.classList.toggle('active', b.dataset.tbtab === name));
+  document.querySelectorAll('.tb-panel').forEach(p => p.classList.toggle('active', p.id === 'tbPanel-' + name));
+  document.getElementById('tbRangeBar').style.display = name === 'score' ? 'none' : '';
+  if (name === 'analysis') tbRenderAnalysis();
+  if (name === 'report') tbRenderReport();
+}
+function renderTextbook() {
+  if (!document.getElementById('tbBody')) return;
+  if (!TB_BOOKS.length) { document.getElementById('tbSide').innerHTML = '<div class="empty">교재 목록을 불러오지 못했어요.</div>'; return; }
+  if (!tbBook()) {
+    const first = TB_BOOKS.find(b => tbSchoolOf(b) === tbState.school && b.grade === tbState.grade) || TB_BOOKS[0];
+    if (tbState.school && tbState.grade && !tbBooksFor(tbState.school, tbState.grade).length) { /* 교재 없는 학년을 직접 고른 경우 그대로 둠 */ } else tbSelectBook(first);
+  }
+  const b = tbBook(); if (b) tbTypeMap(b);
+  tbRenderSelectors();
+  tbRenderSide();
+  const noBook = !b;
+  document.getElementById('tbBody').classList.toggle('tb-nobook', noBook);
+  tbRenderChips();
+  if (tbState.tab === 'analysis') tbRenderAnalysis();
+  if (tbState.tab === 'report') tbRenderReport();
+  if (tbState.pending) tbRenderPreview();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
   await loadTextbooks();
   const $ = id => document.getElementById(id);
   if (!$('tbBody')) return;
+  if (TB_BOOKS.length) tbSelectBook(TB_BOOKS[0]);
 
-  $('tbBookSel').addEventListener('change', e => { tbState.bookId = e.target.value; tbState.pending = null; $('tbFrom').value = ''; $('tbTo').value = ''; renderTextbook(); tbRenderPreview(); });
+  $('tbSchoolSel').addEventListener('change', e => {
+    tbState.school = e.target.value;
+    const g = TB_SCHOOLS[tbState.school].find(x => tbBooksFor(tbState.school, x).length) || TB_SCHOOLS[tbState.school][0];
+    tbState.grade = g; tbState.pending = null; tbSelectBook(tbBooksFor(tbState.school, g)[0] || null);
+    if (!tbBook()) tbState.bookId = '';
+    renderTextbook();
+  });
+  $('tbGradeSel').addEventListener('change', e => {
+    tbState.grade = e.target.value; tbState.pending = null;
+    const b = tbBooksFor(tbState.school, tbState.grade)[0]; if (b) tbSelectBook(b); else tbState.bookId = '';
+    renderTextbook();
+  });
+  $('tbBookSel').addEventListener('change', e => { tbSelectBook(TB_BOOKS.find(b => b.id === e.target.value) || null); tbState.pending = null; renderTextbook(); });
   $('tbStudentSel').addEventListener('change', e => { tbState.studentId = e.target.value; renderTextbook(); });
-  $('tbFrom').addEventListener('input', renderTextbook);
-  $('tbTo').addEventListener('input', renderTextbook);
+  document.querySelectorAll('[data-tbtab]').forEach(btn => btn.addEventListener('click', () => tbSwitchTab(btn.dataset.tbtab)));
+  const onRange = () => { tbRange.from = $('tbFrom').value; tbRange.to = $('tbTo').value; if (tbState.tab === 'analysis') tbRenderAnalysis(); if (tbState.tab === 'report') tbRenderReport(); };
+  $('tbFrom').addEventListener('input', onRange); $('tbTo').addEventListener('input', onRange);
+  $('tbPdfBtn').addEventListener('click', tbExportPDF);
 
   const addFromInput = () => {
     const book = tbBook(); const input = $('tbWrongInput');
@@ -352,9 +586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ok = nums.filter(n => map.has(n)), bad = nums.filter(n => !map.has(n));
     const rec = tbRecord(tbState.studentId, book.id, true);
     rec.wrong = Array.from(new Set([...rec.wrong, ...ok])).sort((a, b) => a - b);
-    saveState();
-    input.value = '';
-    renderTextbook();
+    saveState(); input.value = ''; renderTextbook();
     toast(bad.length ? `${ok.length}개 추가 · 책에 없는 번호는 뺐어요: ${bad.join(', ')}` : `${ok.length}개 추가했어요.`);
   };
   $('tbWrongInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addFromInput(); } });
@@ -366,7 +598,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     rec.wrong = []; saveState(); renderTextbook();
   });
 
-  // 파일 올리기 (클릭 또는 끌어다 놓기)
   const drop = $('tbDrop'), fileInput = $('tbFile');
   drop.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => { const f = fileInput.files[0]; fileInput.value = ''; if (f) tbHandleFile(f); });
@@ -375,5 +606,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) tbHandleFile(f); });
   $('tbParseBtn').addEventListener('click', tbHandlePaste);
 
+  tbSwitchTab('score');
   renderTextbook();
 });
