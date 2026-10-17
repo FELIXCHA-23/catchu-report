@@ -3443,16 +3443,25 @@ function currentView() {
   return 'landing';
 }
 function showView(name) {
-  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook');
+  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook', 'view-students');
   document.body.classList.add('view-' + name);
-  try { if (name === 'landing') sessionStorage.removeItem(VIEW_KEY); else sessionStorage.setItem(VIEW_KEY, name); } catch (e) {}
+  // 학생 관리 전용 화면은 새로고침하면 열려 있던 곳이 아니라 대문으로 돌아가므로 저장하지 않음
+  try { if (name === 'landing') sessionStorage.removeItem(VIEW_KEY); else if (name !== 'students') sessionStorage.setItem(VIEW_KEY, name); } catch (e) {}
   window.scrollTo(0, 0);
   if (name === 'textbook' && typeof renderTextbook === 'function') renderTextbook();
+  if (name === 'students') renderStudents();
+}
+// 학생 관리 화면에서 "돌아가기"를 누르면 열기 전에 있던 화면으로 감
+let studentsReturnTo = 'landing';
+function openStudentsView() {
+  const cl = document.body.classList;
+  studentsReturnTo = cl.contains('view-textbook') ? 'textbook' : cl.contains('view-catchu') ? 'catchu' : 'landing';
+  showView('students');
 }
 // 대문과 앱 상단의 담당 선생님 드롭다운을 같은 값으로 맞춤
 function syncTeacherSelects() {
   const t = getCurrentTeacher();
-  ['landingTeacherSel', 'currentTeacherSel', 'textbookTeacherSel'].forEach(id => { const el = document.getElementById(id); if (el) el.value = t; });
+  ['landingTeacherSel', 'currentTeacherSel', 'textbookTeacherSel', 'studentsTeacherSel'].forEach(id => { const el = document.getElementById(id); if (el) el.value = t; });
 }
 function onTeacherChanged(value) {
   setCurrentTeacher(value);
@@ -3487,6 +3496,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   tbTeacherSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
   tbTeacherSel.value = getCurrentTeacher();
   tbTeacherSel.addEventListener('change', e => onTeacherChanged(e.target.value));
+  const stTeacherSel = document.getElementById('studentsTeacherSel');
+  stTeacherSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  stTeacherSel.value = getCurrentTeacher();
+  stTeacherSel.addEventListener('change', e => onTeacherChanged(e.target.value));
+  document.getElementById('goStudentsBtn').addEventListener('click', openStudentsView);
+  document.getElementById('tbGoStudentsBtn').addEventListener('click', openStudentsView);
+  document.getElementById('studentsLogo').innerHTML = logoBlock();
+  document.getElementById('studentsBackBtn').addEventListener('click', () => { showView(studentsReturnTo); renderAll(); });
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
   await syncSharedRounds();
   renderAll();

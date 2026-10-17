@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=69">
+<link rel="stylesheet" href="style.css?v=70">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -25,13 +25,14 @@
     <div class="landing-buttons">
       <button type="button" class="landing-btn" id="goTextbookBtn">
         <span class="landing-btn-title">교재 채점 및 분석</span>
-        <span class="landing-btn-sub">교재 유형별 오답 입력과 분석 (준비 중)</span>
+        <span class="landing-btn-sub">교재 유형별 오답 입력 · 분석 · 보고서</span>
       </button>
       <button type="button" class="landing-btn primary" id="goCatchuBtn">
         <span class="landing-btn-title">캐치유테스트 분석</span>
         <span class="landing-btn-sub">학생 관리 · 채점 입력 · 재시험 · 보고서</span>
       </button>
     </div>
+    <button type="button" class="landing-link" id="goStudentsBtn">학생 관리 · 학생 등록과 수정 (캐치유테스트와 교재가 같은 학생을 써요)</button>
   </div>
 </section>
 
@@ -42,6 +43,7 @@
     <div class="logo-mark" id="textbookLogo" data-go-home role="button" tabindex="0" title="첫 화면으로" style="cursor:pointer;"></div>
     <h1 class="display" style="font-size:22px; margin:0;">교재 채점 및 분석</h1>
     <button type="button" class="btn ghost" data-go-home style="margin-left:auto;">← 처음으로</button>
+    <button type="button" class="btn ghost" id="tbGoStudentsBtn" title="학생 등록·수정">학생 관리</button>
     <select id="textbookTeacherSel"><option value="">담당 선생님 선택 (전체 보기)</option></select>
   </header>
   <div class="tb-selectbar">
@@ -133,6 +135,15 @@
     <button class="tab-btn" data-tab="rounds">시험지</button>
     <button class="tab-btn" data-tab="data">데이터 관리</button>
   </nav>
+</header>
+
+<!-- 학생 관리 전용 화면: 대문이나 교재 화면에서 열고, 끝나면 "돌아가기"로 원래 화면에 돌아감 (학생 관리 내용은 캐치유 앱의 학생 관리 탭과 같은 것) -->
+<header class="tb-topbar students-head" id="studentsHead">
+  <div class="logo-mark" id="studentsLogo" data-go-home role="button" tabindex="0" title="첫 화면으로" style="cursor:pointer;"></div>
+  <h1 class="display" style="font-size:22px; margin:0;">학생 관리</h1>
+  <button type="button" class="btn ghost" id="studentsBackBtn" style="margin-left:auto;">← 돌아가기</button>
+  <button type="button" class="btn ghost" data-go-home>처음으로</button>
+  <select id="studentsTeacherSel"><option value="">담당 선생님 선택 (전체 보기)</option></select>
 </header>
 
 <main id="app">
@@ -399,7 +410,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=139"></script>
+<script src="app.js?v=140"></script>
 <script src="textbook.js?v=3"></script>
 </body>
 </html>

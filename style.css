@@ -452,3 +452,12 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .tb-sticky .tb-topbar { position: static; }
 .tb-side { top: 140px; max-height: calc(100vh - 160px); }
 @media (max-width: 860px) { .tb-side { top: auto; max-height: none; } }
+
+/* 대문의 학생 관리 링크 + 학생 관리 전용 화면 */
+.landing-link { display: block; width: 100%; margin-top: 14px; padding: 12px 14px; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); background: transparent; border: 1px dashed var(--border); border-radius: 10px; cursor: pointer; }
+.landing-link:hover { background: var(--surface-card); color: var(--ink); }
+.students-head { display: none; position: sticky; top: 0; z-index: 20; }
+.view-students .students-head { display: flex; }
+.view-students .topbar, .view-students .landing, .view-students .textbook-view { display: none; }
+.view-students #app .tab-panel:not(#panel-students) { display: none !important; }
+.view-students #app #panel-students { display: flex !important; }
