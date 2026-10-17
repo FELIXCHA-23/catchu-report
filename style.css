@@ -446,3 +446,9 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .tb-chap-body { padding: 4px 12px 10px 28px; }
 .tb-numline { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; }
 @media (max-width: 860px) { .tb-layout { grid-template-columns: 1fr; } .tb-side { position: static; max-height: none; } }
+
+/* 교재 화면: 제목줄과 선택 칸(초·중·고/학년/교재/학생)을 스크롤해도 위에 고정 */
+.tb-sticky { position: sticky; top: 0; z-index: 20; background: var(--surface-page); box-shadow: 0 1px 0 var(--border); }
+.tb-sticky .tb-topbar { position: static; }
+.tb-side { top: 140px; max-height: calc(100vh - 160px); }
+@media (max-width: 860px) { .tb-side { top: auto; max-height: none; } }

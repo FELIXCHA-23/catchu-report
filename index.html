@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=68">
+<link rel="stylesheet" href="style.css?v=69">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -37,6 +37,7 @@
 
 <!-- 교재 채점 및 분석: 초·중·고 → 학년 → 교재 → 학생을 고르고, 채점 입력 / 분석 / 보고서 탭으로 씀 (textbook.js) -->
 <section id="textbookView" class="textbook-view">
+  <div class="tb-sticky">
   <header class="tb-topbar">
     <div class="logo-mark" id="textbookLogo" data-go-home role="button" tabindex="0" title="첫 화면으로" style="cursor:pointer;"></div>
     <h1 class="display" style="font-size:22px; margin:0;">교재 채점 및 분석</h1>
@@ -48,6 +49,7 @@
     <select id="tbGradeSel" title="학년"></select>
     <select id="tbBookSel" title="교재"></select>
     <select id="tbStudentSel" title="학생"></select>
+  </div>
   </div>
   <div class="tb-layout">
     <aside class="tb-side" id="tbSide"></aside>
