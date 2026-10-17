@@ -407,3 +407,14 @@ table.report-table td.watch-cell { color: var(--warn-ink); font-weight: 700; }
 @media (max-width: 520px) { .landing-buttons { grid-template-columns: 1fr; } .landing-btn { min-height: 100px; } }
 #topbarLogo { cursor: pointer; }
 #topbarLogo:hover { opacity: 0.8; }
+
+/* 교재 채점 및 분석 화면 */
+.view-textbook .textbook-view { display: block; min-height: 0; padding: 0; }
+.tb-topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 24px; background: var(--surface-card); border-bottom: 2px solid var(--ink); position: sticky; top: 0; z-index: 10; }
+.tb-main { max-width: 1000px; margin: 0 auto; padding: 18px 16px 60px; display: grid; gap: 14px; text-align: left; }
+.tb-empty .card { opacity: 0.6; }
+.tb-group { margin-bottom: 10px; }
+.tb-group-title { font-size: 13px; margin-bottom: 4px; }
+.tb-chip { font-family: inherit; font-size: 13px; padding: 4px 9px; margin: 0 6px 6px 0; cursor: pointer; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-page); color: var(--ink); }
+.tb-chip:hover { background: var(--critical-bg); color: var(--critical); }
+#tbDrop.drag-over { border-color: var(--accent); border-style: solid; background: var(--accent-fill); }

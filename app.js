@@ -3422,6 +3422,7 @@ function renderAll() {
   renderScoreTab();
   renderRetestTab();
   renderReportTab();
+  if (typeof renderTextbook === 'function') renderTextbook();
 }
 
 function populateCurrentTeacherSel() {
@@ -3446,11 +3447,12 @@ function showView(name) {
   document.body.classList.add('view-' + name);
   try { if (name === 'landing') sessionStorage.removeItem(VIEW_KEY); else sessionStorage.setItem(VIEW_KEY, name); } catch (e) {}
   window.scrollTo(0, 0);
+  if (name === 'textbook' && typeof renderTextbook === 'function') renderTextbook();
 }
 // 대문과 앱 상단의 담당 선생님 드롭다운을 같은 값으로 맞춤
 function syncTeacherSelects() {
   const t = getCurrentTeacher();
-  ['landingTeacherSel', 'currentTeacherSel'].forEach(id => { const el = document.getElementById(id); if (el) el.value = t; });
+  ['landingTeacherSel', 'currentTeacherSel', 'textbookTeacherSel'].forEach(id => { const el = document.getElementById(id); if (el) el.value = t; });
 }
 function onTeacherChanged(value) {
   setCurrentTeacher(value);
@@ -3468,7 +3470,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   ['landingLogo', 'textbookLogo'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = logoBlock(); });
   document.getElementById('goCatchuBtn').addEventListener('click', () => showView('catchu'));
   document.getElementById('goTextbookBtn').addEventListener('click', () => showView('textbook'));
-  document.querySelectorAll('[data-go-home]').forEach(b => b.addEventListener('click', () => showView('landing')));
+  document.querySelectorAll('[data-go-home]').forEach(b => {
+    b.addEventListener('click', () => showView('landing'));
+    b.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && b.getAttribute('role') === 'button') { e.preventDefault(); showView('landing'); } });
+  });
   // 왼쪽 상단 캐슬 배너(로고)를 누르면 대문으로 돌아감
   const topLogo = document.getElementById('topbarLogo');
   topLogo.setAttribute('role', 'button');
@@ -3478,6 +3483,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   topLogo.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showView('landing'); } });
   showView(currentView());
   document.getElementById('currentTeacherSel').addEventListener('change', e => onTeacherChanged(e.target.value));
+  const tbTeacherSel = document.getElementById('textbookTeacherSel');
+  tbTeacherSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  tbTeacherSel.value = getCurrentTeacher();
+  tbTeacherSel.addEventListener('change', e => onTeacherChanged(e.target.value));
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
   await syncSharedRounds();
   renderAll();

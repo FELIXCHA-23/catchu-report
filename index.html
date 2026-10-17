@@ -6,9 +6,10 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=66">
+<link rel="stylesheet" href="style.css?v=67">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body class="view-landing">
 
@@ -34,19 +35,57 @@
   </div>
 </section>
 
-<!-- 교재 채점 및 분석: 앞으로 교재 유형 PDF를 받아 같이 만들 화면 (지금은 준비 중 안내만) -->
+<!-- 교재 채점 및 분석: 교재별 틀린 번호를 학생마다 모아두고, 유형별로 분석 (textbook.js) -->
 <section id="textbookView" class="textbook-view">
-  <div class="landing-box">
-    <div class="landing-logo" id="textbookLogo"></div>
-    <h1 class="display landing-title">교재 채점 및 분석</h1>
-    <div class="card" style="text-align:left;">
-      <h2>준비 중이에요</h2>
-      <p class="card-sub">교재 유형 자료를 받으면 이 화면을 만들 예정이에요. 나중에는 보고서에서 교재 오답과 캐치유 오답을 함께 보여줄 수 있게 연결돼요.</p>
+  <header class="tb-topbar">
+    <div class="logo-mark" id="textbookLogo" data-go-home role="button" tabindex="0" title="첫 화면으로" style="cursor:pointer;"></div>
+    <h1 class="display" style="font-size:22px; margin:0;">교재 채점 및 분석</h1>
+    <button type="button" class="btn ghost" data-go-home style="margin-left:auto;">← 처음으로</button>
+    <select id="textbookTeacherSel"><option value="">담당 선생님 선택 (전체 보기)</option></select>
+  </header>
+  <main class="tb-main" id="tbBody">
+    <div class="card">
+      <h2>교재와 학생 고르기</h2>
+      <div class="inline-form">
+        <select id="tbBookSel"></select>
+        <select id="tbStudentSel"></select>
+      </div>
+      <p class="field-hint" id="tbBookNote" style="margin-top:8px;"></p>
     </div>
-    <div class="inline-form" style="justify-content:center; margin-top:14px;">
-      <button type="button" class="btn primary" data-go-home>← 처음으로</button>
+    <div class="card">
+      <h2>틀린 번호 입력</h2>
+      <p class="card-sub">틀린 문제 번호만 계속 모아두면 돼요. 정답률은 아래 분석에서 범위를 정해서 계산해요.</p>
+      <div class="inline-form">
+        <input type="text" id="tbWrongInput" placeholder="틀린 번호 + Enter (예: 14, 20~25)" style="min-width:240px;">
+        <button type="button" class="btn primary" id="tbAddBtn">추가</button>
+        <button type="button" class="btn ghost" id="tbClearBtn">이 학생 기록 지우기</button>
+        <span id="tbWrongSummary" class="field-hint"></span>
+      </div>
+      <div id="tbChips" style="margin-top:12px;"></div>
     </div>
-  </div>
+    <div class="card">
+      <h2>파일이나 표로 한꺼번에 올리기</h2>
+      <p class="card-sub">메모장(.txt), 엑셀(.xlsx), 구글 스프레드시트(엑셀이나 csv로 내려받은 파일)로 정리해서 올리면 읽어드려요. 표에서 칸을 복사해서 아래에 붙여넣어도 돼요.<br>
+        <b>쓰는 방법:</b> 한 줄에 한 학생씩 <b>이름 + 틀린 번호</b>를 적어주세요. 예) <code>김민수 14, 20~25, 31</code> 또는 이름이 가로로 있고 번호가 세로로 있는 표도 돼요. 이름은 학생 관리에 등록된 이름과 같아야 하고, 반이나 번호 같은 숫자는 빼주세요.</p>
+      <div class="upload-box" id="tbDrop" style="margin-bottom:10px;">
+        <div>📄 여기에 파일을 끌어다 놓거나 눌러서 고르세요</div>
+        <div class="field-hint">txt · csv · xlsx · xls</div>
+      </div>
+      <input type="file" id="tbFile" accept=".txt,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,text/plain,text/csv" style="display:none;">
+      <textarea id="tbPaste" placeholder="여기에 붙여넣기 (예: 김민수 14, 20~25)" style="width:100%; min-height:70px; box-sizing:border-box;"></textarea>
+      <div class="inline-form" style="margin-top:8px;"><button type="button" class="btn" id="tbParseBtn">붙여넣은 내용 읽기</button></div>
+      <div id="tbPreview"></div>
+    </div>
+    <div class="card">
+      <h2>분석</h2>
+      <p class="card-sub">정답률을 계산할 범위를 정하세요. 범위 안의 문제는 모두 푼 것으로 보고, 틀린 번호만 오답으로 세요.</p>
+      <div class="inline-form" style="margin-bottom:12px;">
+        <input type="number" id="tbFrom" min="1" style="width:100px;"> <span class="field-hint">번부터</span>
+        <input type="number" id="tbTo" min="1" style="width:100px;"> <span class="field-hint">번까지</span>
+      </div>
+      <div id="tbAnalysis"></div>
+    </div>
+  </main>
 </section>
 
 <header class="topbar">
@@ -333,6 +372,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=137"></script>
+<script src="app.js?v=138"></script>
+<script src="textbook.js?v=1"></script>
 </body>
 </html>
