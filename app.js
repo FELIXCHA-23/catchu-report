@@ -53,8 +53,10 @@ function appScope() {
   if (cl.contains('view-students') || cl.contains('view-landing')) return 'all';
   return 'regular';
 }
+let studentsShowHidden = false;   // 학생 관리 화면에서만 켜지는 "숨긴 학생도 보기"
 function inStudentScope(st) {
   const sc = appScope();
+  if (st.hidden && !(sc === 'all' && studentsShowHidden)) return false;
   if (sc === 'all') return true;
   return sc === 'entrance' ? isEntranceStudent(st) : !isEntranceStudent(st);
 }
@@ -725,6 +727,11 @@ function renderStudents() {
   const wrap = document.getElementById('studentListWrap');
   const searchInput = document.getElementById('studentSearchInput');
   const query = searchInput ? searchInput.value : '';
+  const showHiddenBox = document.getElementById('studentShowHidden');
+  studentsShowHidden = !!(showHiddenBox && showHiddenBox.checked);
+  const hiddenCount = state.students.filter(s => s.hidden).length;
+  const hiddenLabel = document.getElementById('studentHiddenCount');
+  if (hiddenLabel) hiddenLabel.textContent = hiddenCount ? `(숨긴 학생 ${hiddenCount}명)` : '';
   const filtered = filterByCurrentTeacher(state.students).filter(s => studentMatchesSearch(s.name, query));
   if (!state.students.length) {
     wrap.innerHTML = '<div class="empty-state">아직 등록된 학생이 없어요. 위에서 학생을 추가해보세요.</div>';
@@ -732,14 +739,15 @@ function renderStudents() {
     wrap.innerHTML = `<div class="empty-state">${query.trim() ? '검색 결과가 없어요.' : '해당 선생님 담당 학생이 없어요.'}</div>`;
   } else {
     const rows = filtered.map(s => `
-      <tr>
-        <td>${escapeHtml(s.name)}${s.school ? `<br><span class="type-unit-caption">${escapeHtml(s.school)}</span>` : ''}</td>
+      <tr${s.hidden ? ' style="opacity:0.55;"' : ''}>
+        <td>${escapeHtml(s.name)}${s.hidden ? ' <span class="badge watch" style="font-size:11px;">숨김(퇴원)</span>' : ''}${s.school ? `<br><span class="type-unit-caption">${escapeHtml(s.school)}</span>` : ''}</td>
         <td>${escapeHtml(s.grade || '-')}${s.examGrade ? `<br><span class="type-unit-caption">시험 ${escapeHtml(s.examGrade)}</span>` : ''}</td>
         <td>${escapeHtml(s.class || '-')}</td>
         <td>${escapeHtml(s.teacher || '-')}</td>
         <td class="row-actions">
           <button class="icon-btn" data-report="${s.id}">보고서</button>
           <button class="icon-btn" data-edit-student="${s.id}">수정</button>
+          ${s.hidden ? `<button class="icon-btn" data-unhide-student="${s.id}">복구</button>` : `<button class="icon-btn" data-hide-student="${s.id}" title="퇴원생 등을 목록에서 숨겨요 (기록은 그대로 남아요)">숨김</button>`}
           <button class="icon-btn" data-del-student="${s.id}">삭제</button>
         </td>
       </tr>`).join('');
@@ -754,6 +762,21 @@ function renderStudents() {
     if (editingStudentId === id) resetStudentForm();
     saveState(); renderStudents(); populateSelects();
     toast('학생을 삭제했어요.');
+  }));
+  wrap.querySelectorAll('[data-hide-student]').forEach(b => b.addEventListener('click', () => {
+    const s = state.students.find(x => x.id === b.dataset.hideStudent);
+    if (!s) return;
+    if (!confirm(`"${s.name}" 학생을 숨길까요?\n(퇴원생 처리 — 목록과 선택 칸에서 사라지고, 채점 기록은 그대로 남아요. 나중에 "숨긴 학생도 보기"에서 복구할 수 있어요)`)) return;
+    s.hidden = true;
+    saveState(); renderAll();
+    toast(`"${s.name}" 학생을 숨겼어요.`);
+  }));
+  wrap.querySelectorAll('[data-unhide-student]').forEach(b => b.addEventListener('click', () => {
+    const s = state.students.find(x => x.id === b.dataset.unhideStudent);
+    if (!s) return;
+    delete s.hidden;
+    saveState(); renderAll();
+    toast(`"${s.name}" 학생을 다시 보이게 했어요.`);
   }));
   wrap.querySelectorAll('[data-report]').forEach(b => b.addEventListener('click', () => {
     switchTab('report');
@@ -3333,16 +3356,20 @@ function importBackupFromFile(file) {
 // (번호는 이 컴퓨터 브라우저에 저장된 마지막 번호에서 이어짐)
 const AUTO_BACKUP_KEY = 'catchu_auto_backup';
 const AUTO_BACKUP_SEQ_KEY = 'catchu_backup_seq';
+const AUTO_BACKUP_DATE_KEY = 'catchu_backup_date';
+function todayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function autoBackupEnabled() { try { return localStorage.getItem(AUTO_BACKUP_KEY) !== 'off'; } catch (e) { return true; } }
 function setAutoBackupEnabled(on) { try { localStorage.setItem(AUTO_BACKUP_KEY, on ? 'on' : 'off'); } catch (e) {} }
 function runAutoBackup() {
   if (!autoBackupEnabled()) return false;
   // 아직 아무 데이터도 없을 때는 빈 파일을 쌓지 않음
   if (!state.students.length && !state.results.length && !textbookWrongCount()) return false;
+  // 오늘 이미 자동 백업을 했으면 건너뜀 (하루에 한 번만)
+  try { if (localStorage.getItem(AUTO_BACKUP_DATE_KEY) === todayKey()) return false; } catch (e) {}
   let seq = 0;
   try { seq = parseInt(localStorage.getItem(AUTO_BACKUP_SEQ_KEY) || '0', 10) || 0; } catch (e) {}
   seq += 1;
-  try { localStorage.setItem(AUTO_BACKUP_SEQ_KEY, String(seq)); } catch (e) {}
+  try { localStorage.setItem(AUTO_BACKUP_SEQ_KEY, String(seq)); localStorage.setItem(AUTO_BACKUP_DATE_KEY, todayKey()); } catch (e) {}
   const name = `캐슬백업_${String(seq).padStart(4, '0')}.json`;
   const text = JSON.stringify(state, null, 2);
   downloadTextFile(text, name);
@@ -3566,6 +3593,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('studentsLogo').innerHTML = logoBlock();
   document.getElementById('studentsBackBtn').addEventListener('click', () => { showView(studentsReturnTo); renderAll(); });
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
+  document.getElementById('studentShowHidden').addEventListener('change', () => { renderStudents(); });
   const autoToggle = document.getElementById('autoBackupToggle');
   autoToggle.checked = autoBackupEnabled();
   autoToggle.addEventListener('change', () => setAutoBackupEnabled(autoToggle.checked));
