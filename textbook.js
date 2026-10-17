@@ -300,12 +300,18 @@ function tbRenderSelectors() {
   const books = tbBooksFor(tbState.school, tbState.grade);
   $('tbBookSel').innerHTML = books.length ? books.map(b => `<option value="${b.id}">${escapeHtml(b.title)}</option>`).join('') : '<option value="">이 학년에는 교재가 아직 없어요</option>';
   $('tbBookSel').value = books.some(b => b.id === tbState.bookId) ? tbState.bookId : '';
-  const students = tbStudents();
+  // 학생 칸에는 고른 학년과 같은 학교급(초등/중등/고등) 학생만, 그중에서도 고른 학년에서 위아래 2개 학년 안의 학생만 보여줌
+  const gradeInfo = g => { const m = /^(초|중|고)(\d)/.exec(g || ''); return m ? { level: m[1], n: +m[2] } : null; };
+  const cur = gradeInfo(tbState.grade);
+  const students = tbStudents().filter(s => {
+    const gi = gradeInfo(s.examGrade || s.grade);
+    return gi && cur && gi.level === cur.level && Math.abs(gi.n - cur.n) <= 2;
+  });
   const same = students.filter(s => (s.examGrade || s.grade) === tbState.grade), other = students.filter(s => (s.examGrade || s.grade) !== tbState.grade);
   const opt = s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`;
   $('tbStudentSel').innerHTML = students.length
-    ? (same.length ? `<optgroup label="${tbState.grade} 학생">${same.map(opt).join('')}</optgroup>` : '') + (other.length ? `<optgroup label="다른 학년 학생">${other.map(opt).join('')}</optgroup>` : '')
-    : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
+    ? (same.length ? `<optgroup label="${tbState.grade} 학생">${same.map(opt).join('')}</optgroup>` : '') + (other.length ? `<optgroup label="가까운 학년 학생">${other.map(opt).join('')}</optgroup>` : '')
+    : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님의 ' + escapeHtml(tbState.school) + ' 학생이 없어요' : escapeHtml(tbState.school) + ' 학생이 없어요'}</option>`;
   if (!students.some(s => s.id === tbState.studentId)) tbState.studentId = (same[0] || other[0] || {}).id || '';
   $('tbStudentSel').value = tbState.studentId;
 }
