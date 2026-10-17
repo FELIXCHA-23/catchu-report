@@ -3322,7 +3322,7 @@ function runAutoBackup() {
   seq += 1;
   try { localStorage.setItem(AUTO_BACKUP_SEQ_KEY, String(seq)); } catch (e) {}
   const name = `캐슬백업_${String(seq).padStart(4, '0')}.json`;
-  const text = JSON.stringify(state);
+  const text = JSON.stringify(state, null, 2);
   downloadTextFile(text, name);
   toast(`자동 백업 파일을 내려받았어요: ${name} (${(text.length / 1024 / 1024).toFixed(1)}MB)`);
   return name;
@@ -3545,6 +3545,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   autoToggle.checked = autoBackupEnabled();
   autoToggle.addEventListener('change', () => setAutoBackupEnabled(autoToggle.checked));
   document.getElementById('tbExportBtn').addEventListener('click', exportBackupManual);
+  document.getElementById('catchuGoStudentsBtn').addEventListener('click', openStudentsView);
+  document.getElementById('catchuExportBtn').addEventListener('click', exportBackupManual);
+  document.getElementById('catchuImportFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackupFromFile(f); });
   document.getElementById('tbImportFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackupFromFile(f); });
   await syncSharedRounds();
   renderAll();
