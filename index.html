@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=70">
+<link rel="stylesheet" href="style.css?v=71">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -32,6 +32,8 @@
         <span class="landing-btn-sub">학생 관리 · 채점 입력 · 재시험 · 보고서</span>
       </button>
     </div>
+    <label class="landing-auto"><input type="checkbox" id="autoBackupToggle"> 대문에 접속할 때마다 백업 파일을 자동으로 내려받기</label>
+    <div class="field-hint landing-auto-hint">내려받은 파일은 캐슬백업_0001.json처럼 번호만 올라가고 덮어쓰지 않아요. 처음에 브라우저가 "여러 파일 다운로드 허용"을 물으면 허용해 주세요.</div>
     <button type="button" class="landing-link" id="goStudentsBtn">학생 관리 · 학생 등록과 수정 (캐치유테스트와 교재가 같은 학생을 써요)</button>
   </div>
 </section>
@@ -44,6 +46,9 @@
     <h1 class="display" style="font-size:22px; margin:0;">교재 채점 및 분석</h1>
     <button type="button" class="btn ghost" data-go-home style="margin-left:auto;">← 처음으로</button>
     <button type="button" class="btn ghost" id="tbGoStudentsBtn" title="학생 등록·수정">학생 관리</button>
+    <button type="button" class="btn ghost" id="tbExportBtn" title="캐치유테스트와 교재 채점 데이터를 한 파일로 백업">⬇ 백업</button>
+    <label class="btn ghost" for="tbImportFile" title="백업 파일 가져오기 (지금 있는 데이터를 전부 덮어씀)">⬆ 가져오기</label>
+    <input type="file" id="tbImportFile" accept="application/json" style="display:none;">
     <select id="textbookTeacherSel"><option value="">담당 선생님 선택 (전체 보기)</option></select>
   </header>
   <div class="tb-selectbar">
@@ -350,10 +355,11 @@
     <div class="card">
       <h2>백업 · 이전</h2>
       <p class="card-sub">이 프로그램의 데이터는 <b>이 컴퓨터의 이 브라우저</b>에만 저장돼요. 다른 컴퓨터로 옮기거나 백업하려면 내보내기 파일을 사용하세요.<br>
-        <b>내보내기/가져오기에 포함되는 것:</b> 학생 명단(이름·학교·학년·반·담당 선생님), 회차·시험지 정보, <b>학생별 채점 기록(누가 몇 회차에서 몇 번을 틀렸는지)</b>, 재시험 기록, 선생님이 작성한 보고서 의견 — 즉 이 화면에 있는 데이터 전부예요.<br>
-        <b>가져오기는 지금 있는 데이터를 전부 덮어써요</b> (병합이 아니라 완전히 교체). API 키는 포함되지 않아요.</p>
+        <b>내보내기/가져오기에 포함되는 것:</b> 학생 명단(이름·학교·학년·반·담당 선생님), 회차·시험지 정보, <b>학생별 채점 기록(누가 몇 회차에서 몇 번을 틀렸는지)</b>, 재시험 기록, 선생님이 작성한 보고서 의견, <b>교재 채점 기록(학생별·교재별 틀린 번호)과 교재 보고서 의견·PDF 포함 설정</b>, 보고서의 평균 난이도 조절 값 — 즉 캐치유테스트와 교재 화면에 있는 데이터 전부예요.<br>
+        <b>가져오기는 지금 있는 데이터를 전부 덮어써요</b> (병합이 아니라 완전히 교체). API 키는 포함되지 않아요.<br>
+        <b>자동 백업:</b> 대문에 접속할 때마다 같은 내용의 백업 파일이 자동으로 내려받아져요 (캐슬백업_0001.json, 0002… 번호만 올라감). 대문 아래 체크박스로 끄고 켤 수 있어요. 교재 화면 위쪽의 "백업/가져오기" 버튼도 이 화면과 똑같이 동작해요.</p>
       <div class="inline-form">
-        <button type="button" class="btn primary" id="exportBtn">⬇ 전체 내보내기 (학생 명단 · 회차 · 채점 · 재시험 · 보고서 의견)</button>
+        <button type="button" class="btn primary" id="exportBtn">⬇ 전체 내보내기 (학생 명단 · 회차 · 채점 · 재시험 · 보고서 의견 · 교재 채점)</button>
         <label class="btn ghost" for="importFile">⬆ 전체 가져오기 (지금 있는 데이터를 전부 덮어씀)</label>
         <input type="file" id="importFile" accept="application/json" style="display:none;">
       </div>
@@ -410,7 +416,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=140"></script>
+<script src="app.js?v=142"></script>
 <script src="textbook.js?v=3"></script>
 </body>
 </html>

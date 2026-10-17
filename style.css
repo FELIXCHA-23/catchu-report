@@ -461,3 +461,6 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .view-students .topbar, .view-students .landing, .view-students .textbook-view { display: none; }
 .view-students #app .tab-panel:not(#panel-students) { display: none !important; }
 .view-students #app #panel-students { display: flex !important; }
+
+.landing-auto { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; font-size: 13px; color: var(--ink-soft); cursor: pointer; }
+.landing-auto-hint { margin-top: 4px; text-align: center; }

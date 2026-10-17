@@ -460,6 +460,7 @@ function loadState() {
       if (!data.difficultyOverrides) data.difficultyOverrides = {};
       if (!data.reportHidden) data.reportHidden = {};
       if (!data.textbook) data.textbook = { books: [], results: [] };
+      if (!Array.isArray(data.textbook.results)) data.textbook.results = [];
       if (!data.sharedRoundIds) data.sharedRoundIds = [];
       if (!data.studentDone) data.studentDone = {};
       if (!data.studentMemo) data.studentMemo = {};
@@ -3258,20 +3259,79 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pdfExportBtn').addEventListener('click', exportReportPDF);
 });
 
+/* ================= 백업 (캐치유테스트 + 교재 채점이 한 파일) ================= */
+
+function downloadTextFile(text, filename) {
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function textbookWrongCount() {
+  return (state.textbook && state.textbook.results ? state.textbook.results : []).reduce((a, r) => a + (r.wrong ? r.wrong.length : 0), 0);
+}
+// "내보내기" 버튼 — 캐치유테스트 화면과 교재 화면 어디서 눌러도 같은 파일(모든 데이터)이 나옴
+function exportBackupManual() {
+  const d = new Date();
+  const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  downloadTextFile(JSON.stringify(state, null, 2), `${stamp}학생누적채점데이터.json`);
+  toast(`백업 파일을 내보냈어요 (학생 ${state.students.length}명 · 교재 틀린 문제 ${textbookWrongCount()}개 포함).`);
+}
+function importBackupFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.students || !data.rounds || !data.results) throw new Error('형식 오류');
+      if (!data.teacherNotes) data.teacherNotes = {};
+      if (!data.retests) data.retests = [];
+      if (!data.gradeOverrides) data.gradeOverrides = {};
+      if (!data.difficultyOverrides) data.difficultyOverrides = {};
+      if (!data.reportHidden) data.reportHidden = {};
+      if (!data.textbook) data.textbook = { books: [], results: [] };
+      if (!Array.isArray(data.textbook.results)) data.textbook.results = [];
+      if (!data.studentDone) data.studentDone = {};
+      if (!data.studentMemo) data.studentMemo = {};
+      if (!data.studentMemoRetest) data.studentMemoRetest = {};
+      if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
+      state = data;
+      saveState();
+      renderAll();
+      toast('데이터를 가져왔어요.');
+    } catch (err) {
+      alert('올바른 백업 파일이 아니에요.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// 자동 백업: 대문에 들어올 때마다 백업 파일을 자동으로 내려받음. 파일 이름은 캐슬백업_0001.json처럼 번호만 올라가고 덮어쓰지 않음
+// (번호는 이 컴퓨터 브라우저에 저장된 마지막 번호에서 이어짐)
+const AUTO_BACKUP_KEY = 'catchu_auto_backup';
+const AUTO_BACKUP_SEQ_KEY = 'catchu_backup_seq';
+function autoBackupEnabled() { try { return localStorage.getItem(AUTO_BACKUP_KEY) !== 'off'; } catch (e) { return true; } }
+function setAutoBackupEnabled(on) { try { localStorage.setItem(AUTO_BACKUP_KEY, on ? 'on' : 'off'); } catch (e) {} }
+function runAutoBackup() {
+  if (!autoBackupEnabled()) return false;
+  // 아직 아무 데이터도 없을 때는 빈 파일을 쌓지 않음
+  if (!state.students.length && !state.results.length && !textbookWrongCount()) return false;
+  let seq = 0;
+  try { seq = parseInt(localStorage.getItem(AUTO_BACKUP_SEQ_KEY) || '0', 10) || 0; } catch (e) {}
+  seq += 1;
+  try { localStorage.setItem(AUTO_BACKUP_SEQ_KEY, String(seq)); } catch (e) {}
+  const name = `캐슬백업_${String(seq).padStart(4, '0')}.json`;
+  const text = JSON.stringify(state);
+  downloadTextFile(text, name);
+  toast(`자동 백업 파일을 내려받았어요: ${name} (${(text.length / 1024 / 1024).toFixed(1)}MB)`);
+  return name;
+}
+
 /* ================= 데이터 관리 ================= */
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('exportBtn').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const d = new Date();
-    const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    a.href = url; a.download = `${stamp}학생누적채점데이터.json`;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-    toast('백업 파일을 내보냈어요.');
-  });
+  document.getElementById('exportBtn').addEventListener('click', exportBackupManual);
 
   document.getElementById('exportRosterBtn').addEventListener('click', () => {
     // 채점 기록 없이 이름·학교·학년·반·담당 선생님만 담음 — "학생 명단 가져오기"에 그대로 쓸 수 있는 형식.
@@ -3292,32 +3352,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('importFile').addEventListener('change', e => {
     const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result);
-        if (!data.students || !data.rounds || !data.results) throw new Error('형식 오류');
-        if (!data.teacherNotes) data.teacherNotes = {};
-        if (!data.retests) data.retests = [];
-        if (!data.gradeOverrides) data.gradeOverrides = {};
-        if (!data.difficultyOverrides) data.difficultyOverrides = {};
-        if (!data.reportHidden) data.reportHidden = {};
-        if (!data.textbook) data.textbook = { books: [], results: [] };
-        if (!data.studentDone) data.studentDone = {};
-        if (!data.studentMemo) data.studentMemo = {};
-        if (!data.studentMemoRetest) data.studentMemoRetest = {};
-        if (!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
-        state = data;
-        saveState();
-        renderAll();
-        toast('데이터를 가져왔어요.');
-      } catch (err) {
-        alert('올바른 백업 파일이 아니에요.');
-      }
-    };
-    reader.readAsText(file);
     e.target.value = '';
+    if (file) importBackupFromFile(file);
   });
 
   document.getElementById('seedBtn').addEventListener('click', () => {
@@ -3505,8 +3541,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('studentsLogo').innerHTML = logoBlock();
   document.getElementById('studentsBackBtn').addEventListener('click', () => { showView(studentsReturnTo); renderAll(); });
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
+  const autoToggle = document.getElementById('autoBackupToggle');
+  autoToggle.checked = autoBackupEnabled();
+  autoToggle.addEventListener('change', () => setAutoBackupEnabled(autoToggle.checked));
+  document.getElementById('tbExportBtn').addEventListener('click', exportBackupManual);
+  document.getElementById('tbImportFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackupFromFile(f); });
   await syncSharedRounds();
   renderAll();
+  // 대문으로 접속했을 때(새로 열거나 대문에서 새로고침) 자동 백업
+  if (document.body.classList.contains('view-landing')) runAutoBackup();
 });
 
 /* ================= 공용 회차 공유 (관리자가 내보내고, 모든 선생님 컴퓨터가 자동으로 읽어옴) ================= */
