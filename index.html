@@ -6,17 +6,55 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=64">
+<link rel="stylesheet" href="style.css?v=65">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
-<body>
+<body class="view-landing">
+
+<!-- 대문(첫 화면): 담당 선생님을 먼저 고르고, 교재 채점 / 캐치유테스트 분석 중 들어갈 곳을 고름 -->
+<section id="landing" class="landing">
+  <div class="landing-box">
+    <div class="landing-logo" id="landingLogo"></div>
+    <h1 class="display landing-title">학습 분석 시스템</h1>
+    <p class="landing-sub">먼저 담당 선생님을 고르고, 들어갈 메뉴를 선택하세요.</p>
+    <select id="landingTeacherSel" class="landing-teacher">
+      <option value="">담당 선생님 선택 (전체 보기)</option>
+    </select>
+    <div class="landing-buttons">
+      <button type="button" class="landing-btn" id="goTextbookBtn">
+        <span class="landing-btn-title">교재 채점 및 분석</span>
+        <span class="landing-btn-sub">교재 유형별 오답 입력과 분석 (준비 중)</span>
+      </button>
+      <button type="button" class="landing-btn primary" id="goCatchuBtn">
+        <span class="landing-btn-title">캐치유테스트 분석</span>
+        <span class="landing-btn-sub">학생 관리 · 채점 입력 · 재시험 · 보고서</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- 교재 채점 및 분석: 앞으로 교재 유형 PDF를 받아 같이 만들 화면 (지금은 준비 중 안내만) -->
+<section id="textbookView" class="textbook-view">
+  <div class="landing-box">
+    <div class="landing-logo" id="textbookLogo"></div>
+    <h1 class="display landing-title">교재 채점 및 분석</h1>
+    <div class="card" style="text-align:left;">
+      <h2>준비 중이에요</h2>
+      <p class="card-sub">교재 유형 자료를 받으면 이 화면을 만들 예정이에요. 나중에는 보고서에서 교재 오답과 캐치유 오답을 함께 보여줄 수 있게 연결돼요.</p>
+    </div>
+    <div class="inline-form" style="justify-content:center; margin-top:14px;">
+      <button type="button" class="btn primary" data-go-home>← 처음으로</button>
+    </div>
+  </div>
+</section>
 
 <header class="topbar">
   <div class="brand">
     <div class="logo-mark" id="topbarLogo"></div>
     <h1 class="display">캐치유테스트 분석보고서</h1>
-    <select id="currentTeacherSel" style="margin-left:auto;">
+    <button type="button" class="btn ghost" data-go-home title="첫 화면으로 돌아가기" style="margin-left:auto;">← 처음으로</button>
+    <select id="currentTeacherSel">
       <option value="">담당 선생님 선택 (전체 보기)</option>
     </select>
   </div>
@@ -295,6 +333,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=135"></script>
+<script src="app.js?v=136"></script>
 </body>
 </html>

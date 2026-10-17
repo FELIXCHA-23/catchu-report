@@ -459,6 +459,7 @@ function loadState() {
       if (!data.gradeOverrides) data.gradeOverrides = {};
       if (!data.difficultyOverrides) data.difficultyOverrides = {};
       if (!data.reportHidden) data.reportHidden = {};
+      if (!data.textbook) data.textbook = { books: [], results: [] };
       if (!data.sharedRoundIds) data.sharedRoundIds = [];
       if (!data.studentDone) data.studentDone = {};
       if (!data.studentMemo) data.studentMemo = {};
@@ -466,7 +467,7 @@ function loadState() {
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
-  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, sharedRoundIds: [], studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
+  return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, textbook: { books: [], results: [] }, sharedRoundIds: [], studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
 }
 
 function saveState() {
@@ -3302,6 +3303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.gradeOverrides) data.gradeOverrides = {};
         if (!data.difficultyOverrides) data.difficultyOverrides = {};
         if (!data.reportHidden) data.reportHidden = {};
+        if (!data.textbook) data.textbook = { books: [], results: [] };
         if (!data.studentDone) data.studentDone = {};
         if (!data.studentMemo) data.studentMemo = {};
         if (!data.studentMemoRetest) data.studentMemoRetest = {};
@@ -3330,7 +3332,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
+    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, textbook: { books: [], results: [] }, studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
     saveState();
     renderAll();
     toast('초기화했어요.');
@@ -3428,13 +3430,47 @@ function populateCurrentTeacherSel() {
   sel.value = getCurrentTeacher();
 }
 
+/* ================= 대문 / 화면 전환 ================= */
+
+// 화면은 세 가지 — landing(대문), catchu(캐치유테스트 분석: 기존 앱 그대로), textbook(교재 채점 및 분석: 준비 중).
+// 새로 들어오면 항상 대문부터 시작하고, 같은 탭에서 새로고침하면 보던 화면을 유지함.
+// 나중에 교재 기능이 생기면 state.textbook(books/results)에 교재 오답을 저장하고, 보고서 계산(computeStudentReport)에서
+// 캐치유 오답과 합쳐서 보여주면 됨 — 담당 선생님 선택(getCurrentTeacher)은 두 화면이 같이 씀.
+const VIEW_KEY = 'catchu_view';
+function currentView() {
+  try { const v = sessionStorage.getItem(VIEW_KEY); if (v === 'catchu' || v === 'textbook') return v; } catch (e) {}
+  return 'landing';
+}
+function showView(name) {
+  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook');
+  document.body.classList.add('view-' + name);
+  try { if (name === 'landing') sessionStorage.removeItem(VIEW_KEY); else sessionStorage.setItem(VIEW_KEY, name); } catch (e) {}
+  window.scrollTo(0, 0);
+}
+// 대문과 앱 상단의 담당 선생님 드롭다운을 같은 값으로 맞춤
+function syncTeacherSelects() {
+  const t = getCurrentTeacher();
+  ['landingTeacherSel', 'currentTeacherSel'].forEach(id => { const el = document.getElementById(id); if (el) el.value = t; });
+}
+function onTeacherChanged(value) {
+  setCurrentTeacher(value);
+  syncTeacherSelects();
+  renderAll();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
   populateCurrentTeacherSel();
-  document.getElementById('currentTeacherSel').addEventListener('change', e => {
-    setCurrentTeacher(e.target.value);
-    renderAll();
-  });
+  const landingSel = document.getElementById('landingTeacherSel');
+  landingSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  landingSel.value = getCurrentTeacher();
+  landingSel.addEventListener('change', e => onTeacherChanged(e.target.value));
+  ['landingLogo', 'textbookLogo'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = logoBlock(); });
+  document.getElementById('goCatchuBtn').addEventListener('click', () => showView('catchu'));
+  document.getElementById('goTextbookBtn').addEventListener('click', () => showView('textbook'));
+  document.querySelectorAll('[data-go-home]').forEach(b => b.addEventListener('click', () => showView('landing')));
+  showView(currentView());
+  document.getElementById('currentTeacherSel').addEventListener('change', e => onTeacherChanged(e.target.value));
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
   await syncSharedRounds();
   renderAll();
