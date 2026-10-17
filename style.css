@@ -405,3 +405,5 @@ table.report-table td.watch-cell { color: var(--warn-ink); font-weight: 700; }
 .landing-btn-title { font-size: 18px; font-weight: 800; }
 .landing-btn-sub { font-size: 12.5px; opacity: 0.8; line-height: 1.4; }
 @media (max-width: 520px) { .landing-buttons { grid-template-columns: 1fr; } .landing-btn { min-height: 100px; } }
+#topbarLogo { cursor: pointer; }
+#topbarLogo:hover { opacity: 0.8; }

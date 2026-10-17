@@ -3469,6 +3469,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('goCatchuBtn').addEventListener('click', () => showView('catchu'));
   document.getElementById('goTextbookBtn').addEventListener('click', () => showView('textbook'));
   document.querySelectorAll('[data-go-home]').forEach(b => b.addEventListener('click', () => showView('landing')));
+  // 왼쪽 상단 캐슬 배너(로고)를 누르면 대문으로 돌아감
+  const topLogo = document.getElementById('topbarLogo');
+  topLogo.setAttribute('role', 'button');
+  topLogo.setAttribute('tabindex', '0');
+  topLogo.title = '첫 화면으로';
+  topLogo.addEventListener('click', () => showView('landing'));
+  topLogo.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showView('landing'); } });
   showView(currentView());
   document.getElementById('currentTeacherSel').addEventListener('change', e => onTeacherChanged(e.target.value));
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
