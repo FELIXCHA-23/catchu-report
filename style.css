@@ -464,3 +464,13 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 
 .landing-auto { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; font-size: 13px; color: var(--ink-soft); cursor: pointer; }
 .landing-auto-hint { margin-top: 4px; text-align: center; }
+
+/* 대문의 입학테스트 버튼(캐치유테스트 오른쪽)과 입학테스트 화면 */
+.landing-box { max-width: 780px; }
+.landing-buttons { grid-template-columns: repeat(3, 1fr); }
+.landing-btn.entrance { background: #1D9E75; border-color: #1D9E75; color: #fff; }
+.topbar .ttl-entrance { display: none; }
+.view-entrance .topbar .ttl-catchu { display: none; }
+.view-entrance .topbar .ttl-entrance { display: inline; }
+.view-entrance #tabNav [data-tab="example"] { display: none; }
+@media (max-width: 700px) { .landing-buttons { grid-template-columns: 1fr; } }

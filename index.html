@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=72">
+<link rel="stylesheet" href="style.css?v=73">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -29,7 +29,11 @@
       </button>
       <button type="button" class="landing-btn primary" id="goCatchuBtn">
         <span class="landing-btn-title">캐치유테스트 분석</span>
-        <span class="landing-btn-sub">학생 관리 · 채점 입력 · 재시험 · 보고서</span>
+        <span class="landing-btn-sub">채점 입력 · 재시험 · 보고서</span>
+      </button>
+      <button type="button" class="landing-btn entrance" id="goEntranceBtn">
+        <span class="landing-btn-title">입학테스트</span>
+        <span class="landing-btn-sub">입학테스트 반 학생 · 입학테스트지 전용</span>
       </button>
     </div>
     <label class="landing-auto"><input type="checkbox" id="autoBackupToggle"> 대문에 접속할 때마다 백업 파일을 자동으로 내려받기</label>
@@ -125,7 +129,7 @@
 <header class="topbar">
   <div class="brand">
     <div class="logo-mark" id="topbarLogo"></div>
-    <h1 class="display">캐치유테스트 분석보고서</h1>
+    <h1 class="display"><span class="ttl-catchu">캐치유테스트 분석보고서</span><span class="ttl-entrance">입학테스트 분석보고서</span></h1>
     <button type="button" class="btn ghost" data-go-home title="첫 화면으로 돌아가기" style="margin-left:auto;">← 처음으로</button>
     <button type="button" class="btn ghost" id="catchuGoStudentsBtn" title="학생 등록·수정">학생 관리</button>
     <button type="button" class="btn ghost" id="catchuExportBtn" title="캐치유테스트와 교재 채점 데이터를 한 파일로 백업">⬇ 백업</button>
@@ -419,7 +423,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=143"></script>
+<script src="app.js?v=144"></script>
 <script src="textbook.js?v=3"></script>
 </body>
 </html>

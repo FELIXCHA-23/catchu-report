@@ -46,9 +46,28 @@ function setCurrentTeacher(t) {
 const ALL_ACCESS_TEACHERS = ['차성빈'];
 function hasAllAccess() { return ALL_ACCESS_TEACHERS.includes(getCurrentTeacher()); }
 // 담당 선생님이 선택되어 있으면 그 선생님 학생만 남기고, 선택 안 했거나 전체 권한 선생님이면 그대로 반환
+// 지금 화면이 어떤 범위의 데이터를 보여줘야 하는지: 입학테스트 화면은 'entrance', 학생 관리·대문은 'all'(전부), 나머지(캐치유테스트·교재)는 'regular'(입학테스트 제외)
+function appScope() {
+  const cl = document.body.classList;
+  if (cl.contains('view-entrance')) return 'entrance';
+  if (cl.contains('view-students') || cl.contains('view-landing')) return 'all';
+  return 'regular';
+}
+function inStudentScope(st) {
+  const sc = appScope();
+  if (sc === 'all') return true;
+  return sc === 'entrance' ? isEntranceStudent(st) : !isEntranceStudent(st);
+}
+function inRoundScope(r) {
+  const sc = appScope();
+  if (sc === 'all') return true;
+  return sc === 'entrance' ? isEntranceRound(r) : !isEntranceRound(r);
+}
+function scopedRounds() { return state.rounds.filter(inRoundScope); }
 function filterByCurrentTeacher(students) {
   const t = getCurrentTeacher();
-  return t && !hasAllAccess() ? students.filter(s => s.teacher === t) : students;
+  const scoped = students.filter(inStudentScope);
+  return t && !hasAllAccess() ? scoped.filter(s => s.teacher === t) : scoped;
 }
 
 // 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
@@ -1002,7 +1021,7 @@ function populateRoundGradeFilter() {
   const sel = document.getElementById('roundGradeFilter');
   if (!sel) return;
   const prev = sel.value;
-  const grades = Array.from(new Set(state.rounds.map(r => r.grade).filter(Boolean)));
+  const grades = Array.from(new Set(scopedRounds().map(r => r.grade).filter(Boolean)));
   const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   sel.innerHTML = '<option value="">학년 전체</option>' + grades.map(g => `<option value="${g}">${g}</option>`).join('');
@@ -1025,7 +1044,7 @@ function renderRounds() {
   const wrap = document.getElementById('roundListWrap');
   populateRoundGradeFilter();
   const gradeFilter = document.getElementById('roundGradeFilter')?.value || '';
-  const sorted = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = [...scopedRounds()].sort((a, b) => a.date.localeCompare(b.date));
   const filtered = gradeFilter ? sorted.filter(r => r.grade === gradeFilter) : sorted;
   if (!filtered.length) {
     wrap.innerHTML = '<div class="empty-state">해당하는 회차가 없어요.</div>';
@@ -1192,9 +1211,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const date = document.getElementById('roundDate').value;
     const grade = document.getElementById('roundGrade').value;
     const total = parseInt(document.getElementById('roundTotal').value, 10) || 30;
-    const title = document.getElementById('roundTitle').value.trim();
+    let title = document.getElementById('roundTitle').value.trim();
     if (!date) { toast('날짜를 선택해주세요.'); return; }
     if (!grade) { toast('학년을 선택해주세요.'); return; }
+    const ENTRANCE_TITLE = /입학\s*(테스트|TEST)/i;
+    if (appScope() === 'entrance' && !ENTRANCE_TITLE.test(title)) title = title ? '입학테스트 ' + title : grade + ' 입학테스트';
+    else if (appScope() === 'regular' && ENTRANCE_TITLE.test(title)) toast('제목에 "입학테스트"가 들어 있어서 입학테스트 탭의 시험지로 분류돼요. 캐치유테스트에서는 보이지 않아요.');
     const types = readTypeRows();
     if (!types.length) { toast('유형을 최소 1개 이상 입력해주세요.'); return; }
     const covered = new Set();
@@ -1242,7 +1264,7 @@ function populateResetPanelDateSel() {
   const fromSel = document.getElementById('resetPanelFromSel');
   const toSel = document.getElementById('resetPanelToSel');
   if (!fromSel || !toSel) return;
-  const dates = Array.from(new Set(state.rounds.map(r => r.date))).sort();
+  const dates = Array.from(new Set(scopedRounds().map(r => r.date))).sort();
   const prevFrom = fromSel.value, prevTo = toSel.value;
   const opts = dates.map(d => `<option value="${d}">${escapeHtml(dateToWeekLabel(d))} (${shortDate(d)})</option>`).join('');
   fromSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
@@ -1264,13 +1286,13 @@ function populateReportStudentSel() {
     ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}${state.studentDone[s.id] ? ' (완)' : ''}</option>`).join('')
     : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
   // 실제 학생이 없어도 예시보고서는 항상 고를 수 있도록 고정 옵션을 하나 더 붙여둠
-  sel.innerHTML = realOptionsHtml + `<option value="${EXAMPLE_STUDENT_ID}">${escapeHtml(EXAMPLE_STUDENT.name)} (예시보고서 샘플)</option>`;
+  sel.innerHTML = realOptionsHtml + (appScope() === 'entrance' ? '' : `<option value="${EXAMPLE_STUDENT_ID}">${escapeHtml(EXAMPLE_STUDENT.name)} (예시보고서 샘플)</option>`);
   if (eligible.some(s => s.id === prev) || prev === EXAMPLE_STUDENT_ID) sel.value = prev;
 }
 
 // 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N-M주차"는 하나로 묶여요)
 function scoreRoundGroups(grade) {
-  const rounds = state.rounds.filter(r => r.grade === grade);
+  const rounds = scopedRounds().filter(r => r.grade === grade);
   const dates = Array.from(new Set(rounds.map(r => r.date))).sort((a, b) => a.localeCompare(b));
   return dates.map(date => ({ date, label: dateToWeekLabel(date), rounds: rounds.filter(r => r.date === date) }));
 }
@@ -1286,7 +1308,7 @@ function populateScoreGradeSel() {
   const sel = document.getElementById('scoreGradeSel');
   const prev = sel.value;
   const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
-  const roundGrades = Array.from(new Set(state.rounds.map(r => r.grade).filter(Boolean)));
+  const roundGrades = Array.from(new Set(scopedRounds().map(r => r.grade).filter(Boolean)));
   // 담당 선생님이 선택돼 있으면, 그 선생님 학생 중 아무도 없는 학년은 다운드롭에서 아예 뺌
   // (시험 응시 학년이 따로 설정된 학생은 examGrade 기준으로 매칭 — 위 채점 대상 매칭 로직과 동일)
   const myStudents = filterByCurrentTeacher(state.students);
@@ -1359,7 +1381,7 @@ function populateScoreExamSel() {
   const date = document.getElementById('scoreRoundGroupSel').value;
   const sel = document.getElementById('scoreRoundSel');
   const prev = sel.value;
-  const rounds = state.rounds.filter(r => r.grade === grade && r.date === date);
+  const rounds = scopedRounds().filter(r => r.grade === grade && r.date === date);
   sel.innerHTML = rounds.length
     ? rounds.map(r => `<option value="${r.id}">${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
     : '<option value="">시험지를 먼저 등록하세요</option>';
@@ -1433,7 +1455,7 @@ function renderStudentResetPanel() {
   // 전체 권한 선생님(차성빈)은 여기서만 예외 — 다른 선생님 담당으로 이미 정해진 학생은 안 보이게 하고,
   // 담당이 아직 없는 학생과 본인 담당 학생만 보여줌 (다른 선생님 현황까지 여기 다 뒤섞이지 않게)
   const studentsForPanel = hasAllAccess()
-    ? state.students.filter(s => !s.teacher || s.teacher === getCurrentTeacher())
+    ? state.students.filter(inStudentScope).filter(s => !s.teacher || s.teacher === getCurrentTeacher())
     : filterByCurrentTeacher(state.students);
   const allStudents = studentsForPanel
     .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
@@ -1754,7 +1776,7 @@ function populateRetestStudentSelect() {
   const prev = sel.value;
   const currentTeacher = getCurrentTeacher();
   const studentIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.studentId));
-  const students = state.students
+  const students = state.students.filter(inStudentScope)
     .filter(s => studentIdsWithWrong.has(s.id) && (!currentTeacher || hasAllAccess() || s.teacher === currentTeacher))
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   sel.innerHTML = students.length
@@ -3475,23 +3497,25 @@ function populateCurrentTeacherSel() {
 // 캐치유 오답과 합쳐서 보여주면 됨 — 담당 선생님 선택(getCurrentTeacher)은 두 화면이 같이 씀.
 const VIEW_KEY = 'catchu_view';
 function currentView() {
-  try { const v = sessionStorage.getItem(VIEW_KEY); if (v === 'catchu' || v === 'textbook') return v; } catch (e) {}
+  try { const v = sessionStorage.getItem(VIEW_KEY); if (v === 'catchu' || v === 'textbook' || v === 'entrance') return v; } catch (e) {}
   return 'landing';
 }
 function showView(name) {
-  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook', 'view-students');
+  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook', 'view-students', 'view-entrance');
   document.body.classList.add('view-' + name);
   // 학생 관리 전용 화면은 새로고침하면 열려 있던 곳이 아니라 대문으로 돌아가므로 저장하지 않음
   try { if (name === 'landing') sessionStorage.removeItem(VIEW_KEY); else if (name !== 'students') sessionStorage.setItem(VIEW_KEY, name); } catch (e) {}
   window.scrollTo(0, 0);
   if (name === 'textbook' && typeof renderTextbook === 'function') renderTextbook();
   if (name === 'students') renderStudents();
+  // 화면마다 보여줄 학생·시험지 범위가 다르므로(입학테스트 / 그 외) 바뀔 때마다 다시 그림
+  if (window.__appReady) renderAll();
 }
 // 학생 관리 화면에서 "돌아가기"를 누르면 열기 전에 있던 화면으로 감
 let studentsReturnTo = 'landing';
 function openStudentsView() {
   const cl = document.body.classList;
-  studentsReturnTo = cl.contains('view-textbook') ? 'textbook' : cl.contains('view-catchu') ? 'catchu' : 'landing';
+  studentsReturnTo = cl.contains('view-textbook') ? 'textbook' : cl.contains('view-entrance') ? 'entrance' : cl.contains('view-catchu') ? 'catchu' : 'landing';
   showView('students');
 }
 // 대문과 앱 상단의 담당 선생님 드롭다운을 같은 값으로 맞춤
@@ -3514,6 +3538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   landingSel.addEventListener('change', e => onTeacherChanged(e.target.value));
   ['landingLogo', 'textbookLogo'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = logoBlock(); });
   document.getElementById('goCatchuBtn').addEventListener('click', () => showView('catchu'));
+  document.getElementById('goEntranceBtn').addEventListener('click', () => showView('entrance'));
   document.getElementById('goTextbookBtn').addEventListener('click', () => showView('textbook'));
   document.querySelectorAll('[data-go-home]').forEach(b => {
     b.addEventListener('click', () => showView('landing'));
@@ -3551,6 +3576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('tbImportFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackupFromFile(f); });
   await syncSharedRounds();
   renderAll();
+  window.__appReady = true;
   // 대문으로 접속했을 때(새로 열거나 대문에서 새로고침) 자동 백업
   if (document.body.classList.contains('view-landing')) runAutoBackup();
 });
