@@ -431,6 +431,7 @@ table.report-table td.watch-cell { color: var(--warn-ink); font-weight: 700; }
 .tb-side-title { margin: 0 0 8px; font-size: 15px; }
 .tb-side-school-name { font-weight: 800; font-size: 14px; margin: 10px 0 4px; padding-bottom: 3px; border-bottom: 2px solid var(--ink); }
 .tb-side-grade-name { font-size: 12px; color: var(--muted); font-weight: 700; margin: 8px 0 3px; }
+.tb-side-sem { font-size: 12px; font-weight: 700; color: var(--brand-red); margin: 8px 0 3px 2px; }
 .tb-side-empty { font-size: 12px; color: var(--muted); padding: 2px 4px; }
 .tb-side-book { display: block; width: 100%; text-align: left; font-family: inherit; font-size: 13px; font-weight: 700; padding: 8px 10px; margin-bottom: 4px; cursor: pointer; background: var(--surface-page); border: 1px solid var(--border); border-radius: 2px; color: var(--ink); }
 .tb-side-book span { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }

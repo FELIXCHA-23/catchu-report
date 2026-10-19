@@ -243,7 +243,16 @@ const tbOpenChapters = new Set();      // 펼쳐 둔 중단원 (처음에는 모
 const tbRange = { bookId: '', from: '', to: '' };
 
 function tbSchoolOf(b) { return b.school || (/^초/.test(b.grade) ? '초등' : /^중/.test(b.grade) ? '중등' : '고등'); }
-function tbBooksFor(school, grade) { return TB_BOOKS.filter(b => tbSchoolOf(b) === school && b.grade === grade); }
+// 교재가 몇 학기용인지: 데이터에 sem(1|2)이 있으면 그것을, 없으면 제목으로 추정 (중1-1 → 1학기, 공통수학1·대수 → 1학기, 공통수학2·미적분 → 2학기)
+function tbSemOf(b) {
+  if (b.sem === 1 || b.sem === 2) return b.sem;
+  const m = /(d)s*-s*([12])s*$/.exec(b.title || '');
+  if (m) return +m[2];
+  if (/공통수학s*1|대수/.test(b.title || '')) return 1;
+  if (/공통수학s*2|미적분/.test(b.title || '')) return 2;
+  return 0;
+}
+function tbBooksFor(school, grade) { return TB_BOOKS.filter(b => tbSchoolOf(b) === school && b.grade === grade).sort((x, y) => (tbSemOf(x) || 9) - (tbSemOf(y) || 9)); }
 function tbSelectBook(book) {
   if (!book) { tbState.bookId = ''; return; }
   tbState.bookId = book.id; tbState.school = tbSchoolOf(book); tbState.grade = book.grade;
@@ -298,7 +307,7 @@ function tbRenderSelectors() {
   $('tbGradeSel').innerHTML = TB_SCHOOLS[tbState.school].map(g => `<option value="${g}">${g}${tbBooksFor(tbState.school, g).length ? '' : ' (교재 없음)'}</option>`).join('');
   $('tbGradeSel').value = tbState.grade;
   const books = tbBooksFor(tbState.school, tbState.grade);
-  $('tbBookSel').innerHTML = books.length ? books.map(b => `<option value="${b.id}">${escapeHtml(b.title)}</option>`).join('') : '<option value="">이 학년에는 교재가 아직 없어요</option>';
+  $('tbBookSel').innerHTML = books.length ? books.slice().sort((x, y) => (tbSemOf(x) || 9) - (tbSemOf(y) || 9)).map(b => `<option value="${b.id}">${tbSemOf(b) ? tbSemOf(b) + '학기 · ' : ''}${escapeHtml(b.title)}</option>`).join('') : '<option value="">이 학년에는 교재가 아직 없어요</option>';
   $('tbBookSel').value = books.some(b => b.id === tbState.bookId) ? tbState.bookId : '';
   // 학생 칸에는 고른 학년과 같은 학교급(초등/중등/고등) 학생만, 그중에서도 고른 학년에서 위아래 2개 학년 안의 학생만 보여줌
   const gradeInfo = g => { const m = /^(초|중|고)(\d)/.exec(g || ''); return m ? { level: m[1], n: +m[2] } : null; };
@@ -333,10 +342,10 @@ function tbRenderSide() {
     <div class="tb-side-school"><div class="tb-side-school-name">${school}</div>
     ${grades.map(g => {
       const bs = tbBooksFor(school, g);
-      return `<div class="tb-side-grade"><div class="tb-side-grade-name">${g}</div>${bs.length ? bs.map(b => {
-        tbTypeMap(b);
-        return `<button type="button" class="tb-side-book${b.id === tbState.bookId ? ' active' : ''}" data-book="${b.id}">${escapeHtml(b.title)}<span>유형 ${b.types.length}개 · 문제 ${b._map.size}개</span></button>`;
-      }).join('') : '<div class="tb-side-empty">아직 올라온 교재가 없어요</div>'}</div>`;
+      const btn = x => { tbTypeMap(x); return `<button type="button" class="tb-side-book${x.id === tbState.bookId ? ' active' : ''}" data-book="${x.id}">${escapeHtml(x.title)}<span>유형 ${x.types.length}개 · 문제 ${x._map.size}개</span></button>`; };
+      const semBlock = (n, label) => { const list = bs.filter(x => tbSemOf(x) === n); return `<div class="tb-side-sem">${label}</div>${list.length ? list.map(btn).join('') : '<div class="tb-side-empty">교재 없음</div>'}`; };
+      const other = bs.filter(x => !tbSemOf(x));
+      return `<div class="tb-side-grade"><div class="tb-side-grade-name">${g}</div>${bs.length ? semBlock(1, '1학기') + semBlock(2, '2학기') + (other.length ? `<div class="tb-side-sem">기타</div>${other.map(btn).join('')}` : '') : '<div class="tb-side-empty">아직 올라온 교재가 없어요</div>'}</div>`;
     }).join('')}</div>`).join('');
   side.querySelectorAll('.tb-side-book').forEach(b => b.addEventListener('click', () => {
     tbSelectBook(TB_BOOKS.find(x => x.id === b.dataset.book)); tbState.pending = null; renderTextbook();
