@@ -319,12 +319,19 @@ function tbRenderSelectors() {
   const same = students.filter(s => (s.examGrade || s.grade) === tbState.grade), other = students.filter(s => (s.examGrade || s.grade) !== tbState.grade);
   const opt = s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`;
   // 학생 칸: 고른 학년 학생을 반별로 묶고, 가까운 학년 학생도 반별로 묶어서 아래에 보여줌
+  const classTeacher = (c, ss) => {
+    const cnt = {}; ss.forEach(st => { if (st.teacher) cnt[st.teacher] = (cnt[st.teacher] || 0) + 1; });
+    const top = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0];
+    return top ? top[0] : ((typeof CLASS_TEACHER_MAP !== 'undefined' && CLASS_TEACHER_MAP[c]) || '');
+  };
+  const curT = getCurrentTeacher();
   const byClass = list => {
     const m = new Map();
     list.forEach(st => { const c = st.class || '반 없음'; if (!m.has(c)) m.set(c, []); m.get(c).push(st); });
-    return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0], 'ko'));
+    return [...m.entries()].map(([c, ss]) => ({ c, ss, t: classTeacher(c, ss) }))
+      .sort((x, y) => ((y.t === curT && curT) ? 1 : 0) - ((x.t === curT && curT) ? 1 : 0) || x.c.localeCompare(y.c, 'ko'));
   };
-  const groups = (list, prefix) => byClass(list).map(([c, ss]) => `<optgroup label="${prefix}${escapeHtml(c)}">${ss.map(opt).join('')}</optgroup>`).join('');
+  const groups = (list, prefix) => byClass(list).map(({ c, ss, t }) => `<optgroup label="${prefix}${escapeHtml(c)}${t ? ' · ' + escapeHtml(t) : ''}">${ss.map(opt).join('')}</optgroup>`).join('');
   $('tbStudentSel').innerHTML = students.length
     ? groups(same, tbState.grade + ' · ') + groups(other, '가까운 학년 · ')
     : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님의 ' + escapeHtml(tbState.school) + ' 학생이 없어요' : escapeHtml(tbState.school) + ' 학생이 없어요'}</option>`;
