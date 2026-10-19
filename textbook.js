@@ -312,11 +312,13 @@ function tbRenderSelectors() {
   // 학생 칸에는 고른 학년과 같은 학교급(초등/중등/고등) 학생만, 그중에서도 고른 학년에서 위아래 2개 학년 안의 학생만 보여줌
   const gradeInfo = g => { const m = /^(초|중|고)(\d)/.exec(g || ''); return m ? { level: m[1], n: +m[2] } : null; };
   const cur = gradeInfo(tbState.grade);
+  // 소속 반이 우선: 반 이름(MM2-… = 중2, MH1-… = 고1, TM3-… = 중3)에서 학년을 읽고, 반에서 못 읽으면 학생 학년을 씀
+  const effGrade = s => { const m = /^[MTS]([MHP])(\d)/.exec(s.class || ''); return m ? ({ M: '중', H: '고', P: '초' }[m[1]] + m[2]) : (s.examGrade || s.grade); };
   const students = tbStudents().filter(s => {
-    const gi = gradeInfo(s.examGrade || s.grade);
+    const gi = gradeInfo(effGrade(s));
     return gi && cur && gi.level === cur.level && Math.abs(gi.n - cur.n) <= 2;
   });
-  const same = students.filter(s => (s.examGrade || s.grade) === tbState.grade), other = students.filter(s => (s.examGrade || s.grade) !== tbState.grade);
+  const same = students.filter(s => effGrade(s) === tbState.grade), other = students.filter(s => effGrade(s) !== tbState.grade);
   const opt = s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`;
   // 학생 칸: 고른 학년 학생을 반별로 묶고, 가까운 학년 학생도 반별로 묶어서 아래에 보여줌
   const classTeacher = (c, ss) => {
@@ -329,7 +331,7 @@ function tbRenderSelectors() {
     const m = new Map();
     list.forEach(st => { const c = st.class || '반 없음'; if (!m.has(c)) m.set(c, []); m.get(c).push(st); });
     return [...m.entries()].map(([c, ss]) => ({ c, ss, t: classTeacher(c, ss) }))
-      .sort((x, y) => ((y.t === curT && curT) ? 1 : 0) - ((x.t === curT && curT) ? 1 : 0) || x.c.localeCompare(y.c, 'ko'));
+      .sort((x, y) => (x.c === '반 없음') - (y.c === '반 없음') || ((y.t === curT && curT) ? 1 : 0) - ((x.t === curT && curT) ? 1 : 0) || x.c.localeCompare(y.c, 'ko'));
   };
   const groups = (list, prefix) => byClass(list).map(({ c, ss, t }) => `<optgroup label="${prefix}${escapeHtml(c)}${t ? ' · ' + escapeHtml(t) : ''}">${ss.map(opt).join('')}</optgroup>`).join('');
   $('tbStudentSel').innerHTML = students.length
