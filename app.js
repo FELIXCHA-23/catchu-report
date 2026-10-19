@@ -1,7 +1,7 @@
 /* 캐치유테스트 리포트 — 로컬 저장(localStorage) 기반, 서버/로그인 불필요 */
 
 const STORAGE_KEY = 'catchu_v1';
-const TYPE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7', '#e87ba4', '#008300', '#e34948', '#eda100'];
+const TYPE_COLORS = ['#3a3a3a', '#c8102e', '#1e7a3c', '#1f4e8c', '#8a5a00', '#6b6b6b', '#7b2d8b', '#b36b00'];
 const COMPETENCY_LABELS = { '문제해결': '문제해결역량', '추론': '추론역량', '의사소통': '의사소통역량', '연결': '연결역량', '정보처리': '정보처리역량' };
 // 2022 개정 수학과 교육과정의 '교수·학습 방법'에서 각 역량을 기르는 방법으로 제시한 내용을 바탕으로 요약함
 const COMPETENCY_DESCRIPTIONS = {
@@ -2257,7 +2257,7 @@ function buildMainChartSVG(points, plotH = 194) {
   if (points.length === 1) {
     const p = points[0];
     return `<svg viewBox="0 0 ${w} 140" role="img"><text x="${w/2}" y="60" text-anchor="middle" class="axis-label" font-size="13">${escapeHtml(p.label)} 정답률</text>
-      <text x="${w/2}" y="100" text-anchor="middle" fill="var(--accent)" font-size="34" font-weight="700" font-family="Noto Sans KR">${p.pct}%</text></svg>`;
+      <text x="${w/2}" y="100" text-anchor="middle" fill="var(--data)" font-size="34" font-weight="700" font-family="Noto Sans KR">${p.pct}%</text></svg>`;
   }
   const n = points.length;
   const xs = points.map((_, i) => x0 + i * (x1 - x0) / (n - 1));
@@ -2324,7 +2324,7 @@ function buildRadarSVG(items, classItems) {
     const [x, y] = pointAt(i, Math.max(0, Math.min(1, (it.value ?? fallback) / 100)));
     return noData
       ? `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--surface-card)" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="2 1.5"/>`
-      : `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--accent)"/>`;
+      : `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--data)"/>`;
   }).join('');
   const labels = items.map((it, i) => {
     const [x, y] = pointAt(i, 1.32);
@@ -2338,7 +2338,7 @@ function buildRadarSVG(items, classItems) {
   return `<svg viewBox="0 0 300 270" role="img" aria-label="역량별 성취도 레이더 차트">
     ${rings}${axes}
     ${classPts ? `<polygon points="${classPts}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ''}
-    <polygon points="${studentPts}" fill="var(--accent-fill)" stroke="var(--accent)" stroke-width="2"/>
+    <polygon points="${studentPts}" fill="var(--data-fill)" stroke="var(--data)" stroke-width="2"/>
     ${dots}
     ${labels}
   </svg>`;
@@ -2661,7 +2661,7 @@ function renderReportTab() {
   const retestSection = retest.items.length ? `
     <div class="card" data-rkey="retest">
       <h2>재시험 결과</h2>
-      <p class="card-sub">오답 문항을 쌍둥이문제로 다시 본 기록 · 메인 정답률과 별도로 집계돼요</p>
+      <p class="card-sub">오답 문항 쌍둥이문제 재시험 기록 · 메인 정답률과 별도 집계</p>
       <p class="card-sub">재시험에서의 재오답을 포함한 모든 오답 문항은 개별첨삭이 완료되었으며, 끝까지 추적 관리합니다.</p>
       <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
         <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">재시험 정답률</span>
@@ -2685,7 +2685,7 @@ function renderReportTab() {
         <div class="unit-row">
           <div class="unit-name">${escapeHtml(u.unit)}</div>
           <div class="unit-count">${u.total}문항</div>
-          <div class="unit-bar-wrap">${buildBarRow(u.pct, u.pct < 70 ? 'var(--warn-dot)' : 'var(--accent)')}</div>
+          <div class="unit-bar-wrap">${buildBarRow(u.pct, u.pct < 70 ? 'var(--warn-dot)' : 'var(--data)')}</div>
           <div class="unit-pct tnum">${u.pct}%</div>
         </div>`).join('')}
     </div>` : '';
@@ -2693,7 +2693,7 @@ function renderReportTab() {
   const diffSection = difficulty ? `
     <div class="card" data-rkey="diff">
       <h2>난이도 분석</h2>
-      <p class="card-sub no-print">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시돼요${difficulty.manual ? ' · 전체 평균은 강사가 직접 정한 값이에요' : ''}</p>
+      <p class="card-sub no-print">문항별 난이도 1(하)~6(최상) · 시험지 분석 시 태그된 경우에만 표시${difficulty.manual ? ' · 전체 평균은 강사 지정값' : ''}</p>
       <div class="diff-row">
         <div class="diff-tile"><div class="label">전체 평균 난이도</div><div class="value tnum">${difficulty.avgAll}</div></div>
         ${difficulty.avgCorrect !== null ? `<div class="diff-tile"><div class="label">정답 문항 평균 난이도</div><div class="value tnum" style="color:var(--good)">${difficulty.avgCorrect}</div></div>` : ''}
@@ -2713,7 +2713,7 @@ function renderReportTab() {
   const radarSection = competencyStats.length >= 3 ? `
     <div class="card" data-rkey="radar">
       <h2>핵심역량</h2>
-      <p class="card-sub">2022 개정 수학과목 5대 핵심역량 기준${competencyHasAnyData ? '' : ' · 아직 역량이 태그된 시험지가 없어요'}</p>
+      <p class="card-sub">2022 개정 수학과목 5대 핵심역량 기준${competencyHasAnyData ? '' : ' · 역량이 태그된 시험지 없음'}</p>
       <div class="radar-wrap">${buildRadarSVG(competencyStats)}</div>
       ${competencyLegend}
     </div>` : '';
@@ -2760,7 +2760,7 @@ function renderReportTab() {
       </div>
     </div>
     <div class="pill-row">
-      <div class="pill-tile" data-rkey="pillGrade"><span class="pill-tag" style="background:var(--accent)">예상 등급</span>
+      <div class="pill-tile" data-rkey="pillGrade"><span class="pill-tag" style="background:var(--data)">예상 등급</span>
         <div class="pill-value tnum" style="font-size:${grade.label.includes('~') ? 17 : 21}px; white-space:nowrap;">${grade.label}</div>
         <div class="pill-compare">예상</div>
         <div class="no-print" style="margin-top:8px;">
@@ -2809,15 +2809,15 @@ function renderReportTab() {
     </div>
     <div class="card" id="teacherNoteCard" data-rkey="note">
       <h2>선생님 의견</h2>
-      <p class="card-sub no-print">자동 요약 문장으로 미리 채워져 있어요. 그대로 쓰거나, 자유롭게 고치거나, 버튼을 눌러 AI가 이번 기간 데이터로 새 초안을 쓰게 할 수도 있어요.</p>
+      <p class="card-sub no-print">자동 요약 문장이 미리 입력되어 있음. 그대로 사용하거나 수정 가능하며, 버튼으로 AI가 이번 기간 데이터로 새 초안을 작성할 수도 있음.</p>
       <div class="inline-form no-print" style="margin-bottom:8px;">
-        <button type="button" class="btn ghost" id="aiCommentBtn">🪄 AI로 의견 초안 작성</button>
+        <button type="button" class="btn ghost" id="aiCommentBtn">AI 의견 초안 작성</button>
         <span id="aiCommentStatus" class="field-hint"></span>
       </div>
       <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
       <details class="manual-fallback no-print attitude-picker">
         <summary>수업 태도 · 학습 성향 예시 문장 (눌러서 추가, 아래 의견에 그대로 들어가요)</summary>
-        <p class="field-hint" style="margin:6px 0;">실제로 관찰하신 내용과 맞는 문장만 골라주세요. 추가된 뒤에도 자유롭게 고칠 수 있어요.</p>
+        <p class="field-hint" style="margin:6px 0;">관찰한 내용과 맞는 문장만 선택. 추가한 뒤에도 수정 가능.</p>
         ${ATTITUDE_PHRASES.map((g, gi) => `<div class="attitude-group"><b>${g.cat}</b>${g.items.map((p, pi) => `<button type="button" class="phrase-chip" data-g="${gi}" data-p="${pi}">${escapeHtml(p.text)}</button>`).join('')}</div>`).join('')}
       </details>
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
@@ -2832,7 +2832,7 @@ function renderReportTab() {
     </div>
     ${extendChecked ? `<div class="card" data-rkey="extend">
       <h2>추가 추이 그래프</h2>
-      <p class="card-sub">${extendPoints.length ? `${escapeHtml(extendPoints[0].label)} – ${escapeHtml(extendPoints[extendPoints.length - 1].label)} 기준` : '채점 기록이 없어요'}</p>
+      <p class="card-sub">${extendPoints.length ? `${escapeHtml(extendPoints[0].label)} – ${escapeHtml(extendPoints[extendPoints.length - 1].label)} 기준` : '채점 기록 없음'}</p>
       <div class="inline-form no-print" style="margin-bottom:10px;">
         <select id="reportExtendFromSel"></select>
         <span class="field-hint">부터</span>
@@ -3140,7 +3140,7 @@ async function pdfAddCoverPage(pdf, student, points) {
           <div style="text-align:center;">
             <div style="width:70px; height:3px; background:#c8102e; margin:0 auto 30px;"></div>
             <div style="font-size:46px; font-weight:800; color:#0b0b0b; margin-bottom:16px;">${escapeHtml(displayName(student.name))}</div>
-            <div style="font-family:'Gowun Dodum',sans-serif; font-weight:400; font-size:23px; color:#52514e;">${coverTitle}</div>
+            <div style="font-weight:700; font-size:22px; color:#444444;">${coverTitle}</div>
             <div style="width:70px; height:3px; background:#c8102e; margin:30px auto 0;"></div>
           </div>
           <div style="width:100%;">
@@ -3489,6 +3489,10 @@ function seedDemoData() {
       [studentId]: '민준이는 이번 4주간 차분하게 문제를 풀어가는 흐름을 보였습니다. 수와 연산, 규칙성 유형은 기본기가 탄탄하게 자리 잡았고, 도형과 측정도 꾸준히 좋아지는 중입니다. 다만 문장제·문제해결 유형에서 정체가 이어지고 있어, 다음 학습에서는 문제를 끝까지 읽고 조건을 정리하는 연습을 함께 해보려 합니다.',
     },
     gradeOverrides: {},
+    difficultyOverrides: {},
+    reportHidden: {},
+    textbook: { books: [], results: [] },
+    sharedRoundIds: [],
     studentDone: {},
     studentMemo: {},
     studentMemoRetest: {},

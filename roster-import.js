@@ -107,9 +107,9 @@ function rsRenderPreview() {
     </div>
     ${plan.length ? `<div class="inline-form" style="margin-top:10px;">
       <button type="button" class="btn primary" id="rsApplyBtn">이대로 반영하기</button>
-      <label class="field-hint" style="display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="rsUpdateExisting" checked> 이미 있는 학생도 정보 갱신</label>
+      <label class="field-hint" style="display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="rsUpdateExisting" checked> 기존 학생 정보도 갱신</label>
       <button type="button" class="btn ghost" id="rsCancelBtn">취소</button>
-      <span class="field-hint">시트에 없는 기존 학생은 그대로 두고 지우지 않아요.</span>
+      <span class="field-hint">시트에 없는 기존 학생은 유지됨.</span>
     </div>` : ''}`;
   const apply = document.getElementById('rsApplyBtn');
   if (apply) {

@@ -194,7 +194,7 @@ function tbRenderPreview() {
       <button type="button" class="btn primary" id="tbApplyAdd">기존 기록에 추가하기</button>
       <button type="button" class="btn ghost" id="tbApplyReplace">이 학생들의 기록을 이 내용으로 바꾸기</button>
       <button type="button" class="btn ghost" id="tbCancelPending">취소</button>
-      <span class="field-hint">${escapeHtml(p.source)}에서 읽었어요</span>
+      <span class="field-hint">${escapeHtml(p.source)} 기준</span>
     </div>` : ''}`;
   const addBtn = document.getElementById('tbApplyAdd');
   if (addBtn) {
@@ -256,7 +256,7 @@ function tbChapters(book) {
 }
 function tbChapKey(book, ch) { return book.id + '|' + ch; }
 function tbBar(pct, color) { return typeof buildBarRow === 'function' ? buildBarRow(pct, color) : ''; }
-function tbPctColor(pct) { return pct < 70 ? 'var(--warn-dot)' : 'var(--accent)'; }
+function tbPctColor(pct) { return pct < 70 ? 'var(--warn-dot)' : 'var(--data)'; }
 
 function tbAnalysis(book, rec, from, to) {
   const wrong = new Set(rec ? rec.wrong : []);
@@ -390,7 +390,7 @@ function tbRenderAnalysis() {
       <div class="pill-tile"><span class="pill-tag" style="background:var(--critical)">틀린 문제</span><div class="pill-value tnum">${totalW}개</div><div class="pill-compare">범위 안에서</div></div>
     </div>
     ${weak.length ? `<p class="comment" style="margin:0 0 12px;">많이 틀린 유형: ${weak.map(r => `<b>${escapeHtml(r.t.label)} ${escapeHtml(r.t.name)}</b> (${r.pct}%)`).join(' · ')}</p>` : '<p class="comment" style="margin:0 0 12px;">이 범위에서는 틀린 문제가 없어요.</p>'}
-    <h3 class="reset-class-title">단원별 정답률 <span class="field-hint">(단원을 누르면 유형이 펼쳐져요 · 캐치유 단원과 같은 이름으로 합쳐져요)</span></h3>
+    <h3 class="reset-class-title">단원별 정답률 <span class="field-hint">(단원 클릭 시 유형 표시 · 캐치유 단원명 기준으로 합산)</span></h3>
     ${chapRows.map(({ c, rs, n, w, pct }) => `
       <details class="tb-chap" data-ck="${tbChapKey(book, c.ch)}"${tbOpenChapters.has(tbChapKey(book, c.ch)) ? ' open' : ''}>
         <summary><div class="unit-row" style="flex:1; margin:0;"><div class="unit-name">${escapeHtml(c.title)}</div><div class="unit-count">${w}/${n} 오답</div>
@@ -472,7 +472,7 @@ function tbRenderReport() {
     </div>
     <div class="card" data-rkey="list">
       <h2>틀린 문제 목록</h2>
-      <p class="card-sub">유형별로 정리했어요 · 보충 학습할 때 참고하세요</p>
+      <p class="card-sub">유형별 정리 · 보충 학습 참고용</p>
       ${byType.size ? book.types.filter(t => byType.has(t)).map(t => `<div class="tb-group"><div class="tb-group-title"><b>${escapeHtml(t.label)}</b> ${escapeHtml(t.name)}</div><div class="tb-numline">${byType.get(t).map(tbNum).join(', ')}</div></div>`).join('') : '<div class="empty">틀린 문제가 없어요.</div>'}
     </div>`;
 
