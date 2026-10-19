@@ -435,7 +435,14 @@ table.report-table td.watch-cell { color: var(--warn-ink); font-weight: 700; }
 .tb-side-book { display: block; width: 100%; text-align: left; font-family: inherit; font-size: 13px; font-weight: 700; padding: 8px 10px; margin-bottom: 4px; cursor: pointer; background: var(--surface-page); border: 1px solid var(--border); border-radius: 2px; color: var(--ink); }
 .tb-side-book span { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
 .tb-side-book:hover { filter: brightness(0.97); }
-.tb-side-book.active { background: var(--accent-fill); border-color: var(--accent); }
+.tb-side-book.active { background: var(--brand-charcoal); border-color: var(--brand-charcoal); border-left: 5px solid var(--brand-red); color: #fff; }
+.tb-side-book.active span { color: #d8d8d8; }
+.tb-current { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 24px; background: var(--brand-charcoal); color: #fff; }
+.tb-cur-tag { font-size: 12px; font-weight: 700; background: var(--brand-red); color: #fff; padding: 2px 8px; border-radius: 2px; }
+.tb-cur-book { font-size: 20px; font-weight: 700; }
+.tb-cur-stu { font-size: 18px; font-weight: 700; }
+.tb-cur-meta { font-size: 13px; color: #d8d8d8; }
+.tb-cur-sep { width: 1px; height: 22px; background: #777; margin: 0 6px; }
 .tb-tabs { margin-bottom: 0; }
 .tb-panel { display: none; gap: 14px; }
 .tb-panel.active { display: grid; }
@@ -454,7 +461,7 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .tb-sticky { position: sticky; top: 0; z-index: 20; background: var(--surface-page); box-shadow: 0 1px 0 var(--border); }
 .tb-sticky .tb-topbar { position: static; border-bottom: none; padding: 14px 24px 10px; }
 .tb-tabrow { padding: 0 24px; background: var(--surface-card); border-bottom: 2px solid var(--ink); }
-.tb-side { top: 190px; max-height: calc(100vh - 210px); }
+.tb-side { top: 250px; max-height: calc(100vh - 270px); }
 @media (max-width: 860px) { .tb-side { top: auto; max-height: none; } }
 
 /* 대문의 학생 관리 링크 + 학생 관리 전용 화면 */

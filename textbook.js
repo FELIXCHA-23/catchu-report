@@ -316,6 +316,16 @@ function tbRenderSelectors() {
   $('tbStudentSel').value = tbState.studentId;
 }
 
+/* ----- 맨 위 고정 줄: 지금 고른 교재·학생을 크게 보여줌 ----- */
+function tbRenderCurrent() {
+  const el = document.getElementById('tbCurrent');
+  if (!el) return;
+  const b = tbBook(), stu = (tbStudents().find(s => s.id === tbState.studentId)) || null;
+  el.innerHTML = b
+    ? `<span class="tb-cur-tag">교재</span><span class="tb-cur-book">${escapeHtml(b.title)}</span><span class="tb-cur-meta">${escapeHtml(tbSchoolOf(b))} ${escapeHtml(b.grade)} · 유형 ${b.types.length}개 · 문제 ${b._map ? b._map.size : ''}개</span>${stu ? `<span class="tb-cur-sep"></span><span class="tb-cur-tag">학생</span><span class="tb-cur-stu">${escapeHtml(stu.name)}</span>` : '<span class="tb-cur-sep"></span><span class="tb-cur-meta">학생을 선택하세요</span>'}`
+    : '<span class="tb-cur-meta">선택된 교재 없음 — 위에서 학년과 교재를 고르세요</span>';
+}
+
 /* ----- 왼쪽: 학년별 교재 목록 ----- */
 function tbRenderSide() {
   const side = document.getElementById('tbSide');
@@ -615,6 +625,7 @@ function renderTextbook() {
   }
   const b = tbBook(); if (b) tbTypeMap(b);
   tbRenderSelectors();
+  tbRenderCurrent();
   tbRenderSide();
   const noBook = !b;
   document.getElementById('tbBody').classList.toggle('tb-nobook', noBook);
