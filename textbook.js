@@ -369,6 +369,63 @@ function tbBindDetails(root) {
   }));
 }
 
+/* ----- AI 분석: 분석 글과 선생님 의견을 한 번에 새로 만듦 (app.js 의 callClaudeAPI 사용) ----- */
+function tbAiKey(student, book, lo, hi) { return `${student.id}|${book.id}|${lo}-${hi}`; }
+function tbBuildAiPrompt(student, book, rows, lo, hi) {
+  const totalN = rows.reduce((a, r) => a + r.n, 0), totalW = rows.reduce((a, r) => a + r.w, 0);
+  const totalPct = totalN ? Math.round(((totalN - totalW) / totalN) * 100) : 0;
+  const chapLines = tbChapterRows(book, rows).map(x => `- ${x.c.title}: ${x.n - x.w}/${x.n} 정답 (${x.pct}%)`).join('\n');
+  const weakLines = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 10)
+    .map(r => `- ${r.t.label} ${r.t.name}: ${r.w}/${r.n} 오답 (정답률 ${r.pct}%)`).join('\n') || '- 없음';
+  return `당신은 수학학원 선생님입니다. 아래는 한 학생이 교재를 푼 결과입니다. 이 데이터만 근거로 다음 두 가지를 JSON으로만 답하세요.
+
+[데이터]
+학생: ${displayName(student.name)} (${[student.school, student.grade].filter(Boolean).join(' ')})
+교재: ${book.title}, ${tbNum(lo)}~${tbNum(hi)}번 (${totalN}문제 중 ${totalW}문제 오답, 정답률 ${totalPct}%)
+단원별 결과:
+${chapLines}
+오답이 많은 유형:
+${weakLines}
+
+[작성할 것]
+1. "analysis": 선생님이 참고할 분석. 3~5줄, 줄마다 "- "로 시작. 오답이 몰린 단원·유형, 잘하는 부분, 다음 학습 방향(어떤 유형을 먼저 복습할지)을 데이터에서 읽히는 대로만 쓰세요. 줄바꿈은 \\n.
+2. "opinion": 학부모님께 보여드릴 "선생님 의견". 선생님이 손수 쓴 글처럼 4~6문장. 인사말과 자기소개는 쓰지 말고 바로 본문부터. 수치는 꼭 필요한 것만 쓰고, 비난하지 말고 구체적인 다음 계획으로 마무리하세요. 데이터에 없는 사실(태도, 출석 등)은 지어내지 마세요.
+
+[출력 형식] 설명 없이 아래 JSON 한 개만:
+{"analysis": "...", "opinion": "..."}`;
+}
+async function tbRunAi(btn) {
+  const { book, student, rec } = tbCurrent();
+  if (!book || !student) { toast('교재와 학생을 먼저 고르세요.'); return; }
+  tbTypeMap(book);
+  const { lo, hi } = tbRangeOf(book);
+  const rows = tbAnalysis(book, rec, lo, hi);
+  if (!rows.length) { toast('이 범위에 해당하는 문제가 없어요.'); return; }
+  const labels = document.querySelectorAll('[data-tbai]');
+  labels.forEach(b => { b.disabled = true; });
+  const old = btn.textContent; btn.textContent = '분석 중…';
+  try {
+    const { text, stopReason, usage } = await callClaudeAPI({ content: [{ type: 'text', text: tbBuildAiPrompt(student, book, rows, lo, hi) }], maxTokens: 8000, effort: 'low' });
+    const m = /\{[\s\S]*\}/.exec(text || '');
+    if (!m) throw new Error(stopReason === 'max_tokens' ? '길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답을 읽지 못했어요. 다시 눌러주세요.');
+    const data = JSON.parse(m[0]);
+    if (!data.analysis || !data.opinion) throw new Error('AI 응답이 비어 있어요. 다시 눌러주세요.');
+    if (!state.textbook.ai) state.textbook.ai = {};
+    if (!state.textbook.notes) state.textbook.notes = {};
+    state.textbook.ai[tbAiKey(student, book, lo, hi)] = String(data.analysis).trim();
+    state.textbook.notes[tbNoteKey(student.id, book.id)] = String(data.opinion).trim();
+    saveState();
+    renderTextbook();
+    toast('AI 분석과 선생님 의견을 새로 작성했어요.' + (typeof usageCostText === 'function' ? usageCostText(usage) : ''));
+  } catch (err) {
+    console.error(err);
+    toast('AI 분석 실패: ' + err.message);
+  } finally {
+    btn.textContent = old;
+    document.querySelectorAll('[data-tbai]').forEach(b => { b.disabled = false; });
+  }
+}
+
 /* ----- 분석 탭 ----- */
 function tbRenderAnalysis() {
   const out = document.getElementById('tbAnalysis');
@@ -384,7 +441,13 @@ function tbRenderAnalysis() {
   const totalPct = totalN ? Math.round(((totalN - totalW) / totalN) * 100) : 0;
   const weak = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 5);
   const chapRows = tbChapterRows(book, rows);
+  const aiText = (state.textbook.ai || {})[tbAiKey(student, book, lo, hi)];
   out.innerHTML = `
+    <div class="inline-form" style="margin-bottom:10px;">
+      <button type="button" class="btn primary" data-tbai>AI 분석</button>
+      <span class="field-hint">${aiText ? '분석과 선생님 의견이 함께 작성되어 있음. 다시 누르면 새로 작성.' : '누르면 분석 글과 보고서의 선생님 의견을 함께 작성.'}</span>
+    </div>
+    ${aiText ? `<div class="ai-import-box" style="margin-bottom:12px;"><b style="font-size:13px;">AI 분석</b><div class="comment" style="color:var(--ink);">${escapeHtml(aiText).replace(/\n/g, '<br>')}</div></div>` : ''}
     <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
       <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">교재 정답률</span><div class="pill-value tnum">${totalPct}%</div><div class="pill-compare">${tbNum(lo)}~${tbNum(hi)}번 (${totalN}문제)</div></div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--critical)">틀린 문제</span><div class="pill-value tnum">${totalW}개</div><div class="pill-compare">범위 안에서</div></div>
@@ -399,6 +462,7 @@ function tbRenderAnalysis() {
           <div class="unit-bar-wrap">${tbBar(r.pct, tbPctColor(r.pct))}</div><div class="unit-pct tnum">${r.pct}%</div></div>`).join('')}</div>
       </details>`).join('')}`;
   tbBindDetails(out);
+  out.querySelectorAll('[data-tbai]').forEach(b => b.addEventListener('click', () => tbRunAi(b)));
 }
 
 /* ----- 보고서 탭 ----- */
@@ -467,6 +531,7 @@ function tbRenderReport() {
     </div>
     <div class="card" id="tbNoteCard" data-rkey="note">
       <h2>선생님 의견</h2>
+      <div class="inline-form no-print" style="margin-bottom:8px;"><button type="button" class="btn ghost" data-tbai>AI 분석으로 새로 작성</button><span class="field-hint">분석 탭의 AI 분석과 함께 작성됨</span></div>
       <textarea class="teacher-note no-print" id="tbNoteInput" placeholder="선생님 의견을 입력하세요.">${escapeHtml(note)}</textarea>
       <p class="comment print-only" id="tbNotePrint">${note ? escapeHtml(note).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
@@ -476,6 +541,7 @@ function tbRenderReport() {
       ${byType.size ? book.types.filter(t => byType.has(t)).map(t => `<div class="tb-group"><div class="tb-group-title"><b>${escapeHtml(t.label)}</b> ${escapeHtml(t.name)}</div><div class="tb-numline">${byType.get(t).map(tbNum).join(', ')}</div></div>`).join('') : '<div class="empty">틀린 문제가 없어요.</div>'}
     </div>`;
 
+  out.querySelectorAll('[data-tbai]').forEach(b => b.addEventListener('click', () => tbRunAi(b)));
   const noteInput = document.getElementById('tbNoteInput');
   noteInput.addEventListener('change', () => {
     state.textbook.notes[key] = noteInput.value; saveState();
