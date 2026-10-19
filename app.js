@@ -3122,7 +3122,7 @@ async function pdfAddCoverPage(pdf, student, points) {
   const fmtFull = iso => { const d = new Date(iso + 'T00:00:00'); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; };
   const testDates = Array.from(new Set(points.map(p => { const r = state.rounds.find(x => x.id === p.roundId); return r ? r.date : null; }).filter(Boolean))).sort();
   const takenTxt = testDates.length ? (testDates.length === 1 ? fmtFull(testDates[0]) : `${fmtFull(testDates[0])} – ${fmtFull(testDates[testDates.length - 1])}`) : escapeHtml(period);
-  const coverTitle = entrance ? '입학테스트 결과 보고서' : '캐치유테스트 분석보고서';
+  const coverTitle = entrance ? '입학테스트 분석보고서' : '캐치유테스트 분석보고서';
   const infoItems = entrance
     ? [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['응시일', takenTxt], ['담당', student.teacher ? teacherTxt : '캐슬수학']]
     : [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['측정 기간', `${escapeHtml(period)} (${points.length}회차)`], ['담임', teacherTxt]];
