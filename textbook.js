@@ -317,9 +317,16 @@ function tbRenderSelectors() {
     return gi && cur && gi.level === cur.level && Math.abs(gi.n - cur.n) <= 2;
   });
   const same = students.filter(s => (s.examGrade || s.grade) === tbState.grade), other = students.filter(s => (s.examGrade || s.grade) !== tbState.grade);
-  const opt = s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`;
+  const opt = s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`;
+  // 학생 칸: 고른 학년 학생을 반별로 묶고, 가까운 학년 학생도 반별로 묶어서 아래에 보여줌
+  const byClass = list => {
+    const m = new Map();
+    list.forEach(st => { const c = st.class || '반 없음'; if (!m.has(c)) m.set(c, []); m.get(c).push(st); });
+    return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0], 'ko'));
+  };
+  const groups = (list, prefix) => byClass(list).map(([c, ss]) => `<optgroup label="${prefix}${escapeHtml(c)}">${ss.map(opt).join('')}</optgroup>`).join('');
   $('tbStudentSel').innerHTML = students.length
-    ? (same.length ? `<optgroup label="${tbState.grade} 학생">${same.map(opt).join('')}</optgroup>` : '') + (other.length ? `<optgroup label="가까운 학년 학생">${other.map(opt).join('')}</optgroup>` : '')
+    ? groups(same, tbState.grade + ' · ') + groups(other, '가까운 학년 · ')
     : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님의 ' + escapeHtml(tbState.school) + ' 학생이 없어요' : escapeHtml(tbState.school) + ' 학생이 없어요'}</option>`;
   if (!students.some(s => s.id === tbState.studentId)) tbState.studentId = (same[0] || other[0] || {}).id || '';
   $('tbStudentSel').value = tbState.studentId;
