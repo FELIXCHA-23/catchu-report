@@ -2749,7 +2749,7 @@ function renderReportTab() {
       <div class="masthead">
         <div>
           <div class="brand-line">${logoBlock()}</div>
-          <h2>캐치유테스트 분석보고서${state.studentDone[studentId] ? '<span class="badge good no-print" style="margin-left:10px; vertical-align:middle;"><span class="dot"></span>채점입력 완료</span>' : ''}</h2>
+          <h2>${isEntranceStudent(student) ? '입학테스트 분석보고서' : '캐치유테스트 분석보고서'}${state.studentDone[studentId] ? '<span class="badge good no-print" style="margin-left:10px; vertical-align:middle;"><span class="dot"></span>채점입력 완료</span>' : ''}</h2>
         </div>
         <div class="meta">
           <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
