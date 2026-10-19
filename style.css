@@ -452,8 +452,9 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 
 /* 교재 화면: 제목줄과 선택 칸(초·중·고/학년/교재/학생)을 스크롤해도 위에 고정 */
 .tb-sticky { position: sticky; top: 0; z-index: 20; background: var(--surface-page); box-shadow: 0 1px 0 var(--border); }
-.tb-sticky .tb-topbar { position: static; }
-.tb-side { top: 140px; max-height: calc(100vh - 160px); }
+.tb-sticky .tb-topbar { position: static; border-bottom: none; padding: 14px 24px 10px; }
+.tb-tabrow { padding: 0 24px; background: var(--surface-card); border-bottom: 2px solid var(--ink); }
+.tb-side { top: 190px; max-height: calc(100vh - 210px); }
 @media (max-width: 860px) { .tb-side { top: auto; max-height: none; } }
 
 /* 대문의 학생 관리 링크 + 학생 관리 전용 화면 */

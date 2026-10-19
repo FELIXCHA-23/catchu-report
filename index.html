@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=75">
+<link rel="stylesheet" href="style.css?v=76">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -55,6 +55,11 @@
     <input type="file" id="tbImportFile" accept="application/json" style="display:none;">
     <select id="textbookTeacherSel"><option value="">담당 선생님 선택 (전체 보기)</option></select>
   </header>
+  <nav class="tabs tb-tabrow">
+    <button type="button" class="tab-btn active" data-tbtab="score">채점 입력</button>
+    <button type="button" class="tab-btn" data-tbtab="analysis">분석</button>
+    <button type="button" class="tab-btn" data-tbtab="report">보고서</button>
+  </nav>
   <div class="tb-selectbar">
     <select id="tbSchoolSel" title="초등 / 중등 / 고등"></select>
     <select id="tbGradeSel" title="학년"></select>
@@ -65,11 +70,6 @@
   <div class="tb-layout">
     <aside class="tb-side" id="tbSide"></aside>
     <main class="tb-main" id="tbBody">
-      <nav class="tabs tb-tabs">
-        <button type="button" class="tab-btn active" data-tbtab="score">채점 입력</button>
-        <button type="button" class="tab-btn" data-tbtab="analysis">분석</button>
-        <button type="button" class="tab-btn" data-tbtab="report">보고서</button>
-      </nav>
       <div class="card tb-rangebar" id="tbRangeBar" style="display:none;">
         <div class="inline-form">
           <span class="field-hint">분석 범위</span>
