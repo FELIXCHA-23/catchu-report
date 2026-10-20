@@ -1779,6 +1779,8 @@ function saveCurrentScore(silent) {
   else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
   saveState();
   renderRounds(); populateSelects();
+  // 보고서 탭의 학생 드롭다운도 방금 채점한 학생으로 바로 맞춰둠 (보고서 탭을 열면 이 학생 보고서가 바로 뜸)
+  { const rs = document.getElementById('reportStudentSel'); if (rs && [...rs.options].some(o => o.value === student.id)) rs.value = student.id; }
   // 학생별 채점 현황 패널을 바로 갱신해서, 저장 후 시간차 없이 곧바로 반영되게 함
   renderStudentResetPanel();
   if (!silent) toast(`${student.name} 학생의 채점을 저장했어요.`);
