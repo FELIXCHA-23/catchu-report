@@ -492,3 +492,4 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .view-entrance #scoreWeekSel { display: none; }
 .view-entrance #tabNav [data-tab="retest"] { display: none; }
 .view-entrance #scoreGradeSel, .view-entrance #scoreDateInput, .view-entrance #scoreDateHint { display: none; }
+.view-entrance #tabNav [data-tab="rounds"] { margin-left: auto; }
