@@ -3188,10 +3188,12 @@ function renderReportArchive() {
   if (!state.reportLog) state.reportLog = [];
   const q = ((document.getElementById('reportArchiveSearch') || {}).value || '').trim();
   const cur = document.getElementById('reportStudentSel').value;
-  const students = reportArchiveStudents();
-  const sid = new Set(students.map(s => s.id));
+  const withData = new Set(reportArchiveStudents().map(s => s.id));
   const logsBy = new Map();
   state.reportLog.forEach(l => { if (!logsBy.has(l.studentId)) logsBy.set(l.studentId, []); logsBy.get(l.studentId).push(l); });
+  // 오른쪽에는 PDF 저장을 눌러 만든 보고서가 있는 학생만 보여줌 (현재 화면 범위·담당 선생님 기준)
+  const students = filterByCurrentTeacher(state.students).filter(s => logsBy.has(s.id));
+  const sid = new Set(students.map(s => s.id));
   const lastOf = s => { const a = logsBy.get(s.id); return a && a.length ? a[a.length - 1] : null; };
   const rows = students.filter(s => !q || (s.name || '').includes(q))
     .sort((a, b) => ((lastOf(b) ? lastOf(b).savedAt : 0) - (lastOf(a) ? lastOf(a).savedAt : 0)) || (a.name || '').localeCompare(b.name || '', 'ko'));
@@ -3199,22 +3201,23 @@ function renderReportArchive() {
   const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()}`; };
   const rowHtml = s => {
     const l = lastOf(s), n = (logsBy.get(s.id) || []).length;
-    const rounds = studentScoredRounds(s.id).length;
+    const alive = withData.has(s.id);
     return `<div class="ra-row${s.id === cur ? ' active' : ''}" data-sid="${s.id}">
       <div class="ra-name">${escapeHtml(s.name)}<span>${s.class ? escapeHtml(s.class) : escapeHtml(s.grade || '')}</span></div>
-      <div class="ra-sub">${l ? `PDF ${fmt(l.savedAt)} 저장 · ${escapeHtml(l.fromDate || '')}~${escapeHtml(l.toDate || '')}${n > 1 ? ` · ${n}회` : ''}` : `아직 PDF 저장 안 함 · 채점 ${rounds}회차`}</div>
-      <div class="ra-actions"><button type="button" class="btn ghost" data-ra="open">보기</button><button type="button" class="btn" data-ra="pdf">PDF 뽑기</button></div>
+      <div class="ra-sub">PDF ${fmt(l.savedAt)} 저장 · ${escapeHtml(l.fromDate || '')}~${escapeHtml(l.toDate || '')}${n > 1 ? ` · ${n}회` : ''}${alive ? '' : ' · 채점 데이터 없음'}</div>
+      <div class="ra-actions">${alive ? '<button type="button" class="btn ghost" data-ra="open">보기</button><button type="button" class="btn" data-ra="pdf">PDF 저장</button>' : ''}</div>
     </div>`;
   };
   box.innerHTML = `<h2>보고서 모음</h2>
-    <p class="card-sub">채점 데이터가 있는 학생 ${students.length}명 · PDF 저장한 보고서 ${savedCount}개</p>
+    <p class="card-sub">PDF 저장한 학생 ${students.length}명 · 저장한 보고서 ${savedCount}개</p>
     <input type="text" id="reportArchiveSearch" placeholder="이름 검색" value="${escapeHtml(q)}" style="width:100%; min-width:0; margin-bottom:8px;">
-    <div class="ra-list">${rows.length ? rows.map(rowHtml).join('') : '<div class="empty-state">채점하면 여기에 나타나요.</div>'}</div>`;
+    <div class="ra-list">${rows.length ? rows.map(rowHtml).join('') : '<div class="empty-state">PDF 저장을 누르면 여기에 쌓여요.</div>'}</div>`;
   const search = document.getElementById('reportArchiveSearch');
   search.addEventListener('input', () => { const p = search.selectionStart; renderReportArchive(); const s2 = document.getElementById('reportArchiveSearch'); s2.focus(); try { s2.setSelectionRange(p, p); } catch (e) {} });
   box.querySelectorAll('.ra-row').forEach(row => {
-    row.querySelector('[data-ra=open]').addEventListener('click', () => openArchivedReport(row.dataset.sid));
-    row.querySelector('[data-ra=pdf]').addEventListener('click', async () => { openArchivedReport(row.dataset.sid); await exportReportPDF(); });
+    const o = row.querySelector('[data-ra=open]'), p = row.querySelector('[data-ra=pdf]');
+    if (o) o.addEventListener('click', () => openArchivedReport(row.dataset.sid));
+    if (p) p.addEventListener('click', async () => { openArchivedReport(row.dataset.sid); await exportReportPDF(); });
   });
 }
 // 그 학생의 보고서를 열음 — PDF로 저장했던 기간이 있으면 그 기간으로, 없으면 기본 기간으로
