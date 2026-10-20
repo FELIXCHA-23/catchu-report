@@ -27,10 +27,28 @@ function tbTypeMap(book) {
     book.types.forEach(t => t.problems.forEach(p => book._map.set(p, t)));
     const nums = Array.from(book._map.keys());
     book._min = Math.min(...nums); book._max = Math.max(...nums);
+    if (book.pageMode) { book._min = Math.floor(book._min / 100); book._max = Math.floor(book._max / 100); }
   }
   return book._map;
 }
-function tbNum(n) { return String(n).padStart(4, '0'); }
+// 쪽수 방식 교재(개념쎈 등): 문제 번호 = 쪽수×100 + 그 쪽의 번호 (31쪽 02번 → 3102)
+function tbPageMode(book) { const b = book || tbBook(); return !!(b && b.pageMode); }
+function tbNum(n) { return tbPageMode() ? `${Math.floor(n / 100)}쪽 ${String(n % 100).padStart(2, '0')}번` : String(n).padStart(4, '0'); }
+function tbRangeText(lo, hi) { return tbPageMode() ? `${Math.floor(lo / 100)}~${Math.floor(hi / 100)}쪽` : `${tbRangeText(lo, hi)}`; }
+// "31쪽 2, 5  33쪽 1~3" 같은 글에서 쪽수와 그 쪽의 번호를 읽음 (3102처럼 쪽수+번호를 붙여 쓴 것도 인정)
+function tbParsePages(text) {
+  const s = String(text == null ? '' : text).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\d+\.\d+/g, ' ');
+  const out = new Set(); let page = null;
+  const re = /(\d{1,3})(?:\s*쪽|\s*페이지|[pP](?![a-zA-Z]))|[pP]\.?\s*(\d{1,3})|(\d{1,2})\s*[~∼～\-–—]\s*(\d{1,2})|(\d{3,5})|(\d{1,2})/g;
+  let m;
+  while ((m = re.exec(s))) {
+    if (m[1] || m[2]) { page = +(m[1] || m[2]); continue; }
+    if (m[3] && m[4]) { if (page == null) continue; const a = +m[3], b = +m[4]; if (a <= b && b - a < 60) for (let i = a; i <= b; i++) out.add(page * 100 + i); continue; }
+    if (m[5]) { const n = +m[5]; if (n >= 101) out.add(n); continue; }
+    if (m[6] && page != null) { const n = +m[6]; if (n > 0) out.add(page * 100 + n); }
+  }
+  return Array.from(out).sort((a, b) => a - b);
+}
 function tbRecord(studentId, bookId, create) {
   if (!state.textbook) state.textbook = { books: [], results: [] };
   let rec = state.textbook.results.find(r => r.studentId === studentId && r.bookId === bookId);
@@ -40,6 +58,7 @@ function tbRecord(studentId, bookId, create) {
 
 /* ---------- 번호 읽기: "12, 15, 20~25", "0014 0016", "30-33" 같은 글에서 번호 목록을 뽑음 ---------- */
 function tbParseNumbers(text) {
+  if (tbPageMode()) return tbParsePages(text);
   let s = String(text == null ? '' : text)
     .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
     .replace(/\d+\.\d+/g, ' ')
@@ -282,7 +301,8 @@ function tbRangeOf(book) {
   if (tbRange.bookId !== book.id) { tbRange.bookId = book.id; tbRange.from = book._min; tbRange.to = book._max; }
   const f = parseInt(tbRange.from, 10), t = parseInt(tbRange.to, 10);
   const from = Number.isFinite(f) ? f : book._min, to = Number.isFinite(t) ? t : book._max;
-  return { lo: Math.min(from, to), hi: Math.max(from, to) };
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  return book.pageMode ? { lo: lo * 100, hi: hi * 100 + 99 } : { lo, hi };
 }
 function tbChapterRows(book, rows) {
   return tbChapters(book).map(c => {
@@ -416,7 +436,7 @@ function tbBuildAiPrompt(student, book, rows, lo, hi) {
 
 [데이터]
 학생: ${displayName(student.name)} (${[student.school, student.grade].filter(Boolean).join(' ')})
-교재: ${book.title}, ${tbNum(lo)}~${tbNum(hi)}번 (${totalN}문제 중 ${totalW}문제 오답, 정답률 ${totalPct}%)
+교재: ${book.title}, ${tbRangeText(lo, hi)} (${totalN}문제 중 ${totalW}문제 오답, 정답률 ${totalPct}%)
 단원별 결과:
 ${chapLines}
 오답이 많은 유형:
@@ -469,6 +489,7 @@ function tbRenderAnalysis() {
   tbTypeMap(book);
   const { lo, hi } = tbRangeOf(book);
   document.getElementById('tbFrom').value = tbRange.from; document.getElementById('tbTo').value = tbRange.to;
+  { const pm = tbPageMode(book); const a = document.getElementById('tbFromUnit'), b2 = document.getElementById('tbToUnit'), w = document.getElementById('tbWrongInput'); if (a) a.textContent = pm ? '쪽부터' : '번부터'; if (b2) b2.textContent = pm ? '쪽까지' : '번까지'; if (w) w.placeholder = pm ? '쪽수 + 틀린 번호 + Enter (예: 31쪽 2, 5  33쪽 1~3)' : '틀린 번호 + Enter (예: 14, 20~25)'; }
   if (!student) { out.innerHTML = '<div class="empty">학생을 먼저 고르세요.</div>'; return; }
   const rows = tbAnalysis(book, rec, lo, hi);
   if (!rows.length) { out.innerHTML = '<div class="empty">이 범위에 해당하는 문제가 없어요.</div>'; return; }
@@ -484,7 +505,7 @@ function tbRenderAnalysis() {
     </div>
     ${aiText ? `<div class="ai-import-box" style="margin-bottom:12px;"><b style="font-size:13px;">AI 분석</b><div class="comment" style="color:var(--ink);">${escapeHtml(aiText).replace(/\n/g, '<br>')}</div></div>` : ''}
     <div class="pill-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:12px;">
-      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">교재 정답률</span><div class="pill-value tnum">${totalPct}%</div><div class="pill-compare">${tbNum(lo)}~${tbNum(hi)}번 (${totalN}문제)</div></div>
+      <div class="pill-tile"><span class="pill-tag" style="background:var(--good)">교재 정답률</span><div class="pill-value tnum">${totalPct}%</div><div class="pill-compare">${tbRangeText(lo, hi)} (${totalN}문제)</div></div>
       <div class="pill-tile"><span class="pill-tag" style="background:var(--critical)">틀린 문제</span><div class="pill-value tnum">${totalW}개</div><div class="pill-compare">범위 안에서</div></div>
     </div>
     ${weak.length ? `<p class="comment" style="margin:0 0 12px;">많이 틀린 유형: ${weak.map(r => `<b>${escapeHtml(r.t.label)} ${escapeHtml(r.t.name)}</b> (${r.pct}%)`).join(' · ')}</p>` : '<p class="comment" style="margin:0 0 12px;">이 범위에서는 틀린 문제가 없어요.</p>'}
@@ -507,8 +528,8 @@ function tbBuildComment(student, book, rows, lo, hi) {
   const name = displayName(student.name);
   const totalN = rows.reduce((a, r) => a + r.n, 0), totalW = rows.reduce((a, r) => a + r.w, 0);
   const weak = rows.filter(r => r.w > 0).sort((a, b) => a.pct - b.pct || b.w - a.w).slice(0, 3);
-  if (!totalW) return `${name} 학생은 ${book.title} ${tbNum(lo)}~${tbNum(hi)}번 범위를 모두 정확하게 풀어냈어요. 지금처럼 꾸준히 이어가면서, 조금 더 어려운 문제에도 도전해 보면 좋겠어요.`;
-  return `${name} 학생은 ${book.title} ${tbNum(lo)}~${tbNum(hi)}번 범위에서 ${totalN}문제 중 ${totalW}문제를 틀렸어요. 특히 ${weak.map(r => `'${r.t.name}'`).join(', ')} 유형에서 오답이 모여 있어서, 해당 개념을 한 번 더 정리하고 대표문제부터 차근차근 다시 풀어보면 좋겠어요. 나머지 유형은 안정적으로 풀고 있으니 자신감을 가지고 이어가 봐요.`;
+  if (!totalW) return `${name} 학생은 ${book.title} ${tbRangeText(lo, hi)} 범위를 모두 정확하게 풀어냈어요. 지금처럼 꾸준히 이어가면서, 조금 더 어려운 문제에도 도전해 보면 좋겠어요.`;
+  return `${name} 학생은 ${book.title} ${tbRangeText(lo, hi)} 범위에서 ${totalN}문제 중 ${totalW}문제를 틀렸어요. 특히 ${weak.map(r => `'${r.t.name}'`).join(', ')} 유형에서 오답이 모여 있어서, 해당 개념을 한 번 더 정리하고 대표문제부터 차근차근 다시 풀어보면 좋겠어요. 나머지 유형은 안정적으로 풀고 있으니 자신감을 가지고 이어가 봐요.`;
 }
 function tbRenderReport() {
   const out = document.getElementById('tbReport');
@@ -541,7 +562,7 @@ function tbRenderReport() {
           <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
           <div>${[student.school, student.grade].filter(Boolean).map(escapeHtml).join(' ')}</div>
           ${student.teacher ? `<div>담임: ${escapeHtml(teacherDisplayName(student.teacher))} ${teacherTitle(student.teacher)}</div>` : ''}
-          <div>${escapeHtml(book.title)} · ${tbNum(lo)}~${tbNum(hi)}번</div>
+          <div>${escapeHtml(book.title)} · ${tbRangeText(lo, hi)}</div>
           <div>작성일 ${dateTxt}</div>
         </div>
       </div>
@@ -554,7 +575,7 @@ function tbRenderReport() {
     </div>
     <div class="card" data-rkey="chap">
       <h2>단원별 정답률</h2>
-      <p class="card-sub">교재 ${tbNum(lo)}~${tbNum(hi)}번 기준</p>
+      <p class="card-sub">교재 ${tbRangeText(lo, hi)} 기준</p>
       ${chapRows.map(({ c, n, w, pct }) => `<div class="unit-row"><div class="unit-name">${escapeHtml(c.title)}</div><div class="unit-count">${w}/${n} 오답</div>
         <div class="unit-bar-wrap">${tbBar(pct, tbPctColor(pct))}</div><div class="unit-pct tnum">${pct}%</div></div>`).join('')}
     </div>
@@ -695,7 +716,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rec = tbRecord(tbState.studentId, book.id, true);
     rec.wrong = Array.from(new Set([...rec.wrong, ...ok])).sort((a, b) => a - b);
     saveState(); input.value = ''; renderTextbook();
-    toast(bad.length ? `${ok.length}개 추가 · 책에 없는 번호는 뺐어요: ${bad.join(', ')}` : `${ok.length}개 추가했어요.`);
+    toast(bad.length ? `${ok.length}개 추가 · 책에 없는 번호는 뺐어요: ${bad.map(tbNum).join(', ')}` : `${ok.length}개 추가했어요.`);
   };
   $('tbWrongInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addFromInput(); } });
   $('tbAddBtn').addEventListener('click', addFromInput);

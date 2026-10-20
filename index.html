@@ -74,8 +74,8 @@
       <div class="card tb-rangebar" id="tbRangeBar" style="display:none;">
         <div class="inline-form">
           <span class="field-hint">분석 범위</span>
-          <input type="number" id="tbFrom" min="1" style="width:100px;"> <span class="field-hint">번부터</span>
-          <input type="number" id="tbTo" min="1" style="width:100px;"> <span class="field-hint">번까지</span>
+          <input type="number" id="tbFrom" min="1" style="width:100px;"> <span class="field-hint" id="tbFromUnit">번부터</span>
+          <input type="number" id="tbTo" min="1" style="width:100px;"> <span class="field-hint" id="tbToUnit">번까지</span>
           <span class="field-hint">범위 내 문제는 전부 푼 것으로 처리하고, 입력한 번호만 오답으로 계산.</span>
         </div>
       </div>
@@ -439,7 +439,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="app.js?v=152"></script>
-<script src="textbook.js?v=13"></script>
+<script src="textbook.js?v=15"></script>
 <script src="roster-import.js?v=2"></script>
 </body>
 </html>
