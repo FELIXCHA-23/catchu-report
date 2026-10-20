@@ -487,6 +487,7 @@ function loadState() {
       if (!data.studentDone) data.studentDone = {};
       if (!data.studentMemo) data.studentMemo = {};
       if (!data.studentMemoRetest) data.studentMemoRetest = {};
+      if (!Array.isArray(data.reportLog)) data.reportLog = [];
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
@@ -2615,6 +2616,7 @@ function setupReportPartToggles(out, studentId) {
 }
 
 function renderReportTab() {
+  try { renderReportArchive(); } catch (e) { console.warn(e); }
   const out = document.getElementById('reportOutput');
   const studentId = document.getElementById('reportStudentSel').value;
   populateReportRoundSelects();
@@ -3172,6 +3174,70 @@ async function pdfAddCoverPage(pdf, student, points) {
   }
 }
 
+/* ================= 보고서 모음 (보고서 탭 오른쪽) =================
+ * 채점 데이터가 있는 학생을 모아 보여주고, PDF로 저장한 기록(state.reportLog)을 함께 보여줌.
+ * 데이터가 남아 있으면 언제든 "보기"로 그 기간 보고서를 다시 열거나 "PDF 뽑기"로 바로 새 PDF를 저장할 수 있음 */
+function reportArchiveStudents() {
+  const ids = new Set(scopedRounds().map(r => r.id));
+  const has = new Set(state.results.filter(x => ids.has(x.roundId)).map(x => x.studentId));
+  return filterByCurrentTeacher(state.students).filter(s => has.has(s.id));
+}
+function renderReportArchive() {
+  const box = document.getElementById('reportArchive');
+  if (!box) return;
+  if (!state.reportLog) state.reportLog = [];
+  const q = ((document.getElementById('reportArchiveSearch') || {}).value || '').trim();
+  const cur = document.getElementById('reportStudentSel').value;
+  const students = reportArchiveStudents();
+  const sid = new Set(students.map(s => s.id));
+  const logsBy = new Map();
+  state.reportLog.forEach(l => { if (!logsBy.has(l.studentId)) logsBy.set(l.studentId, []); logsBy.get(l.studentId).push(l); });
+  const lastOf = s => { const a = logsBy.get(s.id); return a && a.length ? a[a.length - 1] : null; };
+  const rows = students.filter(s => !q || (s.name || '').includes(q))
+    .sort((a, b) => ((lastOf(b) ? lastOf(b).savedAt : 0) - (lastOf(a) ? lastOf(a).savedAt : 0)) || (a.name || '').localeCompare(b.name || '', 'ko'));
+  const savedCount = state.reportLog.filter(l => sid.has(l.studentId)).length;
+  const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()}`; };
+  const rowHtml = s => {
+    const l = lastOf(s), n = (logsBy.get(s.id) || []).length;
+    const rounds = studentScoredRounds(s.id).length;
+    return `<div class="ra-row${s.id === cur ? ' active' : ''}" data-sid="${s.id}">
+      <div class="ra-name">${escapeHtml(s.name)}<span>${s.class ? escapeHtml(s.class) : escapeHtml(s.grade || '')}</span></div>
+      <div class="ra-sub">${l ? `PDF ${fmt(l.savedAt)} 저장 · ${escapeHtml(l.fromDate || '')}~${escapeHtml(l.toDate || '')}${n > 1 ? ` · ${n}회` : ''}` : `아직 PDF 저장 안 함 · 채점 ${rounds}회차`}</div>
+      <div class="ra-actions"><button type="button" class="btn ghost" data-ra="open">보기</button><button type="button" class="btn" data-ra="pdf">PDF 뽑기</button></div>
+    </div>`;
+  };
+  box.innerHTML = `<h2>보고서 모음</h2>
+    <p class="card-sub">채점 데이터가 있는 학생 ${students.length}명 · PDF 저장한 보고서 ${savedCount}개</p>
+    <input type="text" id="reportArchiveSearch" placeholder="이름 검색" value="${escapeHtml(q)}" style="width:100%; min-width:0; margin-bottom:8px;">
+    <div class="ra-list">${rows.length ? rows.map(rowHtml).join('') : '<div class="empty-state">채점하면 여기에 나타나요.</div>'}</div>`;
+  const search = document.getElementById('reportArchiveSearch');
+  search.addEventListener('input', () => { const p = search.selectionStart; renderReportArchive(); const s2 = document.getElementById('reportArchiveSearch'); s2.focus(); try { s2.setSelectionRange(p, p); } catch (e) {} });
+  box.querySelectorAll('.ra-row').forEach(row => {
+    row.querySelector('[data-ra=open]').addEventListener('click', () => openArchivedReport(row.dataset.sid));
+    row.querySelector('[data-ra=pdf]').addEventListener('click', async () => { openArchivedReport(row.dataset.sid); await exportReportPDF(); });
+  });
+}
+// 그 학생의 보고서를 열음 — PDF로 저장했던 기간이 있으면 그 기간으로, 없으면 기본 기간으로
+function openArchivedReport(studentId) {
+  const rs = document.getElementById('reportStudentSel');
+  if (![...rs.options].some(o => o.value === studentId)) { toast('이 학생은 지금 학생 목록에 없어요 (담당 선생님 선택을 확인하세요).'); return; }
+  rs.value = studentId;
+  populateReportRoundSelects();
+  const l = (state.reportLog || []).filter(x => x.studentId === studentId).pop();
+  const from = document.getElementById('reportFromSel'), to = document.getElementById('reportToSel');
+  if (l && [...from.options].some(o => o.value === l.from) && [...to.options].some(o => o.value === l.to)) { from.value = l.from; to.value = l.to; }
+  renderReportTab();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function logReportPdf(data, fromId, toId) {
+  if (!state.reportLog) state.reportLog = [];
+  const pts = data.points;
+  state.reportLog.push({ id: uid(), studentId: data.student.id, from: fromId, to: toId, fromDate: pts[0] ? pts[0].date : '', toDate: pts.length ? pts[pts.length - 1].date : '', savedAt: Date.now() });
+  if (state.reportLog.length > 500) state.reportLog = state.reportLog.slice(-500);
+  saveState();
+  renderReportArchive();
+}
+
 async function exportReportPDF() {
   const btn = document.getElementById('pdfExportBtn');
   const status = document.getElementById('pdfExportStatus');
@@ -3298,6 +3364,7 @@ async function exportReportPDF() {
       : `${reportMonth ? reportMonth + '월' : ''}캐치유분석보고서_${displayName(data.student.name)}.pdf`);
     status.style.color = 'var(--good)';
     status.textContent = 'PDF를 저장했어요.';
+    logReportPdf(data, fromRoundId, toRoundId);
   } catch (err) {
     console.error(err);
     status.style.color = 'var(--critical)';

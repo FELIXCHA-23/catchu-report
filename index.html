@@ -6,7 +6,7 @@
 <title>캐치유테스트 분석보고서 · KASTLE MATH</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=82">
+<link rel="stylesheet" href="style.css?v=83">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -368,6 +368,8 @@
 
   <!-- 보고서 -->
   <section class="tab-panel" id="panel-report">
+   <div class="report-layout">
+   <div class="report-main">
     <div class="card no-print">
       <h2>보고서 생성</h2>
       <div class="inline-form">
@@ -382,6 +384,9 @@
       </div>
     </div>
     <div id="reportOutput"></div>
+   </div>
+   <aside class="card no-print report-archive" id="reportArchive"></aside>
+   </div>
   </section>
 
   <!-- 데이터 관리 -->
@@ -438,7 +443,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=157"></script>
+<script src="app.js?v=158"></script>
 <script src="textbook.js?v=15"></script>
 <script src="roster-import.js?v=2"></script>
 </body>
