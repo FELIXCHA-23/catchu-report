@@ -1014,6 +1014,8 @@ function resetRoundForm() {
 // "1회차, 2회차..." 순번 대신, 시험지에 인쇄된 것과 같은 "월-주차"로 표기 (그 달의 몇 번째 금요일인지로 계산)
 function dateToWeekLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
+  // 입학테스트는 주차 없이 당일 날짜만 씀
+  if (typeof appScope === 'function' && appScope() === 'entrance') return `${d.getMonth() + 1}/${d.getDate()}`;
   // 월~일을 한 주로 보고 그 주 수요일이 속한 달·주차로 표기 — 10월 첫 금요일(10/2)이 "10-1"이 아니라 "9-5주차"로 이어지게 함
   const mondayIdx = (d.getDay() + 6) % 7;
   const wed = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayIdx + 2);
@@ -1383,7 +1385,7 @@ function populateScoreRoundGroupSel(requested) {
         use = sameWeek.reduce((a, b) => Math.abs(new Date(a.date + 'T00:00:00') - t) <= Math.abs(new Date(b.date + 'T00:00:00') - t) ? a : b).date;
         note = `${dayTxt(want)}에는 시험이 없어서, 같은 주차의 ${dayTxt(use)} 시험을 보여드려요.`;
       } else {
-        note = `${dateToWeekLabel(want)}(${dayTxt(want)})에는 등록된 시험지가 없어요.`;
+        note = appScope() === 'entrance' ? `${dayTxt(want)}에는 등록된 시험지가 없어요.` : `${dateToWeekLabel(want)}(${dayTxt(want)})에는 등록된 시험지가 없어요.`;
       }
     } else use = groups[groups.length - 1].date;
   }
@@ -1395,7 +1397,7 @@ function populateScoreRoundGroupSel(requested) {
     dateInp.value = want || '';
   }
   const weekDates = use ? groups.filter(g => g.label === dateToWeekLabel(use)).map(g => dayTxt(g.date)) : [];
-  hint.textContent = note || (weekDates.length ? `이 주차 시험일: ${weekDates.join(' · ')}` : (groups.length ? '' : '이 학년은 아직 등록된 시험지가 없어요.'));
+  hint.textContent = note || (appScope() === 'entrance' ? '' : weekDates.length ? `이 주차 시험일: ${weekDates.join(' · ')}` : (groups.length ? '' : '이 학년은 아직 등록된 시험지가 없어요.'));
   populateScoreExamSel();
 }
 
@@ -2474,7 +2476,7 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
       eParts.push('어려운 문제에서는 조금 어려워하는 모습이 있어, 그 부분을 단계별로 지도할 계획이에요.');
     }
     eParts.push('이 결과를 바탕으로 학생에게 맞는 수업 계획을 세워 지도하겠습니다.');
-    return greeting + '\n\n' + eParts.join(' ') + attitudeNote;
+    return greeting + '\n\n' + eParts.join(' ');   // 입학테스트는 수업 태도·학습 성향 칸 없음
   }
   if (points.length < 2) {
     return `${greeting}\n\n${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.${attitudeNote}`;
@@ -2658,7 +2660,7 @@ function renderReportTab() {
   const totalRow = `<tr class="total"><td>전체</td>${points.map(p => `<td class="tnum">${p.pct}%<br>(${p.correct}/${p.total})</td>`).join('')}<td class="tnum">${overallPct}%</td></tr>`;
   const headCells = points.map(p => `<th>${escapeHtml(p.label)}<br>${escapeHtml(p.date)}</th>`).join('');
 
-  const retestSection = retest.items.length ? `
+  const retestSection = (retest.items.length && !isEntranceStudent(student)) ? `
     <div class="card" data-rkey="retest">
       <h2>재시험 결과</h2>
       <p class="card-sub">오답 문항 쌍둥이문제 재시험 기록 · 메인 정답률과 별도 집계</p>
@@ -2815,11 +2817,11 @@ function renderReportTab() {
         <span id="aiCommentStatus" class="field-hint"></span>
       </div>
       <textarea class="teacher-note no-print" id="teacherNoteInput" placeholder="선생님 의견을 입력하거나 위 버튼으로 AI 초안을 작성하세요.">${escapeHtml(savedNote)}</textarea>
-      <details class="manual-fallback no-print attitude-picker">
+      ${isEntranceStudent(student) ? '' : `<details class="manual-fallback no-print attitude-picker">
         <summary>수업 태도 · 학습 성향 예시 문장 (눌러서 추가, 아래 의견에 그대로 들어가요)</summary>
         <p class="field-hint" style="margin:6px 0;">관찰한 내용과 맞는 문장만 선택. 추가한 뒤에도 수정 가능.</p>
         ${ATTITUDE_PHRASES.map((g, gi) => `<div class="attitude-group"><b>${g.cat}</b>${g.items.map((p, pi) => `<button type="button" class="phrase-chip" data-g="${gi}" data-p="${pi}">${escapeHtml(p.text)}</button>`).join('')}</div>`).join('')}
-      </details>
+      </details>`}
       <p class="comment print-only">${savedNote ? escapeHtml(savedNote).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)'}</p>
     </div>
     <div class="card" data-rkey="sw">
@@ -2974,8 +2976,7 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
 [내용]
 - 입학테스트에서 확인된 현재 수준과 잘 갖추고 있는 부분을 먼저, 그다음 입학 후 먼저 보완할 부분, 마지막에 이 결과를 바탕으로 한 수업 시작 계획을 한 문장으로 쓰세요.
 - 데이터에 없는 사실(수업 태도, 숙제, 성격, 과거 학습 이력, 있었던 일 등)은 절대 지어내지 마세요. 이 앱은 그런 정보를 갖고 있지 않습니다.
-- 마지막 줄에 "[수업 태도 · 학습 성향]"이라는 제목만 쓰고, 그 아래는 선생님이 직접 채울 수 있도록 비워두세요.
-- 결과는 본문 텍스트만 출력하세요 (따옴표, 마크다운, 별도 제목 없이 — 단, 마지막의 "[수업 태도 · 학습 성향]" 제목 줄은 그대로 출력하세요).
+- 결과는 본문 텍스트만 출력하세요 (따옴표, 마크다운, 별도 제목 없이).
 
 학생: ${displayName(student.name)} (입학테스트 응시)
 입학테스트 전체 정답률: ${overallPct}%
