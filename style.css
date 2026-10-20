@@ -491,3 +491,4 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 /* 입학테스트 화면은 주차 없이 날짜(달력)만 사용 */
 .view-entrance #scoreWeekSel { display: none; }
 .view-entrance #tabNav [data-tab="retest"] { display: none; }
+.view-entrance #scoreGradeSel, .view-entrance #scoreDateInput, .view-entrance #scoreDateHint { display: none; }

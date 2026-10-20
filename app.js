@@ -1407,10 +1407,15 @@ function populateScoreExamSel() {
   const date = document.getElementById('scoreRoundGroupSel').value;
   const sel = document.getElementById('scoreRoundSel');
   const prev = sel.value;
-  const rounds = scopedRounds().filter(r => r.grade === grade && r.date === date);
+  // 입학테스트 화면은 학년·날짜와 상관없이 등록된 입학테스트 시험지를 전부 고를 수 있음 (최신순)
+  const entranceAll = appScope() === 'entrance';
+  const rounds = entranceAll
+    ? scopedRounds().slice().sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.grade || '').localeCompare(y.grade || ''))
+    : scopedRounds().filter(r => r.grade === grade && r.date === date);
   sel.innerHTML = rounds.length
-    ? rounds.map(r => `<option value="${r.id}">${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
+    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ' + shortDate(r.date) + ' · ') : ''}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
     : '<option value="">시험지를 먼저 등록하세요</option>';
+  if (entranceAll && !rounds.some(r => r.id === prev)) { const m = rounds.find(r => r.grade === grade && r.date === date); if (m) sel.value = m.id; }
   if (rounds.some(r => r.id === prev)) sel.value = prev;
   populateScoreStudentSelect();
 }
@@ -1430,6 +1435,8 @@ function populateScoreStudentSelect() {
   // 시험 응시 학년(examGrade)이 따로 설정된 학생은(예: 중3인데 고1 시험지를 보는 경우) 그 학년 기준으로 매칭
   let eligible = round && round.grade ? state.students.filter(s => (s.examGrade || s.grade) === round.grade) : state.students;
   const entrance = !!round && isEntranceRound(round);
+  // 입학테스트는 학년이 달라도 입학테스트 반 학생을 전부 보여줌 (학년 등록이 시험지와 달라도 바로 고를 수 있게)
+  if (entrance) eligible = state.students;
   // 입학테스트 시험지는 "입학테스트" 반 학생에게만 보임
   if (entrance) eligible = eligible.filter(s => s.class === ENTRANCE_CLASS);
   // 초등 날짜별 회차: M으로 시작하는 반(월수반)은 월·수 시험지에만, T로 시작하는 반(화목반)은 화·목 시험지에만 열림.
