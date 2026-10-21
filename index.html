@@ -294,6 +294,16 @@
       <label class="btn primary" for="importRoundsBatchFile">시험지 분석 파일 가져오기</label>
       <input type="file" id="importRoundsBatchFile" accept="application/json" style="display:none;">
     </div>
+    <div class="card" id="examViewerCard" style="display:none;">
+      <div class="inline-form" style="justify-content:space-between; margin-bottom:8px;">
+        <h2 id="examViewerTitle" style="margin:0;">시험지 보기</h2>
+        <span>
+          <button type="button" class="btn ghost" id="examViewerNewTab">새 탭에서 열기</button>
+          <button type="button" class="btn ghost" id="examViewerClose">닫기</button>
+        </span>
+      </div>
+      <div id="examViewerBody"></div>
+    </div>
     <div class="card">
       <h2>등록된 회차</h2>
       <div class="inline-form" style="margin-bottom:10px;">
@@ -443,10 +453,10 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=160"></script>
+<script src="app.js?v=161"></script>
 <script src="textbook.js?v=15"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="cloud.js?v=3"></script>
+<script src="cloud.js?v=4"></script>
 </body>
 </html>

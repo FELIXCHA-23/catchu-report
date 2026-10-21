@@ -1067,6 +1067,14 @@ function renderTypesByUnit(types) {
   return groups.map(g => `<div class="unit-group"><b>${escapeHtml(g.major)}</b><br>${g.names.map(escapeHtml).join(', ')}</div>`).join('');
 }
 
+// 시험지 칸: 서버(비공개 저장소)에 올라간 시험지는 이 화면 안에서 바로 열고, 없으면 올리기 버튼을 보여줌
+function examCellHtml(r) {
+  const up = window.KMMS ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
+  if (r.examPath) return `<a href="#" data-exam-open="${r.id}">시험지 보기</a> ${up}`;
+  const local = r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—';
+  return `${local} ${up}`;
+}
+
 function renderRounds() {
   const wrap = document.getElementById('roundListWrap');
   populateRoundGradeFilter();
@@ -1087,7 +1095,7 @@ function renderRounds() {
         <td>${r.total}문항</td>
         <td>${diffBadge}</td>
         <td>${renderTypesByUnit(r.types)}</td>
-        <td>${r.examPath ? `<a href="#" data-exam-open="${r.id}">시험지 보기</a>` : r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—'}</td>
+        <td>${examCellHtml(r)}</td>
         <td class="row-actions">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
           <button class="icon-btn" data-del-round="${r.id}">삭제</button>

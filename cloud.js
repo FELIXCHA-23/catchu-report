@@ -563,23 +563,74 @@
     }
   }
 
-  async function openExam(roundId) {
+  // 시험지 탭 안에서 바로 보여줌: 비공개 저장소에서 파일을 받아(로그인 권한으로) 화면에 띄움
+  const examUrls = {};   // 경로 -> blob 주소 (같은 시험지는 다시 받지 않음)
+  let viewingUrl = '';
+  async function viewExam(roundId) {
     const r = state.rounds.find(x => x.id === roundId);
     if (!r || !r.examPath) return;
-    const w = window.open('', '_blank');
+    const card = document.getElementById('examViewerCard');
+    if (!card) return;
+    const body = document.getElementById('examViewerBody');
+    document.getElementById('examViewerTitle').textContent = '시험지 보기 · ' + (r.title || r.examName || '');
+    card.style.display = '';
+    body.innerHTML = '<div class="field-hint">시험지를 불러오는 중…</div>';
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     try {
-      const { data, error } = await sb.storage.from('exams').createSignedUrl(r.examPath, 300);
-      if (error) throw error;
-      if (w) w.location.href = data.signedUrl; else window.open(data.signedUrl, '_blank');
+      let url = examUrls[r.examPath];
+      if (!url) {
+        const { data, error } = await sb.storage.from('exams').download(r.examPath);
+        if (error) throw error;
+        const isPdf = /\.pdf$/i.test(r.examPath);
+        url = URL.createObjectURL(isPdf ? new Blob([data], { type: 'application/pdf' }) : data);
+        examUrls[r.examPath] = url;
+      }
+      viewingUrl = url;
+      body.innerHTML = /\.pdf$/i.test(r.examPath)
+        ? `<iframe src="${url}" title="시험지" style="width:100%; height:80vh; border:1px solid var(--border); border-radius:2px;"></iframe>`
+        : `<img src="${url}" alt="시험지" style="max-width:100%; border:1px solid var(--border);">`;
     } catch (e) {
-      if (w) w.close();
-      toast('시험지를 열지 못했어요: ' + (e.message || e));
+      body.innerHTML = `<div class="field-hint">시험지를 열지 못했어요: ${esc(e.message || e)}</div>`;
     }
+  }
+  function closeExamViewer() {
+    const card = document.getElementById('examViewerCard');
+    if (card) card.style.display = 'none';
+    const body = document.getElementById('examViewerBody');
+    if (body) body.innerHTML = '';
+    viewingUrl = '';
+  }
+
+  // 이미 만든 회차에 시험지(PDF·이미지)를 올리거나 교체
+  const MAX_EXAM_UPLOAD = 20 * 1024 * 1024;
+  function pickExamFile(roundId) {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/pdf,image/*';
+    input.onchange = () => {
+      const f = input.files[0];
+      if (!f) return;
+      if (f.size > MAX_EXAM_UPLOAD) { toast(`파일이 너무 커요 (${(f.size / 1024 / 1024).toFixed(1)}MB). 20MB 이하로 올려주세요.`); return; }
+      const fr = new FileReader();
+      fr.onload = async () => {
+        const r = state.rounds.find(x => x.id === roundId);
+        if (!r) return;
+        toast('시험지를 올리는 중…');
+        if (await uploadExam(r, { name: f.name, dataUrl: fr.result })) viewExam(roundId);
+      };
+      fr.readAsDataURL(f);
+    };
+    input.click();
   }
 
   document.addEventListener('click', e => {
-    const a = e.target.closest && e.target.closest('[data-exam-open]');
-    if (a) { e.preventDefault(); openExam(a.dataset.examOpen); }
+    const t = e.target.closest ? e.target : null;
+    if (!t) return;
+    const a = t.closest('[data-exam-open]');
+    if (a) { e.preventDefault(); viewExam(a.dataset.examOpen); return; }
+    const u = t.closest('[data-exam-upload]');
+    if (u) { e.preventDefault(); pickExamFile(u.dataset.examUpload); return; }
+    if (t.closest('#examViewerClose')) { closeExamViewer(); return; }
+    if (t.closest('#examViewerNewTab')) { if (viewingUrl) window.open(viewingUrl, '_blank'); }
   });
 
   /* ---------- 시작 ---------- */
@@ -619,7 +670,7 @@
     window.addEventListener('beforeunload', e => { if (ready && pendingChanges) { e.preventDefault(); e.returnValue = ''; } });
   }
 
-  window.KMMS = { uploadExam, openExam, get ready() { return ready; }, get staff() { return staff; }, push, poll };
+  window.KMMS = { uploadExam, viewExam, get ready() { return ready; }, get staff() { return staff; }, push, poll };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
