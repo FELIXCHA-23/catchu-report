@@ -826,9 +826,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const sel = document.getElementById('roundDate');
     const cands = Array.from(sel.options).map(o => o.value).filter(d => d && dateToWeekLabel(d) === wk.value);
     if (!cands.length) return;
+    sel.dataset.picked = '1';
     setRoundDate(cands.find(d => new Date(d + 'T00:00:00').getDay() === 5) || cands[0]);
   });
-  if (dp) dp.addEventListener('change', () => { if (dp.value) setRoundDate(dp.value); });
+  if (dp) dp.addEventListener('change', () => { if (dp.value) { document.getElementById('roundDate').dataset.picked = '1'; setRoundDate(dp.value); } });
 });
 
 function parseRange(str) {
@@ -1217,6 +1218,7 @@ function resetRoundForm() {
   pendingDifficulty = null;
   pendingCompetency = null;
   document.getElementById('roundForm').reset();
+  document.getElementById('roundDate').dataset.picked = '';
   populateRoundDateSelect(document.getElementById('roundDate'), '');
   document.getElementById('roundGrade').value = '';
   document.getElementById('roundTotal').value = 30;
@@ -1457,8 +1459,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const grade = document.getElementById('roundGrade').value;
     const wasDaily = dateSel.dataset.mode === 'daily';
     const willBeDaily = isElementaryGrade(grade);
-    populateRoundDateSelect(dateSel, grade, wasDaily === willBeDaily ? dateSel.value : undefined);
-    syncRoundDateFromTitle();
+    // 선생님이 날짜를 직접 골랐으면(주차·달력) 학년을 바꿔도 그 날짜를 그대로 둠 — 오늘 날짜로 되돌리지 않음
+    populateRoundDateSelect(dateSel, grade, (wasDaily === willBeDaily || dateSel.dataset.picked) ? dateSel.value : undefined);
+    if (dateSel.dataset.picked) updateRoundDateUI();
+    else syncRoundDateFromTitle();
+    // 초등은 15문항, 그 외 학년은 30문항이 기본 (새 회차를 만들 때만, 수정 중인 회차의 문항수는 건드리지 않음)
+    if (!editingRoundId && grade) {
+      const totalInp = document.getElementById('roundTotal');
+      const cur = parseInt(totalInp.value, 10);
+      if (willBeDaily && cur === 30) { totalInp.value = 15; updateCoverageHint(); }
+      else if (!willBeDaily && cur === 15) { totalInp.value = 30; updateCoverageHint(); }
+    }
   });
 
   // 파일을 마우스로 끌어다 놓기 — 업로드 상자 위에 놓으면 "파일 선택"과 똑같이 처리됨(같은 입력칸에 넣고 change 이벤트 전달).
