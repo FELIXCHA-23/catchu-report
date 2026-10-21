@@ -80,10 +80,16 @@ button { font-family: inherit; }
 .tab-panel { display: none; flex-direction: column; gap: 16px; }
 .tab-panel.active { display: flex; }
 /* 채점 입력: 넓은 화면에서는 왼쪽에 주간 업로드 현황 */
-@media (min-width: 1100px) {
-  #panel-score.active { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
-  #weeklyStatusCard { grid-column: 1; grid-row: 1 / span 3; }
-  #panel-score > .card:not(#weeklyStatusCard) { grid-column: 2; }
+/* 본문(900px)은 그대로 두고, 양옆 여백이 충분하면 왼쪽 여백에 작게 띄움 */
+#panel-score { position: relative; }
+#weeklyStatusCard { padding: 12px; font-size: 12px; }
+#weeklyStatusCard h2 { font-size: 14px; }
+#weeklyStatusCard .card-sub { display: none; }
+@media (min-width: 1340px) {
+  #weeklyStatusCard { position: absolute; right: calc(100% + 14px); top: 0; width: 210px; }
+  #weeklyStatusCard .ws-badge { min-width: 0; padding: 2px 7px; font-size: 11px; }
+  #weeklyStatusCard .ws-name { width: 44px; }
+  #weeklyStatusCard .ws-row { flex-wrap: wrap; gap: 4px; }
 }
 .ws-grade { margin-bottom: 10px; }
 .ws-round { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
