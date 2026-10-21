@@ -1271,9 +1271,9 @@ function renderTypesByUnit(types) {
 // 시험지 칸: 서버(비공개 저장소)에 올라간 시험지는 이 화면 안에서 바로 열고, 없으면 올리기 버튼을 보여줌
 function examCellHtml(r) {
   const up = window.KMMS ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
-  if (r.examPath) return `<a href="#" data-exam-open="${r.id}">시험지 보기</a> ${up}`;
+  if (r.examPath) return `<div class="drop-part"><a href="#" data-exam-open="${r.id}">시험지 보기</a> ${up}</div>`;
   const local = r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—';
-  return `${local} ${up}`;
+  return `<div class="drop-part">${local} ${up}</div>`;
 }
 
 // 재시험지 칸: 재시험지(문제) + 빠른정답 PDF. 둘 다 올려둬야 학생별 재시험지가 만들어짐
@@ -1281,7 +1281,7 @@ function retestCellHtml(r) {
   const can = window.KMMS && !window.KMMS.demo;
   const part = (kind, label, path) => {
     const btn = can ? `<button class="icon-btn" data-exam-upload="${r.id}" data-kind="${kind}">${path ? '교체' : '올리기'}</button>` : '';
-    return `<div>${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}</div>`;
+    return `<div class="drop-part">${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}</div>`;
   };
   return part('retest', '재시험지', r.retestPath) + part('retestAns', '빠른정답', r.retestAnsPath);
 }
@@ -1302,7 +1302,7 @@ function renderWeeklyStatus() {
   document.getElementById('wsLabel').textContent = label + (wsWeekOffset === 0 ? ' (이번 주)' : '');
   const can = window.KMMS && !window.KMMS.demo;
   const all = scopedRounds().filter(r => !r.individual && dateToWeekLabel(r.date) === label);
-  const chip = (r, name, path, upAttrs) => `<span class="ws-chip">${name} <span class="${path ? 'ws-ok' : 'ws-no'}">${path ? '됨' : '안 됨'}</span>${can ? ` <button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</span>`;
+  const chip = (r, name, path, upAttrs) => `<div class="ws-row"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>

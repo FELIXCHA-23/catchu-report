@@ -87,9 +87,12 @@ button { font-family: inherit; }
 }
 .ws-grade { margin-bottom: 10px; }
 .ws-round { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
-.ws-chip { display: inline-flex; align-items: center; gap: 4px; margin: 2px 8px 2px 0; white-space: nowrap; }
-.ws-ok { color: #1a7f37; font-weight: 700; }
-.ws-no { color: #c0392b; font-weight: 700; }
+.drop-hot { outline: 2px dashed #1a7f37; outline-offset: 2px; background: #eafaf0; }
+.ws-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.ws-name { width: 56px; font-weight: 600; }
+.ws-badge { display: inline-block; min-width: 92px; text-align: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.ws-ok { background: #1a7f37; color: #fff; }
+.ws-no { background: #fdecea; color: #c0392b; border: 1px solid #c0392b; }
 
 .card {
   background: var(--surface-card);

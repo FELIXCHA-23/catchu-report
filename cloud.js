@@ -783,12 +783,31 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (error) throw error;
     return (bufCache[path] = await data.arrayBuffer());
   }
-  function pickExamFile(roundId, kind) {
+  // 파일을 끌어다 놓아도 바로 올라가게: 올리기 버튼이 들어 있는 칸(.ws-row, .drop-part)이 놓는 자리
+  const dropTarget = e => {
+    const el = e.target.closest ? e.target.closest('.ws-row, .drop-part') : null;
+    return el && el.querySelector('[data-exam-upload]') ? el : null;
+  };
+  document.addEventListener('dragover', e => {
+    const el = dropTarget(e);
+    if (el && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); el.classList.add('drop-hot'); }
+  });
+  document.addEventListener('dragleave', e => { const el = dropTarget(e); if (el) el.classList.remove('drop-hot'); });
+  document.addEventListener('drop', e => {
+    const el = dropTarget(e);
+    if (!el) return;
+    e.preventDefault(); el.classList.remove('drop-hot');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    const b = el.querySelector('[data-exam-upload]');
+    if (f && b) pickExamFile(b.dataset.examUpload, b.dataset.kind, f);
+  });
+  function pickExamFile(roundId, kind, dropped) {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'application/pdf,image/*';
     input.onchange = () => {
-      const f = input.files[0];
+      const f = dropped || input.files[0];
       if (!f) return;
+      if (!/^(application\/pdf|image\/)/.test(f.type)) { toast('PDF나 사진 파일만 올릴 수 있어요.'); return; }
       if (f.size > MAX_EXAM_UPLOAD) { toast(`파일이 너무 커요 (${(f.size / 1024 / 1024).toFixed(1)}MB). 20MB 이하로 올려주세요.`); return; }
       const fr = new FileReader();
       fr.onload = async () => {
@@ -800,7 +819,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       };
       fr.readAsDataURL(f);
     };
-    input.click();
+    if (dropped) input.onchange(); else input.click();
   }
 
   document.addEventListener('click', e => {
