@@ -414,6 +414,7 @@
 #kmmsGate button.kg-link{background:none;border:0;color:#1f4e8c;font-size:13px;cursor:pointer;margin-top:12px;padding:0}
 #kmmsGate .kg-msg{font-size:13px;margin-top:12px;color:#c8102e;white-space:pre-line}
 #kmmsGate .kg-msg.ok{color:#1e7a3c}
+body:not(.kmms-admin) .admin-only{display:none !important}
 #kmmsChip{position:fixed;right:10px;bottom:10px;z-index:9000;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.96);border:1px solid #d9d4ca;border-radius:20px;padding:5px 10px;font-size:12px;color:#444;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 #kmmsChip button{border:1px solid #cfc9bd;background:#fff;border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer}
 #kmmsBanner{position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:9001;background:#222;color:#fff;border-radius:10px;padding:9px 14px;font-size:13px}
@@ -540,6 +541,7 @@
       if (!had) await firstLink(); else await pull(false);
       ready = true;
       closeGate();
+      document.body.classList.toggle('kmms-admin', staff.role === 'admin'); // 관리자만 보이는 메뉴(백업·초기화 등)
       setStatus('저장됨');
       // 담당 선생님은 로그인한 선생님으로 고정 (선택칸에서 바꿀 수 없음)
       if (typeof refreshTeacherSelects === 'function') refreshTeacherSelects();

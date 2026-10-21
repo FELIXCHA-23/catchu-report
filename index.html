@@ -37,8 +37,6 @@
         <span class="landing-btn-sub">입학테스트 반 · 전용 시험지</span>
       </button>
     </div>
-    <label class="landing-auto"><input type="checkbox" id="autoBackupToggle"> 첫 화면 접속 시 하루 1회 백업 파일 자동 저장</label>
-    <div class="field-hint landing-auto-hint">파일명은 캐슬백업_0001.json 형식이며 번호만 증가합니다. 브라우저에서 여러 파일 다운로드 허용을 묻는 경우 허용으로 선택.</div>
     <button type="button" class="landing-link" id="goStudentsBtn">학생 관리 (등록·수정 내용은 캐치유테스트와 교재 채점에 공통 적용)</button>
   </div>
 </section>
@@ -51,9 +49,6 @@
     <h1 class="display" style="font-size:22px; margin:0;">교재 채점 및 분석</h1>
     <button type="button" class="btn ghost" data-go-home style="margin-left:auto;">처음으로</button>
     <button type="button" class="btn ghost" id="tbGoStudentsBtn" title="학생 등록·수정">학생 관리</button>
-    <button type="button" class="btn ghost" id="tbExportBtn" title="캐치유테스트와 교재 채점 데이터를 한 파일로 백업">백업</button>
-    <label class="btn ghost" for="tbImportFile" title="백업 파일 가져오기 (기존 데이터 전체 교체)">가져오기</label>
-    <input type="file" id="tbImportFile" accept="application/json" style="display:none;">
     <select id="textbookTeacherSel"><option value="">담당 선생님 선택 (전체 보기)</option></select>
   </header>
   <nav class="tabs tb-tabrow">
@@ -134,9 +129,6 @@
     <h1 class="display"><span class="ttl-catchu">캐치유테스트 분석보고서</span><span class="ttl-entrance">입학테스트 분석보고서</span></h1>
     <button type="button" class="btn ghost" data-go-home title="첫 화면으로 돌아가기" style="margin-left:auto;">처음으로</button>
     <button type="button" class="btn ghost" id="catchuGoStudentsBtn" title="학생 등록·수정">학생 관리</button>
-    <button type="button" class="btn ghost" id="catchuExportBtn" title="캐치유테스트와 교재 채점 데이터를 한 파일로 백업">백업</button>
-    <label class="btn ghost" for="catchuImportFile" title="백업 파일 가져오기 (기존 데이터 전체 교체)">가져오기</label>
-    <input type="file" id="catchuImportFile" accept="application/json" style="display:none;">
     <select id="currentTeacherSel">
       <option value="">담당 선생님 선택 (전체 보기)</option>
     </select>
@@ -408,12 +400,11 @@
 
   <!-- 데이터 관리 -->
   <section class="tab-panel" id="panel-data">
-    <div class="card">
-      <h2>백업 · 이전</h2>
-      <p class="card-sub">데이터는 <b>이 컴퓨터의 이 브라우저</b>에만 저장됨. 다른 컴퓨터로 옮기거나 백업하려면 내보내기 파일 사용.<br>
-        <b>포함 항목:</b> 학생 명단, 회차·시험지 정보, <b>학생별 채점 기록</b>, 재시험 기록, 보고서 의견, <b>교재 채점 기록과 교재 보고서 의견·PDF 포함 설정</b>, 평균 난이도 조절 값 (캐치유테스트와 교재 화면의 전체 데이터).<br>
-        <b>가져오기는 기존 데이터를 전부 교체</b>함 (병합 아님). API 키는 포함되지 않음.<br>
-        <b>자동 백업:</b> 첫 화면에 그날 처음 접속할 때 같은 내용의 백업 파일을 자동 저장 (캐슬백업_0001.json, 0002… 번호만 증가). 첫 화면 아래 체크박스로 켜고 끔. 교재 화면 상단의 백업/가져오기 버튼도 동일하게 동작.</p>
+    <div class="card admin-only">
+      <h2>백업 · 이전 (관리자용)</h2>
+      <p class="card-sub">데이터는 <b>서버에 자동으로 저장</b>되고 모든 선생님이 같이 씀. 그래서 백업 파일을 자동으로 받거나 따로 가져올 필요는 없고, 이 기능은 만일을 위한 관리자용 보관·복원 도구임.<br>
+        <b>포함 항목:</b> 학생 명단, 회차·시험지 정보, 학생별 채점 기록, 재시험 기록, 보고서 의견, 교재 채점 기록과 교재 보고서 의견·PDF 포함 설정, 평균 난이도 조절 값.<br>
+        <b>가져오기는 기존 데이터를 전부 교체</b>하고 그 결과가 서버와 모든 선생님 화면에 반영되므로 꼭 필요할 때만 쓸 것. API 키는 포함되지 않음.</p>
       <div class="inline-form">
         <button type="button" class="btn primary" id="exportBtn">전체 내보내기</button>
         <label class="btn ghost" for="importFile">전체 가져오기 (기존 데이터 전체 교체)</label>
@@ -426,12 +417,12 @@
         내보낸 파일을 GitHub에 올리면 이후 모든 선생님 화면에 해당 회차가 자동 표시됨.</p>
       <button type="button" class="btn primary" id="exportRoundsBtn">공용 회차 내보내기</button>
     </div>
-    <div class="card">
+    <div class="card admin-only">
       <h2>예시 데이터</h2>
       <p class="card-sub">예시 데이터를 불러와 기능을 확인. 기존 데이터가 있으면 백업 후 사용.</p>
       <button type="button" class="btn ghost" id="seedBtn">예시 데이터 불러오기</button>
     </div>
-    <div class="card">
+    <div class="card admin-only">
       <h2>전체 초기화</h2>
       <p class="card-sub">모든 학생·회차·채점 기록을 삭제함. 되돌릴 수 없음.</p>
       <button type="button" class="btn danger" id="resetBtn">전체 데이터 초기화</button>
@@ -460,10 +451,10 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=169"></script>
+<script src="app.js?v=170"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="cloud.js?v=9"></script>
+<script src="cloud.js?v=10"></script>
 </body>
 </html>

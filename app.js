@@ -3902,19 +3902,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('studentsBackBtn').addEventListener('click', () => { showView(studentsReturnTo); renderAll(); });
   document.getElementById('studentSearchInput').addEventListener('input', renderStudents);
   document.getElementById('studentShowHidden').addEventListener('change', () => { renderStudents(); });
-  const autoToggle = document.getElementById('autoBackupToggle');
-  autoToggle.checked = autoBackupEnabled();
-  autoToggle.addEventListener('change', () => setAutoBackupEnabled(autoToggle.checked));
-  document.getElementById('tbExportBtn').addEventListener('click', exportBackupManual);
   document.getElementById('catchuGoStudentsBtn').addEventListener('click', openStudentsView);
-  document.getElementById('catchuExportBtn').addEventListener('click', exportBackupManual);
-  document.getElementById('catchuImportFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackupFromFile(f); });
-  document.getElementById('tbImportFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackupFromFile(f); });
+  // 데이터는 서버에 자동 저장되므로 백업 파일 자동 다운로드와 화면 위쪽의 백업·가져오기 버튼은 없앰
+  // (필요하면 관리자만 "데이터 관리" 탭에서 전체 내보내기를 씀)
   await syncSharedRounds();
   renderAll();
   window.__appReady = true;
-  // 대문으로 접속했을 때(새로 열거나 대문에서 새로고침) 자동 백업
-  if (document.body.classList.contains('view-landing')) runAutoBackup();
 });
 
 /* ================= 공용 회차 공유 (관리자가 내보내고, 모든 선생님 컴퓨터가 자동으로 읽어옴) ================= */
