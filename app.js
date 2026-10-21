@@ -1301,14 +1301,15 @@ function renderWeeklyStatus() {
   const label = dateToWeekLabel(wsDateOf(wsWeekOffset));
   document.getElementById('wsLabel').textContent = label + (wsWeekOffset === 0 ? ' (이번 주)' : '');
   const can = window.KMMS && !window.KMMS.demo;
-  const all = scopedRounds().filter(r => !r.individual && dateToWeekLabel(r.date) === label);
-  const chip = (r, name, path, upAttrs) => `<div class="ws-row"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</div>`;
+  // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
+  const all = scopedRounds().filter(r => !r.individual && r.total === 30 && dateToWeekLabel(r.date) === label);
+  const chip = (r, name, path, upAttrs, viewAttrs) => `<div class="ws-row"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
-      ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`)}
-      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`)}
-      ${chip(r, '정답', r.retestAnsPath, `data-exam-upload="${r.id}" data-kind="retestAns"`)}</div>`).join('')
+      ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`, `data-exam-open="${r.id}"`)}
+      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`, `data-aux-open="${r.id}" data-kind="retest"`)}
+      ${chip(r, '정답', r.retestAnsPath, `data-exam-upload="${r.id}" data-kind="retestAns"`, `data-aux-open="${r.id}" data-kind="retestAns"`)}</div>`).join('')
       : '<div class="ws-round field-hint">이 주 시험지 회차가 없어요</div>';
     return `<div class="ws-grade"><b>${g}</b>${body}</div>`;
   }).join('');

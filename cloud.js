@@ -825,6 +825,10 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   document.addEventListener('click', e => {
     const t = e.target.closest ? e.target : null;
     if (!t) return;
+    // 채점 입력 현황판에서 '보기'를 누르면 viewer가 있는 시험지 탭으로 넘어가서 바로 보여줌
+    if (t.closest('#weeklyStatusCard') && t.closest('[data-exam-open], [data-aux-open]')) {
+      const tb = document.querySelector('.tab-btn[data-tab="rounds"]'); if (tb) tb.click();
+    }
     const a = t.closest('[data-exam-open]');
     if (a) { e.preventDefault(); viewExam(a.dataset.examOpen); return; }
     const u = t.closest('[data-exam-upload]');
