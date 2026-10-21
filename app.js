@@ -1811,6 +1811,7 @@ function classSortKey(cls) {
 // 위에서 채점을 저장하면 그 학생이 자동으로 여기 나타남(따로 고를 필요 없음) — 반 순서대로 묶어서 보여줌.
 // "완료" 버튼을 누른 학생은 진행중 목록에서 빠져서 맨 아래 완료 섹션으로 따로 모여, 아직 관리가
 // 안 끝난 학생과 한눈에 구분됨(state.studentDone에 학생 id별로 표시 여부를 저장 — 회차와 무관한 수동 플래그).
+const scoredThisSession = new Set();
 function renderStudentResetPanel() {
   const wrap = document.getElementById('studentResetWrap');
   if (!wrap) return;
@@ -1823,7 +1824,13 @@ function renderStudentResetPanel() {
   const studentsForPanel = hasAllAccess()
     ? state.students.filter(inStudentScope).filter(s => !s.teacher || s.teacher === getCurrentTeacher())
     : filterByCurrentTeacher(state.students);
-  const allStudents = studentsForPanel
+  // 다른 선생님 반 학생도 채점 드롭다운에는 뜨는데, 내 담당이 아니라는 이유로 여기서만 빠지면 저장했는데 안 보이는 것처럼 됨 —
+  // 내가 채점한 학생(이번 접속 중 채점했거나 결과에 채점자 기록이 있는 학생)은 담당이 달라도 같이 보여줌
+  const me = getCurrentTeacher();
+  const have = new Set(studentsForPanel.map(s => s.id));
+  const extra = me ? state.students.filter(inStudentScope).filter(s => !have.has(s.id) &&
+    (scoredThisSession.has(s.id) || state.results.some(r => r.studentId === s.id && r.by === me))) : [];
+  const allStudents = studentsForPanel.concat(extra)
     .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
 
   if (!allStudents.length) {
@@ -2117,8 +2124,10 @@ function saveCurrentScore(silent) {
   if (round.individual && !round.studentId) round.studentId = student.id;
   const wrong = [...new Set(Array.from(document.querySelectorAll('#scoreGridWrap .qbtn.wrong')).map(b => parseInt(b.dataset.q, 10)))];
   const existing = state.results.find(r => r.studentId === student.id && r.roundId === round.id);
-  if (existing) existing.wrong = wrong;
-  else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong });
+  const by = getCurrentTeacher();
+  scoredThisSession.add(student.id);
+  if (existing) { existing.wrong = wrong; if (by) existing.by = by; }
+  else state.results.push({ id: uid(), studentId: student.id, roundId: round.id, wrong, ...(by ? { by } : {}) });
   saveState();
   renderRounds(); populateSelects();
   // 보고서 탭의 학생 드롭다운도 방금 채점한 학생으로 바로 맞춰둠 (보고서 탭을 열면 이 학생 보고서가 바로 뜸)
