@@ -38,7 +38,26 @@ function teacherDisplayName(name) {
 
 // 이 컴퓨터에서 로그인한 선생님이 누구인지 (계산기록/백업 파일에는 안 들어가고, 이 브라우저에만 저장됨)
 const CURRENT_TEACHER_KEY = 'catchu_current_teacher';
-function getCurrentTeacher() { return localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
+// 로그인한 선생님(서버 계정의 이름)이 곧 담당 선생님 — 로그인돼 있으면 그 선생님으로 고정되고 선택칸에서 바꿀 수 없음
+function lockedTeacher() { return (window.KMMS && window.KMMS.teacherName) || ''; }
+function getCurrentTeacher() { return lockedTeacher() || localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
+function teacherSelectHtml() {
+  const lt = lockedTeacher();
+  return lt ? `<option value="${lt}">${lt}</option>`
+    : '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+}
+function refreshTeacherSelects() {
+  const lt = lockedTeacher();
+  if (lt) setCurrentTeacher(lt);
+  ['landingTeacherSel', 'currentTeacherSel', 'textbookTeacherSel', 'studentsTeacherSel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = teacherSelectHtml();
+    el.disabled = !!lt;
+    el.title = lt ? '로그인한 선생님이 담당 선생님으로 고정돼요' : '';
+    el.value = getCurrentTeacher();
+  });
+}
 function setCurrentTeacher(t) {
   if (t) localStorage.setItem(CURRENT_TEACHER_KEY, t);
   else localStorage.removeItem(CURRENT_TEACHER_KEY);
@@ -263,10 +282,9 @@ function applyPrintedWeek(json) {
   return ` · 시험지에 적힌 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.` + note;
 }
 
-// 분석이 끝났을 때 체크박스가 켜져 있고, 새 시험지이고, 학년·날짜가 정해져 있으면 회차를 자동으로 저장함
+// 분석이 끝나면 (새 시험지이고 학년·날짜가 정해져 있으면) 항상 회차로 자동 저장함
 function maybeAutoSaveRound(status) {
-  const box = document.getElementById('aiAutoSave');
-  if (!box || !box.checked || editingRoundId) return false;
+  if (editingRoundId) return false;
   if (!document.getElementById('roundGrade').value || !document.getElementById('roundDate').value) {
     status.textContent += ' · 학년을 고른 뒤 "회차 저장"을 눌러주세요.';
     return false;
@@ -3692,7 +3710,7 @@ function renderAll() {
 
 function populateCurrentTeacherSel() {
   const sel = document.getElementById('currentTeacherSel');
-  sel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  sel.innerHTML = teacherSelectHtml();
   sel.value = getCurrentTeacher();
 }
 
@@ -3740,7 +3758,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
   populateCurrentTeacherSel();
   const landingSel = document.getElementById('landingTeacherSel');
-  landingSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  landingSel.innerHTML = teacherSelectHtml();
   landingSel.value = getCurrentTeacher();
   landingSel.addEventListener('change', e => onTeacherChanged(e.target.value));
   ['landingLogo', 'textbookLogo'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = logoBlock(); });
@@ -3761,11 +3779,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   showView(currentView());
   document.getElementById('currentTeacherSel').addEventListener('change', e => onTeacherChanged(e.target.value));
   const tbTeacherSel = document.getElementById('textbookTeacherSel');
-  tbTeacherSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  tbTeacherSel.innerHTML = teacherSelectHtml();
   tbTeacherSel.value = getCurrentTeacher();
   tbTeacherSel.addEventListener('change', e => onTeacherChanged(e.target.value));
   const stTeacherSel = document.getElementById('studentsTeacherSel');
-  stTeacherSel.innerHTML = '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
+  stTeacherSel.innerHTML = teacherSelectHtml();
   stTeacherSel.value = getCurrentTeacher();
   stTeacherSel.addEventListener('change', e => onTeacherChanged(e.target.value));
   document.getElementById('goStudentsBtn').addEventListener('click', openStudentsView);

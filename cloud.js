@@ -465,14 +465,11 @@
     try {
       const had = loadSyncMeta();
       if (!had) await firstLink(); else await pull(false);
-      // 담당 선생님 기본값: 이름이 선생님 목록에 있으면 처음 한 번 자동 선택
-      try {
-        if (!getCurrentTeacher() && TEACHER_OPTIONS.includes(staff.name)) { setCurrentTeacher(staff.name); }
-      } catch (e) {}
       ready = true;
       closeGate();
       setStatus('저장됨');
-      if (typeof syncTeacherSelects === 'function') syncTeacherSelects();
+      // 담당 선생님은 로그인한 선생님으로 고정 (선택칸에서 바꿀 수 없음)
+      if (typeof refreshTeacherSelects === 'function') refreshTeacherSelects();
       if (typeof renderAll === 'function') renderAll();
       pollTimer = setInterval(poll, POLL_MS);
       schedulePush(); // 시작 전에 생긴 로컬 변경(공용 시험지 반영 등) 올리기
@@ -743,7 +740,12 @@
     window.addEventListener('beforeunload', e => { if (ready && pendingChanges) { e.preventDefault(); e.returnValue = ''; } });
   }
 
-  window.KMMS = { uploadExam, stageExam, attachStaged, viewExam, get ready() { return ready; }, get staff() { return staff; }, push, poll };
+  window.KMMS = {
+    uploadExam, stageExam, attachStaged, viewExam, push, poll,
+    get ready() { return ready; }, get staff() { return staff; },
+    // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
+    get teacherName() { return staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },
+  };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
