@@ -348,7 +348,7 @@ function utf8ToB64(str) {
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
 function sharedRoundPayload(r) {
   if (r.studentName && !r.individual) return null;
-  const { examFile, studentId, ...rest } = r;
+  const { examFile, studentId, examPath, examName, ...rest } = r;
   return rest;
 }
 
@@ -1087,7 +1087,7 @@ function renderRounds() {
         <td>${r.total}문항</td>
         <td>${diffBadge}</td>
         <td>${renderTypesByUnit(r.types)}</td>
-        <td>${r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—'}</td>
+        <td>${r.examPath ? `<a href="#" data-exam-open="${r.id}">시험지 보기</a>` : r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—'}</td>
         <td class="row-actions">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
           <button class="icon-btn" data-del-round="${r.id}">삭제</button>
@@ -1197,6 +1197,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     prepareExamFileForAI(file).then(prepared => {
+      prepared.fresh = true;
       pendingExamFile = prepared;
       renderExamFileInfo();
       if (prepared.resized) toast(`사진이 커서 AI 분석용으로 ${(prepared.size / 1024 / 1024).toFixed(1)}MB로 줄였어요.`);
@@ -1268,6 +1269,9 @@ document.addEventListener('DOMContentLoaded', () => {
       state.rounds.push(savedRound);
     }
     saveState();
+    // 새로 고른 시험지 파일은 서버의 비공개 저장소에도 올림 (로그인한 선생님만 볼 수 있음)
+    const examToUpload = pendingExamFile && pendingExamFile.fresh ? pendingExamFile : null;
+    if (examToUpload && window.KMMS) window.KMMS.uploadExam(savedRound, examToUpload);
     pendingDifficulty = null;
     pendingCompetency = null;
     resetRoundForm();
@@ -3724,7 +3728,9 @@ async function syncSharedRounds() {
         // 이 컴퓨터에서만 의미 있는 정보라 공용 파일 동기화로 덮어쓰지 않고 그대로 유지함
         const keepExamFile = state.rounds[idx].examFile;
         const keepStudentId = state.rounds[idx].studentId;
+        const keepExamPath = state.rounds[idx].examPath, keepExamName = state.rounds[idx].examName;
         state.rounds[idx] = { ...sr, examFile: keepExamFile, studentId: keepStudentId };
+        if (keepExamPath) { state.rounds[idx].examPath = keepExamPath; state.rounds[idx].examName = keepExamName; }
       }
       if (!state.sharedRoundIds.includes(sr.id)) state.sharedRoundIds.push(sr.id);
     });
