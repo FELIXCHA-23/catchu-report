@@ -149,6 +149,7 @@ function setApiKey(key) { try { localStorage.setItem(API_KEY_STORAGE, key); } ca
 // effort: 모델이 답하기 전에 "생각"하는 깊이(low/medium/high). 이 모델은 생각에 쓴 토큰도 max_tokens에서 같이 깎이므로,
 // 단순 분류·글쓰기에는 낮춰야 생각만 하다가 한도가 차서 답이 잘리는 일이 없음
 async function callClaudeAPI({ content, maxTokens = 16000, effort = 'medium' }) {
+  if (window.KMMS && window.KMMS.demo) throw new Error('체험(guest) 모드에서는 AI 분석을 쓸 수 없어요.');
   const key = getApiKey();
   if (!key) throw new Error('API 키가 설정되지 않았어요. "API 키 설정"에서 먼저 입력해주세요.');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -568,6 +569,7 @@ async function publishRoundToShared(round) {
 // 회차를 저장한 직후 호출 — 토큰이 있으면 자동으로 공용 파일에 올림(없으면 예전처럼 이 컴퓨터에만 저장).
 // 저장 자체는 이미 끝난 뒤라서, 공유가 실패해도 선생님 화면의 회차는 그대로 남음
 async function shareRoundToGitHub(round) {
+  if (window.KMMS && window.KMMS.demo) return; // 체험(guest) 모드는 어디에도 올리지 않음
   if (!getGhToken() || !round) return;
   toast('모든 선생님이 쓸 수 있게 공유하는 중이에요...');
   try {

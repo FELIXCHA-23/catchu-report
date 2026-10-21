@@ -28,6 +28,7 @@
   let ready = false;      // 로그인 + 승인 + 첫 동기화 끝
   let statusText = '';
   let pendingChanges = false;
+  let demoMode = false;   // guest 체험 모드: 서버에 로그인하지 않고, 가짜 데이터로만 화면을 둘러봄 (아무것도 저장·업로드되지 않음)
 
   /* ---------- 유틸 ---------- */
 
@@ -114,6 +115,12 @@
   function setStatus(t) { statusText = t; renderChip(); }
   function renderChip() {
     let chip = document.getElementById('kmmsChip');
+    if (demoMode) {
+      if (!chip) { chip = document.createElement('div'); chip.id = 'kmmsChip'; document.body.appendChild(chip); }
+      chip.innerHTML = '<span class="kc-stat">🔎 체험(guest) · 가짜 데이터 · 저장되지 않아요</span><button type="button" id="kmmsExitDemo">나가기</button>';
+      chip.querySelector('#kmmsExitDemo').onclick = () => location.reload();
+      return;
+    }
     if (!session || !staff || !staff.approved) { if (chip) chip.remove(); return; }
     if (!chip) {
       chip = document.createElement('div');
@@ -415,6 +422,7 @@
 #kmmsGate .kg-msg{font-size:13px;margin-top:12px;color:#c8102e;white-space:pre-line}
 #kmmsGate .kg-msg.ok{color:#1e7a3c}
 body:not(.kmms-admin) .admin-only{display:none !important}
+body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:none !important}
 #kmmsChip{position:fixed;right:10px;bottom:10px;z-index:9000;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.96);border:1px solid #d9d4ca;border-radius:20px;padding:5px 10px;font-size:12px;color:#444;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 #kmmsChip button{border:1px solid #cfc9bd;background:#fff;border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer}
 #kmmsBanner{position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:9001;background:#222;color:#fff;border-radius:10px;padding:9px 14px;font-size:13px}
@@ -448,7 +456,7 @@ body:not(.kmms-admin) .admin-only{display:none !important}
       <label>비밀번호${signup ? ' (6자 이상)' : ''}</label><input id="kgPw" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}">
       <button type="button" class="kg-main" id="kgGo">${signup ? '계정 만들기' : '로그인'}</button>
       <div class="kg-msg ${ok ? 'ok' : ''}" id="kgMsg">${esc(msg || '')}</div>
-      ${signup ? '<button type="button" class="kg-link" id="kgSwitch">로그인으로 돌아가기</button>' : '<p class="kg-sub" style="margin:14px 0 0">계정이 없으면 원장님께 요청하세요.</p>'}`);
+      ${signup ? '<button type="button" class="kg-link" id="kgSwitch">로그인으로 돌아가기</button>' : '<p class="kg-sub" style="margin:14px 0 0">계정이 없으면 원장님께 요청하세요.</p><button type="button" class="kg-link" id="kgGuest" style="display:block;margin-top:6px">guest로 둘러보기 (비밀번호 없음 · 가짜 데이터)</button>'}`);
     const go = async () => {
       const rawId = g.querySelector('#kgEmail').value.trim();
       const email = toLoginEmail(rawId);
@@ -478,6 +486,8 @@ body:not(.kmms-admin) .admin-only{display:none !important}
     g.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
     const sw = g.querySelector('#kgSwitch');
     if (sw) sw.onclick = () => showLogin('login');
+    const gb = g.querySelector('#kgGuest');
+    if (gb) gb.onclick = () => enterDemo();
   }
 
   // 아이디만 입력하면 뒤에 내부용 주소를 붙여 로그인 계정(이메일 형식)으로 씀. 이메일을 그대로 입력해도 됨.
@@ -519,6 +529,7 @@ body:not(.kmms-admin) .admin-only{display:none !important}
   }
 
   async function onSession(s) {
+    if (demoMode) return; // 체험 모드 중에는 로그인 상태 변화를 무시
     session = s;
     ready = false;
     clearInterval(pollTimer);
@@ -659,6 +670,7 @@ body:not(.kmms-admin) .admin-only{display:none !important}
 
   async function uploadExam(round, file) {
     // file: { name, dataUrl } — 시험지 파일을 비공개 저장소에 올림 (사진은 PDF로 바꿔서)
+    if (demoMode) { toast('체험(guest) 모드에서는 시험지를 올릴 수 없어요.'); return false; }
     if (!ready || !round || !file || !file.dataUrl) return false;
     try {
       const { blob, ext } = await toPdfBlob(file);
@@ -774,12 +786,79 @@ body:not(.kmms-admin) .admin-only{display:none !important}
     if (t.closest('#examViewerNewTab')) { if (viewingUrl) window.open(viewingUrl, '_blank'); }
   });
 
+  /* ---------- guest 체험 모드 (모든 데이터가 가짜, 서버·GitHub·AI에 아무것도 보내지 않음) ---------- */
+
+  // 가짜 학생·채점 기록·재시험·코멘트를 만듦. 시험지 회차(유형·단원)는 이미 GitHub에 공개된 공용 파일(rounds-shared.json)을 씀.
+  async function buildDemoState() {
+    let shared = [];
+    try { shared = await (await fetch('rounds-shared.json', { cache: 'no-store' })).json(); } catch (e) { /* 파일이 없으면 회차 없이 시작 */ }
+    const rounds = (Array.isArray(shared) ? shared : []).filter(r => !r.individual && !/입학/.test(r.title || '')).map(r => {
+      const { examFile, studentId, examPath, examName, hintName, studentName, ...rest } = r;
+      return rest;
+    });
+    let seed = 20261021;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const pickN = (total, n) => { const s = new Set(); while (s.size < Math.min(n, total)) s.add(1 + Math.floor(rnd() * total)); return [...s].sort((a, b) => a - b); };
+    // 이름은 전부 옛이야기 속 인물(가상). 반·담당 선생님은 실제 앱 목록과 같은 형식
+    const people = [
+      ['홍길동', '고1', 'TH1-BETA', '목윤재', '가상고'], ['성춘향', '고1', 'MH1-GAMMA', '목윤재', '가상고'], ['이몽룡', '고1', 'TH1-ALPHA', '차성빈', '가상고'],
+      ['임꺽정', '고2', 'MH2-ALPHA', '차성빈', '가상고'], ['장보고', '고2', 'MH2-GAMMA', '방희진', '가상고'], ['유관순', '고2', 'TH2-BETA', '방희진', '가상고'],
+      ['심청', '중3', 'MM3-BETA', '목윤재', '가상중'], ['변학도', '중3', 'TM3-GAMMA', '목윤재', '가상중'],
+      ['흥부', '중2', 'MM2-GAMMA', '문태민', '가상중'], ['놀부', '중2', 'TM2-GAMMA', '문태민', '가상중'],
+      ['콩쥐', '중1', 'MM1-BETA', '문태민', '가상중'], ['팥쥐', '중1', 'TM1-GAMMA', '문태민', '가상중'],
+    ];
+    const students = people.map((p, i) => ({ id: 'demo_s' + (i + 1), name: p[0], grade: p[1], class: p[2], teacher: p[3], school: p[4] }));
+    const results = [], retests = [], teacherNotes = {}, studentDone = {}, tbResults = [];
+    let n = 0;
+    students.forEach((s, si) => {
+      rounds.filter(r => r.grade === s.grade).forEach(r => {
+        const wrong = pickN(r.total || 30, 2 + Math.floor(rnd() * 9));
+        results.push({ id: 'demo_r' + (++n), studentId: s.id, roundId: r.id, wrong });
+        if (rnd() < 0.4) {
+          const still = wrong.filter(() => rnd() < 0.4);
+          const d = new Date(r.date + 'T00:00:00'); d.setDate(d.getDate() + 3);
+          retests.push({ id: 'demo_t' + n, studentId: s.id, roundId: r.id, date: d.toISOString().slice(0, 10), stillWrong: still });
+        }
+      });
+      if (si % 3 === 0) teacherNotes[s.id] = `${s.name} 학생은 이번 기간 꾸준히 문제를 풀어 왔고, 틀린 문항을 스스로 다시 확인하는 습관이 생기고 있습니다. (체험용 가짜 코멘트)`;
+      if (si < 2) studentDone[s.id] = true;
+      const book = (typeof TB_BOOKS !== 'undefined' ? TB_BOOKS : []).find(b => b.grade === s.grade);
+      if (book && si % 2 === 0) {
+        const all = book.types.flatMap(t => t.problems || []);
+        if (all.length) {
+          const wrong = []; for (let k = 0; k < 10; k++) wrong.push(all[Math.floor(rnd() * all.length)]);
+          tbResults.push({ id: 'demo_b' + si, studentId: s.id, bookId: book.id, wrong: [...new Set(wrong)].sort((a, b) => a - b) });
+        }
+      }
+    });
+    return {
+      students, rounds, results, retests, teacherNotes, gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {},
+      textbook: { books: [], results: tbResults, notes: {}, hidden: {}, ai: {} },
+      sharedRoundIds: [], studentDone, studentMemo: {}, studentMemoRetest: {}, reportLog: [], examUploads: [],
+    };
+  }
+
+  async function enterDemo() {
+    demoMode = true; ready = false; staff = null; session = null;
+    clearTimeout(pushTimer); clearInterval(pollTimer);
+    const box = document.querySelector('#kmmsGate .kg-box');
+    if (box) box.innerHTML = '<h1>체험 화면 준비 중…</h1><p class="kg-sub">가짜 데이터를 만들고 있어요.</p>';
+    state = await buildDemoState(); // 이 컴퓨터에 저장된 실제 데이터 대신 가짜 데이터로 바꿔 끼움 (저장은 하지 않음)
+    document.body.classList.remove('kmms-admin');
+    document.body.classList.add('kmms-demo');
+    closeGate();
+    renderChip();
+    if (typeof refreshTeacherSelects === 'function') refreshTeacherSelects();
+    if (typeof renderAll === 'function') renderAll();
+    toast('체험(guest) 모드예요. 모든 데이터는 가짜이고 저장되지 않아요.');
+  }
+
   /* ---------- 시작 ---------- */
 
   function hookSave() {
     if (typeof saveState !== 'function' || saveState.__kmms) return;
     const orig = saveState;
-    const wrapped = function () { orig.apply(this, arguments); schedulePush(); };
+    const wrapped = function () { if (demoMode) return; orig.apply(this, arguments); schedulePush(); }; // 체험 모드는 저장도 서버 전송도 안 함
     wrapped.__kmms = true;
     saveState = wrapped; // eslint-disable-line no-global-assign
     if (typeof renderRounds === 'function') {
@@ -819,7 +898,8 @@ body:not(.kmms-admin) .admin-only{display:none !important}
     uploadExam, stageExam, attachStaged, viewExam, push, poll,
     get ready() { return ready; }, get staff() { return staff; },
     // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
-    get teacherName() { return staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },
+    get teacherName() { return !demoMode && staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },
+    get demo() { return demoMode; },
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
