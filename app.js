@@ -246,12 +246,13 @@ ${Object.keys(gradeUnits).map(g => '[' + g + ']\n' + gradeUnits[g].map(u => '- '
 
 시험지 맨 위 제목에 "9월 5주차"처럼 주차가 인쇄돼 있으면, 그 주차를 week에 "9-5" 형식(월-주차 숫자)으로, 시험지에 인쇄된 제목을 printedTitle에 그대로 적어주세요. 주차가 인쇄돼 있지 않으면 week는 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
 
-시험지에 학년이 인쇄돼 있으면(제목이나 머리글의 "고1", "중2", "초5-1", "중1 LEVEL TEST" 같은 표기) 그 학년을 grade에 "초3"~"고3" 중 하나로("고1" 형식) 적어주세요. 학년이 안 보이면 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
-시험지에 실시일자(예: 2026.09.17)가 인쇄돼 있으면 date에 "YYYY-MM-DD" 형식으로, 없거나 "-"이면 빈 문자열("")로 적어주세요.
+이 시험지가 몇 학년 교육과정인지 반드시 grade에 "초3"~"고3" 중 하나로("고1" 형식) 적어주세요. 제목이나 머리글에 학년이 인쇄돼 있으면("고1", "중2", "초5-1", "중1 LEVEL TEST" 같은 표기) 그대로 따르고 gradeBasis에 "printed"를, 인쇄돼 있지 않으면 문항 내용이 속한 대한민국 2022 개정 교육과정(단원·개념·난이도)을 보고 가장 알맞은 학년 하나를 판단해서 gradeBasis에 "content"를 적어주세요. grade는 절대 비워두지 마세요 (여러 학년에 걸친 시험지면 문항 대부분이 속한 학년으로).
+시험지에 실시일자(예: 2026.09.17)가 인쇄돼 있으면 date에 "YYYY-MM-DD" 형식으로, 없거나 "-"이면 빈 문자열("")로 적어주세요 (추측으로 채우지 마세요).
 
 아래 JSON 형식으로만 응답하세요. 다른 설명이나 마크다운 없이 JSON 객체만 출력하세요:
 {
   "grade": "고1",
+  "gradeBasis": "printed",
   "date": "2026-09-17",
   "week": "9-5",
   "printedTitle": "[캐치유] 9월 5주차",
@@ -290,9 +291,10 @@ function applyPrintedGrade(json) {
   const prev = sel.value;
   sel.value = g;
   sel.dispatchEvent(new Event('change', { bubbles: true }));
+  const how = json.gradeBasis === 'content' ? '문항 내용(교육과정)을 보고' : '시험지에 적힌 대로';
   return prev
-    ? ` · 시험지에 적힌 학년(${g})으로 바꿨어요 (골라둔 ${prev}와 달라서 확인해주세요).`
-    : ` · 시험지에 적힌 학년 ${g}을(를) 자동으로 선택했어요.`;
+    ? ` · ${how} 학년을 ${g}(으)로 바꿨어요 (골라둔 ${prev}와 달라서 확인해주세요).`
+    : ` · ${how} 학년을 ${g}(으)로 자동 선택했어요.`;
 }
 // 시험지에 인쇄된 실시일자(YYYY-MM-DD) — 오늘 기준 너무 먼 날짜(예전 양식에 남은 날짜 등)는 믿지 않음
 function printedDateOf(json) {
@@ -335,7 +337,7 @@ function applyPrintedWeek(json) {
 function maybeAutoSaveRound(status) {
   if (editingRoundId) return false;
   if (!document.getElementById('roundGrade').value || !document.getElementById('roundDate').value) {
-    status.textContent += ' · 시험지에서 학년·날짜를 못 읽었어요. 직접 고른 뒤 "회차 저장"을 눌러주세요.';
+    status.textContent += ' · 학년을 판단하지 못했어요. 학년을 고른 뒤 "회차 저장"을 눌러주세요.';
     return false;
   }
   document.getElementById('roundForm').requestSubmit();
