@@ -1276,7 +1276,86 @@ function examCellHtml(r) {
   return `${local} ${up}`;
 }
 
+// 재시험지 칸: 재시험지(문제) + 빠른정답 PDF. 둘 다 올려둬야 학생별 재시험지가 만들어짐
+function retestCellHtml(r) {
+  const can = window.KMMS && !window.KMMS.demo;
+  const part = (kind, label, path) => {
+    const btn = can ? `<button class="icon-btn" data-exam-upload="${r.id}" data-kind="${kind}">${path ? '교체' : '올리기'}</button>` : '';
+    return `<div>${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}</div>`;
+  };
+  return part('retest', '재시험지', r.retestPath) + part('retestAns', '빠른정답', r.retestAnsPath);
+}
+
+/* ===== 채점 입력: 주간 시험지 업로드 현황 (중1~고2) ===== */
+let wsWeekOffset = 0;
+const WS_GRADES = ['중1', '중2', '중3', '고1', '고2'];
+function wsDateOf(offset) {
+  const d = new Date(); d.setDate(d.getDate() + offset * 7);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function renderWeeklyStatus() {
+  const card = document.getElementById('weeklyStatusCard');
+  if (!card) return;
+  if (typeof appScope === 'function' && appScope() === 'entrance') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const label = dateToWeekLabel(wsDateOf(wsWeekOffset));
+  document.getElementById('wsLabel').textContent = label + (wsWeekOffset === 0 ? ' (이번 주)' : '');
+  const can = window.KMMS && !window.KMMS.demo;
+  const all = scopedRounds().filter(r => !r.individual && dateToWeekLabel(r.date) === label);
+  const chip = (r, name, path, upAttrs) => `<span class="ws-chip">${name} <span class="${path ? 'ws-ok' : 'ws-no'}">${path ? '됨' : '안 됨'}</span>${can ? ` <button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</span>`;
+  document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
+    const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
+    const body = rs.length ? rs.map(r => `<div class="ws-round"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
+      ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`)}
+      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`)}
+      ${chip(r, '정답', r.retestAnsPath, `data-exam-upload="${r.id}" data-kind="retestAns"`)}</div>`).join('')
+      : '<div class="ws-round field-hint">이 주 시험지 회차가 없어요</div>';
+    return `<div class="ws-grade"><b>${g}</b>${body}</div>`;
+  }).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const go = n => { wsWeekOffset = n; renderWeeklyStatus(); };
+  document.getElementById('wsPrev').addEventListener('click', () => go(wsWeekOffset - 1));
+  document.getElementById('wsNext').addEventListener('click', () => go(wsWeekOffset + 1));
+  document.getElementById('wsToday').addEventListener('click', () => go(0));
+});
+
+/* ===== 채점 후 학생별 재시험지 자동 생성 ===== */
+let retestGenTimer = null, retestGenSeq = 0, retestGenUrl = '';
+function todayText() { const d = new Date(); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
+function renderRetestGen(html) { const w = document.getElementById('retestGenWrap'); if (w) w.innerHTML = html; }
+function scheduleRetestGen(round, student, wrong) {
+  clearTimeout(retestGenTimer);
+  retestGenSeq++;
+  if (!wrong.length) { renderRetestGen(''); return; }
+  if (!round.retestPath) {
+    const can = window.KMMS && !window.KMMS.demo;
+    renderRetestGen(`<div class="field-hint">이 회차는 재시험지가 아직 없어요. ${can ? `<button class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 올리기</button> <button class="icon-btn" data-exam-upload="${round.id}" data-kind="retestAns">빠른정답 올리기</button>` : ''}</div>`);
+    return;
+  }
+  if (!(window.KMMS && window.KMMS.ready && window.RETEST)) return;
+  renderRetestGen('<div class="field-hint">재시험지를 만드는 중…</div>');
+  const seq = retestGenSeq;
+  retestGenTimer = setTimeout(async () => {
+    try {
+      const paperBuf = await window.KMMS.fetchBuf(round.retestPath);
+      const ansBuf = round.retestAnsPath ? await window.KMMS.fetchBuf(round.retestAnsPath) : null;
+      const res = await window.RETEST.build({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: wrong, title: `${round.grade || ''} ${roundLabel(round)} 재시험`.trim(), studentName: student.name, dateText: todayText() });
+      if (seq !== retestGenSeq) return;
+      if (retestGenUrl) URL.revokeObjectURL(retestGenUrl);
+      retestGenUrl = URL.createObjectURL(res.blob);
+      const miss = res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '';
+      const noAns = round.retestAnsPath ? '' : '<div class="field-hint">빠른정답 PDF가 없어 정답 페이지는 빠졌어요.</div>';
+      renderRetestGen(`<b>${escapeHtml(student.name)} 재시험지</b> (${res.pageCount}쪽) <a href="${retestGenUrl}" target="_blank" rel="noopener">열기·인쇄</a> <a href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">저장</a>${miss}${noAns}`);
+    } catch (e) {
+      console.warn('retest gen failed', e);
+      if (seq === retestGenSeq) renderRetestGen(`<div class="field-hint">재시험지를 만들지 못했어요: ${escapeHtml(e.message || String(e))}</div>`);
+    }
+  }, 1200);
+}
+
 function renderRounds() {
+  renderWeeklyStatus();
   const wrap = document.getElementById('roundListWrap');
   populateRoundGradeFilter();
   const gradeFilter = document.getElementById('roundGradeFilter')?.value || '';
@@ -1297,13 +1376,14 @@ function renderRounds() {
         <td>${diffBadge}</td>
         <td>${renderTypesByUnit(r.types)}</td>
         <td>${examCellHtml(r)}</td>
+        <td>${retestCellHtml(r)}</td>
         <td class="row-actions">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
           <button class="icon-btn" data-del-round="${r.id}">삭제</button>
         </td>
       </tr>`;
     }).join('');
-    wrap.innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>학년·회차</th><th>이름</th><th>날짜</th><th>문항수</th><th>전체 난이도</th><th>유형</th><th>시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    wrap.innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>학년·회차</th><th>이름</th><th>날짜</th><th>문항수</th><th>전체 난이도</th><th>유형</th><th>시험지</th><th>재시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   wrap.querySelectorAll('[data-del-round]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.delRound;
@@ -1884,6 +1964,8 @@ function renderStudentResetPanel() {
 
 function renderScoreTab() {
   renderStudentResetPanel();
+  renderWeeklyStatus();
+  clearTimeout(retestGenTimer); retestGenSeq++; renderRetestGen('');
   const round = currentScoreRound();
   const wrap = document.getElementById('scoreGridWrap');
   if (!round) {
@@ -2017,6 +2099,7 @@ function saveCurrentScore(silent) {
   // 학생별 채점 현황 패널을 바로 갱신해서, 저장 후 시간차 없이 곧바로 반영되게 함
   renderStudentResetPanel();
   if (!silent) toast(`${student.name} 학생의 채점을 저장했어요.`);
+  scheduleRetestGen(round, student, wrong.slice().sort((a, b) => a - b));
   return true;
 }
 

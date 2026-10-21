@@ -749,7 +749,41 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
 
   // 이미 만든 회차에 시험지(PDF·이미지)를 올리거나 교체
   const MAX_EXAM_UPLOAD = 20 * 1024 * 1024;
-  function pickExamFile(roundId) {
+  // 재시험지(retest) · 재시험 빠른정답(retestAns)도 같은 방식으로 회차에 붙임
+  const AUX_FIELDS = { retest: ['retestPath', 'retestName'], retestAns: ['retestAnsPath', 'retestAnsName'] };
+  async function uploadAux(round, kind, file) {
+    if (demoMode) { toast('체험(guest) 모드에서는 올릴 수 없어요.'); return false; }
+    const f = AUX_FIELDS[kind];
+    if (!ready || !round || !f || !file || !file.dataUrl) return false;
+    try {
+      const { blob, ext } = await toPdfBlob(file);
+      const path = `retests/${round.id}/${kind}_${Date.now()}.${ext}`;
+      const { error } = await sb.storage.from('exams').upload(path, blob, { contentType: blob.type || undefined, upsert: false });
+      if (error) throw error;
+      const old = round[f[0]];
+      round[f[0]] = path; round[f[1]] = file.name;
+      if (old) sb.storage.from('exams').remove([old]).catch(() => {});
+      saveState();
+      toast((kind === 'retest' ? '재시험지' : '재시험 빠른정답') + '를 서버에 올렸어요.');
+      if (typeof renderRounds === 'function') renderRounds();
+      if (typeof renderScoreTab === 'function') renderScoreTab();
+      return true;
+    } catch (e) {
+      console.warn('aux upload failed', e);
+      toast('업로드 실패: ' + (e.message || e));
+      return false;
+    }
+  }
+  // 저장소 파일을 받아서 ArrayBuffer로 돌려줌 (재시험지 생성용, 같은 파일은 다시 받지 않음)
+  const bufCache = {};
+  async function fetchBuf(path) {
+    if (!ready || !path) return null;
+    if (bufCache[path]) return bufCache[path];
+    const { data, error } = await sb.storage.from('exams').download(path);
+    if (error) throw error;
+    return (bufCache[path] = await data.arrayBuffer());
+  }
+  function pickExamFile(roundId, kind) {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'application/pdf,image/*';
     input.onchange = () => {
@@ -760,6 +794,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       fr.onload = async () => {
         const r = state.rounds.find(x => x.id === roundId);
         if (!r) return;
+        if (kind && AUX_FIELDS[kind]) { toast('올리는 중…'); await uploadAux(r, kind, { name: f.name, dataUrl: fr.result }); return; }
         toast('시험지를 올리는 중…');
         if (await uploadExam(r, { name: f.name, dataUrl: fr.result })) viewExam(roundId);
       };
@@ -774,7 +809,15 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     const a = t.closest('[data-exam-open]');
     if (a) { e.preventDefault(); viewExam(a.dataset.examOpen); return; }
     const u = t.closest('[data-exam-upload]');
-    if (u) { e.preventDefault(); pickExamFile(u.dataset.examUpload); return; }
+    if (u) { e.preventDefault(); pickExamFile(u.dataset.examUpload, u.dataset.kind); return; }
+    const av = t.closest('[data-aux-open]');
+    if (av) {
+      e.preventDefault();
+      const r = state.rounds.find(x => x.id === av.dataset.auxOpen);
+      const f = r && AUX_FIELDS[av.dataset.kind];
+      if (f && r[f[0]]) viewPath(r[f[0]], (r.title || '') + (av.dataset.kind === 'retest' ? ' · 재시험지' : ' · 재시험 정답'));
+      return;
+    }
     const up = t.closest('[data-upload-open]');
     if (up) {
       e.preventDefault();
@@ -895,7 +938,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   }
 
   window.KMMS = {
-    uploadExam, stageExam, attachStaged, viewExam, push, poll,
+    uploadExam, uploadAux, fetchBuf, stageExam, attachStaged, viewExam, push, poll,
     get ready() { return ready; }, get staff() { return staff; },
     // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
     get teacherName() { return !demoMode && staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },

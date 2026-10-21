@@ -79,6 +79,17 @@ button { font-family: inherit; }
 #app { max-width: 900px; margin: 0 auto; padding: 20px 16px 60px; display: flex; flex-direction: column; gap: 16px; }
 .tab-panel { display: none; flex-direction: column; gap: 16px; }
 .tab-panel.active { display: flex; }
+/* 채점 입력: 넓은 화면에서는 왼쪽에 주간 업로드 현황 */
+@media (min-width: 1100px) {
+  #panel-score.active { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
+  #weeklyStatusCard { grid-column: 1; grid-row: 1 / span 3; }
+  #panel-score > .card:not(#weeklyStatusCard) { grid-column: 2; }
+}
+.ws-grade { margin-bottom: 10px; }
+.ws-round { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.ws-chip { display: inline-flex; align-items: center; gap: 4px; margin: 2px 8px 2px 0; white-space: nowrap; }
+.ws-ok { color: #1a7f37; font-weight: 700; }
+.ws-no { color: #c0392b; font-weight: 700; }
 
 .card {
   background: var(--surface-card);
