@@ -336,6 +336,47 @@ function applyPrintedWeek(json) {
   return ` · 시험지에 적힌 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.` + note;
 }
 
+// 토·일요일에 올린 시험지에 주차·날짜가 없으면 "올린 날 이후 금요일"로 추측하지 않고 몇 주차 시험지인지 물어봄
+// (초등은 날짜별 회차라 당일로 정하고, 입학테스트는 주차를 쓰지 않으므로 묻지 않음)
+function needsWeekAsk(json) {
+  if (editingRoundId || appScope() === 'entrance') return false;
+  const g = document.getElementById('roundGrade').value;
+  if (!g || isElementaryGrade(g)) return false;
+  const day = new Date().getDay();
+  if (day !== 0 && day !== 6) return false;
+  if (/^\s*(\d{1,2})\s*[-월]\s*(\d)/.test(String(json.week || ''))) return false;
+  return !printedDateOf(json);
+}
+// 주차를 고르는 작은 창 — 고르면 그 주 금요일 날짜(YYYY-MM-DD)를, "건너뛰기"면 빈 문자열을 돌려줌
+function askWhichWeek() {
+  return new Promise(resolve => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const base = new Date(today); base.setDate(today.getDate() + (5 - today.getDay() + 7) % 7); // 다가오는 금요일
+    let opts = '<option value="">주차를 선택하세요</option>';
+    for (let i = -2; i <= 5; i++) {
+      const d = new Date(base); d.setDate(base.getDate() + i * 7);
+      opts += `<option value="${toISODate(d)}">${dateToWeekLabel(toISODate(d))} · ${d.getMonth() + 1}/${d.getDate()}(금)</option>`;
+    }
+    const wrap = document.createElement('div');
+    wrap.id = 'askWeekModal';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
+    wrap.innerHTML = `<div style="background:#fff;border-radius:10px;padding:20px;width:100%;max-width:360px;font-family:inherit;">
+      <div style="font-size:17px;font-weight:700;margin-bottom:6px;">몇 주차 시험지인가요?</div>
+      <div class="field-hint" style="margin-bottom:12px;">주말에 올렸고 시험지에 주차·날짜가 없어서 직접 알려주셔야 해요.</div>
+      <select id="askWeekSel" style="width:100%;padding:10px;font-size:15px;margin-bottom:14px;">${opts}</select>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" class="btn ghost" id="askWeekSkip">건너뛰기 (다음 금요일)</button>
+        <button type="button" class="btn primary" id="askWeekOk" disabled>확인</button>
+      </div></div>`;
+    document.body.appendChild(wrap);
+    const sel = wrap.querySelector('#askWeekSel'), ok = wrap.querySelector('#askWeekOk');
+    const done = v => { wrap.remove(); resolve(v); };
+    sel.addEventListener('change', () => { ok.disabled = !sel.value; });
+    ok.addEventListener('click', () => done(sel.value));
+    wrap.querySelector('#askWeekSkip').addEventListener('click', () => done(''));
+  });
+}
+
 // 분석이 끝나면 (새 시험지이고 학년·날짜가 정해져 있으면) 항상 회차로 자동 저장함
 function maybeAutoSaveRound(status) {
   if (editingRoundId) return false;
@@ -389,7 +430,14 @@ async function analyzeExamWithAI() {
     pendingCompetency = (json.competency && typeof json.competency === 'object') ? json.competency : null;
     updateCoverageHint();
     let weekNote = applyPrintedGrade(json); // 시험지에 적힌 학년을 먼저 채우고, 그 학년 기준으로 날짜를 맞춤
-    weekNote += applyPrintedWeek(json);
+    if (needsWeekAsk(json)) {
+      status.textContent = '몇 주차 시험지인지 알려주세요…';
+      const picked = await askWhichWeek();
+      if (picked) { setRoundDate(picked); weekNote += ` · 선택하신 ${dateToWeekLabel(picked)}(${picked})로 정했어요.`; }
+      else weekNote += applyPrintedWeek(json);
+    } else {
+      weekNote += applyPrintedWeek(json);
+    }
     if (isElementaryGrade(document.getElementById('roundGrade').value)) {
       pendingDifficulty = elementaryFixedDifficulty(parseInt(document.getElementById('roundTotal').value, 10) || total);
       weekNote += ' · 초등 시험지라 난이도는 "중하"로 고정했어요.';
