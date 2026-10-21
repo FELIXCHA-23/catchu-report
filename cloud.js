@@ -295,6 +295,74 @@
     return Object.keys(flatten()).length > 0;
   }
 
+  // 첫 연결 때, 이 컴퓨터에만 있는 학생이 서버에 같은 이름(같은 종류 — 입학테스트 반이냐 정규 반이냐)의 학생과 겹치면
+  // 새 학생으로 올리지 않고 서버의 그 학생에 연결함: 이 컴퓨터에서 쌓은 기록(채점 결과·재시험·교재 오답·메모 등)을
+  // 서버 학생에게 옮겨 붙임. 같은 학생·같은 시험의 기록이 양쪽에 있으면 서버 것을 남김(교재 오답 번호는 합침).
+  // 입학테스트와 캐치유(정규)는 이름이 같아도 서로 다른 학생으로 따로 둠.
+  function linkSameNameStudents() {
+    const studs = Array.isArray(state.students) ? state.students : [];
+    const onServer = s => synced[mkKey('students', String(s.id))] !== undefined;
+    const kindOf = s => (s.class === '입학테스트' ? 'E' : 'R');
+    const refCount = id => {
+      let n = 0;
+      ['results', 'retests', 'reportLog'].forEach(c => { (state[c] || []).forEach(x => { if (x.studentId === id) n++; }); });
+      ((state.textbook && state.textbook.results) || []).forEach(x => { if (x.studentId === id) n++; });
+      ['teacherNotes', 'studentMemo', 'studentMemoRetest', 'studentDone', 'gradeOverrides'].forEach(m => { if (state[m] && state[m][id] !== undefined) n++; });
+      return n;
+    };
+    const groups = new Map();
+    studs.forEach(s => { const k = (s.name || '') + '\u0001' + kindOf(s); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
+    const idMap = {};
+    groups.forEach(list => {
+      const servers = list.filter(onServer), locals = list.filter(s => !onServer(s));
+      if (!servers.length || !locals.length) return;
+      const target = servers.slice().sort((a, b) => refCount(b.id) - refCount(a.id))[0]; // 서버 쪽이 여럿이면 기록이 가장 많은 학생에게
+      locals.forEach(l => { idMap[l.id] = target.id; });
+    });
+    const oldIds = Object.keys(idMap);
+    if (!oldIds.length) return 0;
+
+    // 결과: 같은 학생·같은 시험이 이미 있으면 서버 것을 남기고 이 컴퓨터 것은 버림
+    state.results = (state.results || []).filter(r => {
+      const nid = idMap[r.studentId]; if (!nid) return true;
+      if (state.results.some(x => x !== r && x.studentId === nid && x.roundId === r.roundId)) return false;
+      r.studentId = nid; return true;
+    });
+    state.retests = (state.retests || []).filter(r => {
+      const nid = idMap[r.studentId]; if (!nid) return true;
+      if (state.retests.some(x => x !== r && x.studentId === nid && x.roundId === r.roundId && x.date === r.date)) return false;
+      r.studentId = nid; return true;
+    });
+    if (state.textbook && Array.isArray(state.textbook.results)) {
+      state.textbook.results = state.textbook.results.filter(r => {
+        const nid = idMap[r.studentId]; if (!nid) return true;
+        const ex = state.textbook.results.find(x => x !== r && x.studentId === nid && x.bookId === r.bookId);
+        if (ex) { ex.wrong = Array.from(new Set([...(ex.wrong || []), ...(r.wrong || [])])).sort((a, b) => a - b); return false; } // 틀린 번호는 합침
+        r.studentId = nid; return true;
+      });
+    }
+    (state.reportLog || []).forEach(r => { if (idMap[r.studentId]) r.studentId = idMap[r.studentId]; });
+    (state.rounds || []).forEach(r => { if (r.studentId && idMap[r.studentId]) r.studentId = idMap[r.studentId]; });
+    // 학생 id를 키로 쓰는 메모·표시: 서버 학생에게 이미 있으면 서버 것을 남기고, 없으면 옮겨 붙임
+    ['teacherNotes', 'studentMemo', 'studentMemoRetest', 'studentDone', 'gradeOverrides', 'difficultyOverrides', 'reportHidden'].forEach(m => {
+      const obj = state[m]; if (!obj) return;
+      oldIds.forEach(o => { if (o in obj) { const n = idMap[o]; if (!(n in obj)) obj[n] = obj[o]; delete obj[o]; } });
+    });
+    // 교재 메모·숨김·AI 분석: 키가 "학생id|교재id…" 형식
+    ['notes', 'hidden', 'ai'].forEach(m => {
+      const obj = state.textbook && state.textbook[m]; if (!obj) return;
+      Object.keys(obj).forEach(k => {
+        const bar = k.indexOf('|'); const sid = bar === -1 ? k : k.slice(0, bar);
+        if (!idMap[sid]) return;
+        const nk = idMap[sid] + (bar === -1 ? '' : k.slice(bar));
+        if (!(nk in obj)) obj[nk] = obj[k];
+        delete obj[k];
+      });
+    });
+    state.students = studs.filter(s => !(s.id in idMap)); // 이 컴퓨터의 중복 학생은 올리지 않고 버림 (서버 학생에 연결됨)
+    return oldIds.length;
+  }
+
   async function firstLink() {
     // 서버 데이터 전부 받기
     const { count } = await sb.from('records').select('collection', { count: 'exact', head: true });
@@ -318,11 +386,15 @@
     }
     synced = {}; since = '';
     await pull(true, true);
+    const linked = linkSameNameStudents(); // 이름이 같은 학생은 서버 학생에 연결 (새로 만들지 않음)
     const h = hashes(flatten());
     const toUpload = Object.keys(h).filter(k => synced[k] !== h[k]).length; // 서버에 없어서 올릴 것들(onSession 끝에서 올라감)
     writeLocal();
     saveSyncMeta();
-    if (localKeys.length) toast(toUpload ? `이 컴퓨터에만 있던 데이터 ${toUpload}개 항목을 서버에 합쳐서 올려요. (백업 파일도 내려받았어요)` : '이 컴퓨터의 데이터는 이미 서버에 모두 있어요.');
+    if (localKeys.length) {
+      toast((linked ? `이름이 같은 학생 ${linked}명은 서버의 학생에 연결했어요 (중복으로 만들지 않아요). ` : '') +
+        (toUpload ? `이 컴퓨터에만 있던 데이터 ${toUpload}개 항목을 서버에 합쳐서 올려요. (백업 파일도 내려받았어요)` : '이 컴퓨터의 데이터는 이미 서버에 모두 있어요.'));
+    }
   }
 
   /* ---------- 로그인 화면 ---------- */
