@@ -13,7 +13,7 @@
   const BULK_DELETE_CONFIRM = 20;           // 한 번에 이 개수 이상 지우면 확인을 받음
 
   // 서버로 동기화하는 항목. 배열은 항목마다 id로, 객체는 키마다 한 줄로 저장함.
-  const ARRAYS = [['students'], ['rounds'], ['results'], ['retests'], ['reportLog'], ['textbook', 'results']];
+  const ARRAYS = [['students'], ['rounds'], ['results'], ['retests'], ['reportLog'], ['textbook', 'results'], ['examUploads']];
   const MAPS = [['teacherNotes'], ['gradeOverrides'], ['difficultyOverrides'], ['reportHidden'], ['studentDone'], ['studentMemo'], ['studentMemoRetest'],
     ['textbook', 'notes'], ['textbook', 'hidden'], ['textbook', 'ai']];
 
@@ -539,12 +539,57 @@
 
   /* ---------- 시험지 PDF (비공개 저장소) ---------- */
 
+  // 사진(이미지)으로 올라온 시험지는 PDF 한 장으로 바꿔서 보관. PDF는 그대로.
+  async function toPdfBlob(file) {
+    if (/^data:image\//.test(file.dataUrl || '') && window.jspdf) {
+      try {
+        const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = file.dataUrl; });
+        const scale = Math.min(1, 3000 / Math.max(img.naturalWidth, img.naturalHeight));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.naturalWidth * scale); cv.height = Math.round(img.naturalHeight * scale);
+        const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(img, 0, 0, cv.width, cv.height);
+        const w = 210, h = Math.round((210 * cv.height / cv.width) * 100) / 100;
+        const pdf = new window.jspdf.jsPDF({ unit: 'mm', orientation: h >= w ? 'portrait' : 'landscape', format: [Math.min(w, h), Math.max(w, h)] });
+        pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
+        return { blob: pdf.output('blob'), ext: 'pdf' };
+      } catch (e) { console.warn('image to pdf failed', e); }
+    }
+    const blob = await (await fetch(file.dataUrl)).blob();
+    return { blob, ext: (file.name.match(/\.([A-Za-z0-9]+)$/) || [, 'bin'])[1].toLowerCase() };
+  }
+
+  // 분석을 요청하며 올린 시험지를 바로 보관함(requests/)에 저장하고 목록(examUploads)에 남김. 회차를 저장하면 그 회차에 연결됨.
+  async function stageExam(file) {
+    if (!ready || !file || !file.dataUrl) return null;
+    try {
+      const { blob, ext } = await toPdfBlob(file);
+      const path = `requests/${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await sb.storage.from('exams').upload(path, blob, { contentType: blob.type || undefined, upsert: false });
+      if (error) throw error;
+      const rec = { id: 'eu_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: file.name, path, by: (staff && (staff.name || shownId(staff.email))) || '', at: Date.now(), roundId: '' };
+      if (!Array.isArray(state.examUploads)) state.examUploads = [];
+      state.examUploads.push(rec);
+      saveState();
+      renderUploads();
+      return rec;
+    } catch (e) {
+      console.warn('stage failed', e);
+      return null;
+    }
+  }
+  function attachStaged(round, rec) {
+    round.examPath = rec.path; round.examName = rec.name;
+    const u = (state.examUploads || []).find(x => x.id === rec.id);
+    if (u) u.roundId = round.id;
+    saveState();
+    if (typeof renderRounds === 'function') renderRounds();
+  }
+
   async function uploadExam(round, file) {
-    // file: { name, dataUrl } — 원본 파일 내용을 비공개 저장소에 올림
+    // file: { name, dataUrl } — 시험지 파일을 비공개 저장소에 올림 (사진은 PDF로 바꿔서)
     if (!ready || !round || !file || !file.dataUrl) return false;
     try {
-      const blob = await (await fetch(file.dataUrl)).blob();
-      const ext = (file.name.match(/\.([A-Za-z0-9]+)$/) || [, 'bin'])[1].toLowerCase();
+      const { blob, ext } = await toPdfBlob(file);
       const path = `rounds/${round.id}/${Date.now()}.${ext}`;
       const { error } = await sb.storage.from('exams').upload(path, blob, { contentType: blob.type || undefined, upsert: false });
       if (error) throw error;
@@ -566,32 +611,49 @@
   // 시험지 탭 안에서 바로 보여줌: 비공개 저장소에서 파일을 받아(로그인 권한으로) 화면에 띄움
   const examUrls = {};   // 경로 -> blob 주소 (같은 시험지는 다시 받지 않음)
   let viewingUrl = '';
-  async function viewExam(roundId) {
+  function viewExam(roundId) {
     const r = state.rounds.find(x => x.id === roundId);
     if (!r || !r.examPath) return;
+    return viewPath(r.examPath, r.title || r.examName || '');
+  }
+  async function viewPath(path, title) {
     const card = document.getElementById('examViewerCard');
-    if (!card) return;
+    if (!card || !path) return;
     const body = document.getElementById('examViewerBody');
-    document.getElementById('examViewerTitle').textContent = '시험지 보기 · ' + (r.title || r.examName || '');
+    document.getElementById('examViewerTitle').textContent = '시험지 보기 · ' + title;
     card.style.display = '';
     body.innerHTML = '<div class="field-hint">시험지를 불러오는 중…</div>';
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     try {
-      let url = examUrls[r.examPath];
+      let url = examUrls[path];
       if (!url) {
-        const { data, error } = await sb.storage.from('exams').download(r.examPath);
+        const { data, error } = await sb.storage.from('exams').download(path);
         if (error) throw error;
-        const isPdf = /\.pdf$/i.test(r.examPath);
+        const isPdf = /\.pdf$/i.test(path);
         url = URL.createObjectURL(isPdf ? new Blob([data], { type: 'application/pdf' }) : data);
-        examUrls[r.examPath] = url;
+        examUrls[path] = url;
       }
       viewingUrl = url;
-      body.innerHTML = /\.pdf$/i.test(r.examPath)
+      body.innerHTML = /\.pdf$/i.test(path)
         ? `<iframe src="${url}" title="시험지" style="width:100%; height:80vh; border:1px solid var(--border); border-radius:2px;"></iframe>`
         : `<img src="${url}" alt="시험지" style="max-width:100%; border:1px solid var(--border);">`;
     } catch (e) {
       body.innerHTML = `<div class="field-hint">시험지를 열지 못했어요: ${esc(e.message || e)}</div>`;
     }
+  }
+  // 분석 요청으로 올라왔지만 아직 회차에 연결되지 않은 시험지 목록
+  function renderUploads() {
+    const card = document.getElementById('examUploadsCard');
+    const list = document.getElementById('examUploadsList');
+    if (!card || !list) return;
+    const items = (state.examUploads || []).filter(u => !u.roundId).sort((a, b) => b.at - a.at);
+    if (!items.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    list.innerHTML = items.map(u => {
+      const d = new Date(u.at);
+      const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      return `<div class="inline-form" style="margin-bottom:6px;"><span>${esc(u.name)}</span><span class="field-hint">${esc(u.by || '')} · ${when}</span><a href="#" data-upload-open="${esc(u.id)}">시험지 보기</a></div>`;
+    }).join('');
   }
   function closeExamViewer() {
     const card = document.getElementById('examViewerCard');
@@ -629,6 +691,13 @@
     if (a) { e.preventDefault(); viewExam(a.dataset.examOpen); return; }
     const u = t.closest('[data-exam-upload]');
     if (u) { e.preventDefault(); pickExamFile(u.dataset.examUpload); return; }
+    const up = t.closest('[data-upload-open]');
+    if (up) {
+      e.preventDefault();
+      const rec = (state.examUploads || []).find(x => x.id === up.dataset.uploadOpen);
+      if (rec) viewPath(rec.path, rec.name);
+      return;
+    }
     if (t.closest('#examViewerClose')) { closeExamViewer(); return; }
     if (t.closest('#examViewerNewTab')) { if (viewingUrl) window.open(viewingUrl, '_blank'); }
   });
@@ -641,6 +710,10 @@
     const wrapped = function () { orig.apply(this, arguments); schedulePush(); };
     wrapped.__kmms = true;
     saveState = wrapped; // eslint-disable-line no-global-assign
+    if (typeof renderRounds === 'function') {
+      const origRender = renderRounds;
+      renderRounds = function () { origRender.apply(this, arguments); renderUploads(); }; // eslint-disable-line no-global-assign
+    }
   }
 
   function start() {
@@ -670,7 +743,7 @@
     window.addEventListener('beforeunload', e => { if (ready && pendingChanges) { e.preventDefault(); e.returnValue = ''; } });
   }
 
-  window.KMMS = { uploadExam, viewExam, get ready() { return ready; }, get staff() { return staff; }, push, poll };
+  window.KMMS = { uploadExam, stageExam, attachStaged, viewExam, get ready() { return ready; }, get staff() { return staff; }, push, poll };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

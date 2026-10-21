@@ -1206,6 +1206,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     prepareExamFileForAI(file).then(prepared => {
       prepared.fresh = true;
+      // 분석 요청으로 올린 시험지는 고르는 즉시 서버 보관함에 PDF로 저장 (회차를 저장하지 않아도 남음)
+      if (window.KMMS) prepared.stagedPromise = window.KMMS.stageExam(prepared);
       pendingExamFile = prepared;
       renderExamFileInfo();
       if (prepared.resized) toast(`사진이 커서 AI 분석용으로 ${(prepared.size / 1024 / 1024).toFixed(1)}MB로 줄였어요.`);
@@ -1278,8 +1280,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     saveState();
     // 새로 고른 시험지 파일은 서버의 비공개 저장소에도 올림 (로그인한 선생님만 볼 수 있음)
+    // 파일을 고른 순간 이미 보관함에 올려 두었으면(stagedPromise) 그 파일을 회차에 연결하고, 못 올렸으면 지금 올림
     const examToUpload = pendingExamFile && pendingExamFile.fresh ? pendingExamFile : null;
-    if (examToUpload && window.KMMS) window.KMMS.uploadExam(savedRound, examToUpload);
+    if (examToUpload && window.KMMS) {
+      Promise.resolve(examToUpload.stagedPromise).then(rec => rec ? window.KMMS.attachStaged(savedRound, rec) : window.KMMS.uploadExam(savedRound, examToUpload));
+    }
     pendingDifficulty = null;
     pendingCompetency = null;
     resetRoundForm();
