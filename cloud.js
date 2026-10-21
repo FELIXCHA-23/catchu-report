@@ -367,7 +367,8 @@
   function showLogin(mode, msg, ok) {
     const signup = mode === 'signup';
     const g = gate(`
-      <h1>KASTLEMATH MANAGEMENT SYSTEM</h1>
+      <h1>KMMS</h1>
+      <p class="kg-sub" style="margin-top:-2px;font-weight:600;color:#222">(KASTLEMATH MANAGEMENT SYSTEM)</p>
       <p class="kg-sub">${signup ? '선생님 계정 만들기 (원장 승인 후 사용 가능)' : '선생님 로그인'}</p>
       ${signup ? '<label>이름 (예: 차성빈)</label><input id="kgName" autocomplete="name">' : ''}
       <label>아이디</label><input id="kgEmail" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
@@ -722,7 +723,7 @@
     sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'kmms_auth' } });
     hookSave();
     injectStyle();
-    gate('<h1>KASTLEMATH MANAGEMENT SYSTEM</h1><p class="kg-sub">확인 중…</p>');
+    gate('<h1>KMMS</h1><p class="kg-sub">(KASTLEMATH MANAGEMENT SYSTEM) 확인 중…</p>');
     let first = true;
     sb.auth.onAuthStateChange((evt, s) => {
       if (evt === 'TOKEN_REFRESHED') { session = s; return; }

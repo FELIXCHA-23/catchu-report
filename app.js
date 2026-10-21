@@ -305,16 +305,19 @@ function printedDateOf(json) {
 }
 function applyPrintedWeek(json) {
   if (editingRoundId) return '';
-  if (isElementaryGrade(document.getElementById('roundGrade').value)) {
+  const gradeNow = document.getElementById('roundGrade').value;
+  if (isElementaryGrade(gradeNow)) {
     const pd = printedDateOf(json);
     if (pd) { setRoundDate(pd); return ` · 시험지에 적힌 날짜 ${pd}로 선택했어요.`; }
-    return ' (초등은 날짜별 회차라서 날짜를 확인해주세요)';
+    const d = defaultRoundDate(gradeNow); setRoundDate(d);
+    return ` · 시험지에 날짜가 없어서 올린 날(${d})로 정했어요.`;
   }
   const wk = String(json.week || '').match(/^\s*(\d{1,2})\s*[-월]\s*(\d)/);
   if (!wk) {
     const pd = printedDateOf(json);
     if (pd) { setRoundDate(pd); return ` · 시험지에 적힌 날짜 ${pd}로 선택했어요.`; }
-    return ' (시험지에 주차가 안 보여서 날짜는 직접 확인해주세요)';
+    const d = defaultRoundDate(gradeNow); setRoundDate(d);
+    return ` · 시험지에 주차·날짜가 없어서 올린 날 이후 가장 가까운 금요일(${d})로 정했어요.`;
   }
   const label = `${parseInt(wk[1], 10)}-${wk[2]}주차`;
   const titleInput = document.getElementById('roundTitle');
@@ -327,7 +330,7 @@ function applyPrintedWeek(json) {
   const dateSel = document.getElementById('roundDate');
   const opt = findFridayOptionForWeek(dateSel, label);
   // 날짜를 못 찾았으면 제목도 바꾸지 않음 (제목과 날짜가 서로 다른 주차를 가리키는 일이 없도록)
-  if (!opt) return ` (시험지의 ${label}에 맞는 최근 날짜를 못 찾았어요. 날짜를 직접 골라주세요)`;
+  if (!opt) { const d = defaultRoundDate(gradeNow); setRoundDate(d); return ` (시험지의 ${label}에 맞는 날짜를 못 찾아서 올린 날 이후 가장 가까운 금요일(${d})로 정했어요)`; }
   if ((!typedLabel || typedLabel !== label) && printed && weekRe.test(printed)) titleInput.value = printed;
   setRoundDate(opt.value);
   return ` · 시험지에 적힌 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.` + note;
@@ -699,13 +702,20 @@ function populateDailySelect(selectEl, keepValue) {
     if (d.getDay() >= 1 && d.getDay() <= 5) days.push(new Date(d));
   }
   const options = days.map(d => `<option value="${toISODate(d)}">${String(d.getMonth() + 1).padStart(2, '0')}월 ${String(d.getDate()).padStart(2, '0')}일 (${WEEKDAY_KO[d.getDay()]})</option>`);
-  if (keepValue && !days.some(d => toISODate(d) === keepValue)) {
-    options.unshift(`<option value="${keepValue}">${keepValue} (${weekdayKo(keepValue)})</option>`);
+  // 기본값은 당일 (주말이라 평일 목록에 없으면 따로 끼워 넣음)
+  const must = keepValue || toISODate(today);
+  if (!days.some(d => toISODate(d) === must)) {
+    options.unshift(`<option value="${must}">${must} (${weekdayKo(must)})</option>`);
   }
   selectEl.innerHTML = options.join('');
-  const def = new Date(today);
-  while (def.getDay() === 0 || def.getDay() === 6) def.setDate(def.getDate() + 1);
-  selectEl.value = keepValue || toISODate(def);
+  selectEl.value = must;
+}
+
+// 시험지에 주차·날짜가 없을 때 쓰는 기본 날짜 — 올리는 날 기준: 초등은 당일, 그 외는 오늘 이후 가장 가까운 금요일(오늘이 금요일이면 오늘)
+function defaultRoundDate(grade) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  if (!isElementaryGrade(grade)) t.setDate(t.getDate() + (5 - t.getDay() + 7) % 7);
+  return toISODate(t);
 }
 
 // 학년에 맞는 날짜 목록: 초등은 요일별(매일), 그 외는 금요일만
