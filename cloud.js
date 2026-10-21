@@ -120,7 +120,7 @@
       chip.id = 'kmmsChip';
       document.body.appendChild(chip);
     }
-    const who = staff.name || staff.email;
+    const who = staff.name || shownId(staff.email);
     chip.innerHTML = `<span class="kc-stat">☁ ${esc(statusText)}</span><span class="kc-who">${esc(who)}${staff.role === 'admin' ? ' (관리자)' : ''}</span>` +
       (staff.role === 'admin' ? '<button type="button" id="kmmsAdminBtn">계정 관리</button>' : '') +
       '<button type="button" id="kmmsLogoutBtn">로그아웃</button>';
@@ -368,18 +368,20 @@
       <h1>KASTLEMATH MANAGEMENT SYSTEM</h1>
       <p class="kg-sub">${signup ? '선생님 계정 만들기 (원장 승인 후 사용 가능)' : '선생님 로그인'}</p>
       ${signup ? '<label>이름 (예: 차성빈)</label><input id="kgName" autocomplete="name">' : ''}
-      <label>이메일</label><input id="kgEmail" type="email" autocomplete="username">
+      <label>아이디</label><input id="kgEmail" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
       <label>비밀번호${signup ? ' (6자 이상)' : ''}</label><input id="kgPw" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}">
       <button type="button" class="kg-main" id="kgGo">${signup ? '계정 만들기' : '로그인'}</button>
       <div class="kg-msg ${ok ? 'ok' : ''}" id="kgMsg">${esc(msg || '')}</div>
-      <button type="button" class="kg-link" id="kgSwitch">${signup ? '이미 계정이 있어요 → 로그인' : '처음이에요 → 계정 만들기'}</button>`);
+      ${signup ? '<button type="button" class="kg-link" id="kgSwitch">로그인으로 돌아가기</button>' : '<p class="kg-sub" style="margin:14px 0 0">계정이 없으면 원장님께 요청하세요.</p>'}`);
     const go = async () => {
-      const email = g.querySelector('#kgEmail').value.trim();
+      const rawId = g.querySelector('#kgEmail').value.trim();
+      const email = toLoginEmail(rawId);
       const pw = g.querySelector('#kgPw').value;
       const name = signup ? g.querySelector('#kgName').value.trim() : '';
       const m = g.querySelector('#kgMsg');
       m.className = 'kg-msg'; m.textContent = '';
-      if (!email || !pw) { m.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
+      if (!rawId || !pw) { m.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
+      if (!email) { m.textContent = '아이디는 영문·숫자로만 입력해주세요. (예: lucas)'; return; }
       if (signup && !name) { m.textContent = '이름을 입력해주세요.'; return; }
       g.querySelector('#kgGo').disabled = true;
       try {
@@ -398,12 +400,23 @@
     };
     g.querySelector('#kgGo').onclick = go;
     g.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
-    g.querySelector('#kgSwitch').onclick = () => showLogin(signup ? 'login' : 'signup');
+    const sw = g.querySelector('#kgSwitch');
+    if (sw) sw.onclick = () => showLogin('login');
   }
+
+  // 아이디만 입력하면 뒤에 내부용 주소를 붙여 로그인 계정(이메일 형식)으로 씀. 이메일을 그대로 입력해도 됨.
+  const ID_DOMAIN = '@kastlemath.local';
+  function toLoginEmail(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    if (s.includes('@')) return s;
+    return /^[A-Za-z0-9._-]+$/.test(s) ? s.toLowerCase() + ID_DOMAIN : '';
+  }
+  const shownId = email => String(email || '').endsWith(ID_DOMAIN) ? email.slice(0, -ID_DOMAIN.length) : email;
 
   function friendlyAuthError(e) {
     const m = String((e && e.message) || e);
-    if (/Invalid login credentials/i.test(m)) return '이메일 또는 비밀번호가 맞지 않아요.';
+    if (/Invalid login credentials/i.test(m)) return '아이디 또는 비밀번호가 맞지 않아요.';
     if (/Email not confirmed/i.test(m)) return '가입 확인 메일의 링크를 먼저 눌러주세요.';
     if (/already registered/i.test(m)) return '이미 가입된 이메일이에요. 로그인해주세요.';
     if (/Password should be/i.test(m)) return '비밀번호는 6자 이상으로 해주세요.';
@@ -414,7 +427,7 @@
   function showWaiting() {
     const g = gate(`
       <h1>승인 대기 중</h1>
-      <p class="kg-sub">${esc(staff.name || staff.email)} 계정은 아직 원장님 승인 전이에요.<br>승인되면 바로 사용할 수 있어요.</p>
+      <p class="kg-sub">${esc(staff.name || shownId(staff.email))} 계정은 아직 원장님 승인 전이에요.<br>승인되면 바로 사용할 수 있어요.</p>
       <button type="button" class="kg-main" id="kgRecheck">승인 여부 다시 확인</button>
       <button type="button" class="kg-link" id="kgOut">로그아웃</button>`);
     g.querySelector('#kgRecheck').onclick = () => onSession(session);
@@ -493,7 +506,7 @@
       const rows = data.map(s => `
         <tr>
           <td>${esc(s.name || '(이름 없음)')}</td>
-          <td>${esc(s.email)}</td>
+          <td>${esc(shownId(s.email))}</td>
           <td>${s.role === 'admin' ? '관리자' : '선생님'}</td>
           <td>${s.approved ? '승인됨' : '<b style="color:#c8102e">승인 대기</b>'}</td>
           <td>${s.user_id === session.user.id ? '(나)' : `
