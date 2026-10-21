@@ -181,11 +181,12 @@
 
   /* ---------- 서버에서 받기 ---------- */
 
-  function applyRow(row, flatNow) {
+  function applyRow(row, flatNow, serverWins) {
     const col = row.collection, id = row.id, key = mkKey(col, id);
     // 이 컴퓨터에서 아직 못 올린 수정이 있으면 그쪽이 곧 올라가서 덮어씀 — 받은 값으로 덮지 않음
+    // (처음 연결해서 합칠 때만 serverWins: 같은 항목이 양쪽에 있으면 서버 것을 남김)
     const mine = flatNow[key] !== undefined ? cyrb53(flatNow[key]) : undefined;
-    if (mine !== synced[key] && !(mine === undefined && synced[key] === undefined)) return false;
+    if (!serverWins && mine !== synced[key] && !(mine === undefined && synced[key] === undefined)) return false;
 
     const isArr = ARRAYS.some(p => p.join('.') === col);
     const isMap = MAPS.some(p => p.join('.') === col);
@@ -224,7 +225,7 @@
     return true;
   }
 
-  async function pull(full) {
+  async function pull(full, serverWins) {
     let changed = 0;
     let latest = since;
     let from = 0;
@@ -240,7 +241,7 @@
       if (error) throw error;
       if (!data || !data.length) break;
       data.forEach(row => {
-        if (applyRow(row, flatNow)) changed++;
+        if (applyRow(row, flatNow, serverWins)) changed++;
         if (row.updated_at > latest) latest = row.updated_at;
       });
       if (data.length < 1000) break;
@@ -307,20 +308,21 @@
       if (localKeys.length) { ready = true; await push(); ready = false; toast(`이 컴퓨터의 데이터 ${localKeys.length}개 항목을 서버에 올렸어요.`); }
       return;
     }
-    // 서버에 이미 데이터가 있음 — 이 컴퓨터 기존 데이터는 백업 파일로 내려받고, 서버 데이터를 기준으로 시작
+    // 서버에 이미 데이터가 있음 — 이 컴퓨터 데이터는 만일을 위해 백업 파일로 내려받고,
+    // 서버 데이터와 이 컴퓨터 데이터를 합집합으로 합침: 서버에 없는 것은 서버에 올리고, 같은 항목이 겹치면 서버 것을 남김
     if (localKeys.length) {
       try {
         const name = `캐슬백업_서버연결전_${new Date().toISOString().slice(0, 10)}.json`;
         if (typeof downloadTextFile === 'function') downloadTextFile(JSON.stringify(state, null, 2), name);
-        toast(`이 컴퓨터의 기존 데이터를 백업 파일로 내려받았어요: ${name}`);
       } catch (e) {}
-      // 학생·결과 등은 서버 것으로 교체. (공용 시험지 등은 앱이 시작할 때 다시 채움)
-      ARRAYS.forEach(path => { const parent = walk(path.slice(0, -1), true); parent[path[path.length - 1]] = []; });
-      MAPS.forEach(path => { const parent = walk(path.slice(0, -1), true); parent[path[path.length - 1]] = {}; });
     }
     synced = {}; since = '';
-    await pull(true);
+    await pull(true, true);
+    const h = hashes(flatten());
+    const toUpload = Object.keys(h).filter(k => synced[k] !== h[k]).length; // 서버에 없어서 올릴 것들(onSession 끝에서 올라감)
     writeLocal();
+    saveSyncMeta();
+    if (localKeys.length) toast(toUpload ? `이 컴퓨터에만 있던 데이터 ${toUpload}개 항목을 서버에 합쳐서 올려요. (백업 파일도 내려받았어요)` : '이 컴퓨터의 데이터는 이미 서버에 모두 있어요.');
   }
 
   /* ---------- 로그인 화면 ---------- */
