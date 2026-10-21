@@ -383,14 +383,8 @@
       if (localKeys.length) { ready = true; await push(); ready = false; toast(`이 컴퓨터의 데이터 ${localKeys.length}개 항목을 서버에 올렸어요.`); }
       return;
     }
-    // 서버에 이미 데이터가 있음 — 이 컴퓨터 데이터는 만일을 위해 백업 파일로 내려받고,
-    // 서버 데이터와 이 컴퓨터 데이터를 합집합으로 합침: 서버에 없는 것은 서버에 올리고, 같은 항목이 겹치면 서버 것을 남김
-    if (localKeys.length) {
-      try {
-        const name = `캐슬백업_서버연결전_${new Date().toISOString().slice(0, 10)}.json`;
-        if (typeof downloadTextFile === 'function') downloadTextFile(JSON.stringify(state, null, 2), name);
-      } catch (e) {}
-    }
+    // 서버에 이미 데이터가 있음 — 서버 데이터와 이 컴퓨터 데이터를 합집합으로 합침:
+    // 서버에 없는 것은 서버에 올리고, 같은 항목이 겹치면 서버 것을 남김 (백업 파일은 내려받지 않음)
     synced = {}; since = '';
     await pull(true, true);
     const linked = linkSameNameStudents(); // 이름이 같은 학생은 서버 학생에 연결 (새로 만들지 않음)
@@ -400,7 +394,7 @@
     saveSyncMeta();
     if (localKeys.length) {
       toast((linked ? `이름이 같은 학생 ${linked}명은 서버의 학생에 연결했어요 (중복으로 만들지 않아요). ` : '') +
-        (toUpload ? `이 컴퓨터에만 있던 데이터 ${toUpload}개 항목을 서버에 합쳐서 올려요. (백업 파일도 내려받았어요)` : '이 컴퓨터의 데이터는 이미 서버에 모두 있어요.'));
+        (toUpload ? `이 컴퓨터에만 있던 데이터 ${toUpload}개 항목을 서버에 합쳐서 올려요.` : '이 컴퓨터의 데이터는 이미 서버에 모두 있어요.'));
     }
   }
 
@@ -855,6 +849,20 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   /* ---------- guest 체험 모드 (모든 데이터가 가짜, 서버·GitHub·AI에 아무것도 보내지 않음) ---------- */
 
   // 가짜 학생·채점 기록·재시험·코멘트를 만듦. 시험지 회차(유형·단원)는 이미 GitHub에 공개된 공용 파일(rounds-shared.json)을 씀.
+  // 체험 모드용 가짜 선생님 10명 (실제 선생님 이름은 하나도 쓰지 않음). 원장 권한 = director
+  const DEMO_TEACHERS = {
+    director: '이순신',
+    options: ['이순신', '강감찬', '을지문덕', '김유신', '허준', '정약용', '장영실', '신사임당', '안중근', '윤동주'],
+    elementary: ['김유신', '허준'],
+    english: { '이순신': 'Leo', '강감찬': 'Ken', '을지문덕': 'Ben', '김유신': 'Kim', '허준': 'Joon', '정약용': 'Dan', '장영실': 'Jay', '신사임당': 'Sara', '안중근': 'Max', '윤동주': 'Dong' },
+    classMap: {
+      'MM1-BETA': '강감찬', 'TM1-GAMMA': '강감찬', 'MM2-GAMMA': '을지문덕', 'TM2-GAMMA': '을지문덕',
+      'MP-INDV1': '김유신', 'TP-INDV1': '김유신', 'MP-INDV2': '허준', 'TP-INDV2': '허준',
+      'MH1-GAMMA': '정약용', 'TH1-BETA': '정약용', 'MM3-BETA': '장영실', 'TM3-GAMMA': '장영실',
+      'MH2-GAMMA': '신사임당', 'TH2-BETA': '신사임당', 'MH2-ALPHA': '이순신', 'TH1-ALPHA': '이순신', 'SH2-ALPHA': '이순신',
+      'MH3-정시': '안중근', 'SH2-기하': '윤동주',
+    },
+  };
   async function buildDemoState() {
     let shared = [];
     try { shared = await (await fetch('rounds-shared.json', { cache: 'no-store' })).json(); } catch (e) { /* 파일이 없으면 회차 없이 시작 */ }
@@ -866,14 +874,17 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
     const pickN = (total, n) => { const s = new Set(); while (s.size < Math.min(n, total)) s.add(1 + Math.floor(rnd() * total)); return [...s].sort((a, b) => a - b); };
     // 이름은 전부 옛이야기 속 인물(가상). 반·담당 선생님은 실제 앱 목록과 같은 형식
+    // 담당 선생님은 DEMO_TEACHERS.classMap(반 → 가짜 선생님)으로 정해짐
     const people = [
-      ['홍길동', '고1', 'TH1-BETA', '목윤재', '가상고'], ['성춘향', '고1', 'MH1-GAMMA', '목윤재', '가상고'], ['이몽룡', '고1', 'TH1-ALPHA', '차성빈', '가상고'],
-      ['임꺽정', '고2', 'MH2-ALPHA', '차성빈', '가상고'], ['장보고', '고2', 'MH2-GAMMA', '방희진', '가상고'], ['유관순', '고2', 'TH2-BETA', '방희진', '가상고'],
-      ['심청', '중3', 'MM3-BETA', '목윤재', '가상중'], ['변학도', '중3', 'TM3-GAMMA', '목윤재', '가상중'],
-      ['흥부', '중2', 'MM2-GAMMA', '문태민', '가상중'], ['놀부', '중2', 'TM2-GAMMA', '문태민', '가상중'],
-      ['콩쥐', '중1', 'MM1-BETA', '문태민', '가상중'], ['팥쥐', '중1', 'TM1-GAMMA', '문태민', '가상중'],
+      ['홍길동', '고1', 'TH1-BETA', '가상고'], ['성춘향', '고1', 'MH1-GAMMA', '가상고'], ['이몽룡', '고1', 'TH1-ALPHA', '가상고'],
+      ['임꺽정', '고2', 'MH2-ALPHA', '가상고'], ['장보고', '고2', 'MH2-GAMMA', '가상고'], ['유관순', '고2', 'TH2-BETA', '가상고'],
+      ['안창호', '고3', 'MH3-정시', '가상고'], ['김구', '고2', 'SH2-기하', '가상고'],
+      ['심청', '중3', 'MM3-BETA', '가상중'], ['변학도', '중3', 'TM3-GAMMA', '가상중'],
+      ['흥부', '중2', 'MM2-GAMMA', '가상중'], ['놀부', '중2', 'TM2-GAMMA', '가상중'],
+      ['콩쥐', '중1', 'MM1-BETA', '가상중'], ['팥쥐', '중1', 'TM1-GAMMA', '가상중'],
+      ['서희', '초5', 'MP-INDV1', '가상초'], ['박문수', '초6', 'MP-INDV2', '가상초'],
     ];
-    const students = people.map((p, i) => ({ id: 'demo_s' + (i + 1), name: p[0], grade: p[1], class: p[2], teacher: p[3], school: p[4] }));
+    const students = people.map((p, i) => ({ id: 'demo_s' + (i + 1), name: p[0], grade: p[1], class: p[2], teacher: DEMO_TEACHERS.classMap[p[2]] || DEMO_TEACHERS.director, school: p[3] }));
     const results = [], retests = [], teacherNotes = {}, studentDone = {}, tbResults = [];
     let n = 0;
     students.forEach((s, si) => {
@@ -909,6 +920,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     clearTimeout(pushTimer); clearInterval(pollTimer);
     const box = document.querySelector('#kmmsGate .kg-box');
     if (box) box.innerHTML = '<h1>체험 화면 준비 중…</h1><p class="kg-sub">가짜 데이터를 만들고 있어요.</p>';
+    if (typeof applyDemoTeachers === 'function') applyDemoTeachers(DEMO_TEACHERS);
     state = await buildDemoState(); // 이 컴퓨터에 저장된 실제 데이터 대신 가짜 데이터로 바꿔 끼움 (저장은 하지 않음)
     document.body.classList.remove('kmms-admin');
     document.body.classList.add('kmms-demo');

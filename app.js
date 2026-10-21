@@ -27,7 +27,21 @@ const CLASS_TEACHER_MAP = {
   'MH2-ALPHA': '차성빈', 'TH1-ALPHA': '차성빈', 'SH2-ALPHA': '차성빈',
   'MH3-정시': '방희진', 'SH2-기하': '목윤재',
 };
-function teacherTitle(name) { return name === '차성빈' ? '원장' : '선생님'; }
+let DIRECTOR_NAME = '차성빈';
+function teacherTitle(name) { return name === DIRECTOR_NAME ? '원장' : '선생님'; }
+// guest 체험 모드: 선생님 이름·담당 반·원장 권한을 전부 가짜 이름으로 바꿔 끼움 (체험 모드는 새로고침으로만 나가므로 원래대로 되돌릴 필요 없음)
+let demoTeacherPick = '';
+function applyDemoTeachers(t) {
+  TEACHER_OPTIONS.splice(0, TEACHER_OPTIONS.length, ...t.options);
+  Object.keys(CLASS_TEACHER_MAP).forEach(k => delete CLASS_TEACHER_MAP[k]); Object.assign(CLASS_TEACHER_MAP, t.classMap);
+  Object.keys(TEACHER_ENGLISH_NAME).forEach(k => delete TEACHER_ENGLISH_NAME[k]); Object.assign(TEACHER_ENGLISH_NAME, t.english);
+  ALL_ACCESS_TEACHERS.splice(0, ALL_ACCESS_TEACHERS.length, t.director);
+  ELEMENTARY_ALL_ACCESS_TEACHERS.splice(0, ELEMENTARY_ALL_ACCESS_TEACHERS.length, ...t.elementary);
+  DIRECTOR_NAME = t.director; EXAMPLE_STUDENT.teacher = t.director;
+  const ts = document.getElementById('stuTeacher');
+  if (ts) { const first = ts.options[0] ? ts.options[0].outerHTML : ''; ts.innerHTML = first + TEACHER_OPTIONS.map(x => `<option value="${x}">${x}</option>`).join(''); }
+  const sn = document.getElementById('stuName'); if (sn) sn.placeholder = '이름 (예: 홍길동)';
+}
 
 // 학부모용 화면·PDF에 선생님 이름을 영어 이름과 함께 "차성빈(Felix)" 형식으로 보여줌
 const TEACHER_ENGLISH_NAME = { '차성빈': 'Felix', '문태민': 'Lucas', '방희진': 'Celina', '목윤재': 'Dave', '오민경': 'Lia' };
@@ -40,7 +54,7 @@ function teacherDisplayName(name) {
 const CURRENT_TEACHER_KEY = 'catchu_current_teacher';
 // 로그인한 선생님(서버 계정의 이름)이 곧 담당 선생님 — 로그인돼 있으면 그 선생님으로 고정되고 선택칸에서 바꿀 수 없음
 function lockedTeacher() { return (window.KMMS && window.KMMS.teacherName) || ''; }
-function getCurrentTeacher() { return lockedTeacher() || localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
+function getCurrentTeacher() { if (window.KMMS && window.KMMS.demo) return demoTeacherPick; return lockedTeacher() || localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
 function teacherSelectHtml() {
   const lt = lockedTeacher();
   return lt ? `<option value="${lt}">${lt}</option>`
@@ -59,6 +73,7 @@ function refreshTeacherSelects() {
   });
 }
 function setCurrentTeacher(t) {
+  if (window.KMMS && window.KMMS.demo) { demoTeacherPick = t || ''; return; }
   if (t) localStorage.setItem(CURRENT_TEACHER_KEY, t);
   else localStorage.removeItem(CURRENT_TEACHER_KEY);
 }
