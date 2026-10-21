@@ -215,11 +215,25 @@ function knownUnitsForGrade(grade) {
   return Array.from(set).sort().slice(0, 60);
 }
 
-const EXAM_ANALYSIS_PROMPT_TEMPLATE = (total, knownUnits = [], grade = '') => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다.
+// 학년을 아직 안 골랐을 때(시험지에 적힌 학년을 AI가 읽어서 채움) 쓰는, 학년별로 이미 등록된 "대단원 - 중단원" 목록
+function knownUnitsByGrade() {
+  const out = {};
+  state.rounds.forEach(r => (r.types || []).forEach(t => {
+    const parts = (t.unit || '').split(' - ').map(s => s.trim()).filter(Boolean);
+    if (parts.length < 2 || !r.grade) return;
+    (out[r.grade] = out[r.grade] || new Set()).add(parts.slice(0, 2).join(' - '));
+  }));
+  Object.keys(out).forEach(g => { out[g] = Array.from(out[g]).sort().slice(0, 30); });
+  return out;
+}
+
+const EXAM_ANALYSIS_PROMPT_TEMPLATE = (total, knownUnits = [], grade = '', gradeUnits = null) => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다. (시험지에 표시된 실제 총 문항 수가 다르면 total에 실제 문항 수를 적어주세요.)
 시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 "대단원 - 중단원 - 소단원" 3단계로 판단해주세요 (예: "도함수의 활용 - 접선의 방정식과 평균값 정리 - 접선의 기울기"). 대단원·중단원은 교과서의 큰 챕터/절 단위로 크게 잡고, 소단원에 문항의 구체적인 개념을 적으세요.
 유형명(name)은 시험지에 문항마다 인쇄된 유형 이름이 있으면 그 이름을 그대로 쓰세요. 이름이 같거나 "(1)", "(2)", "①"처럼 번호만 다른 것은 하나의 유형으로 합쳐서 문항 번호를 한데 묶으세요 (예: "원의 접선의 방정식(1)", "(2)", "(3)" → "원의 접선의 방정식" 하나). 인쇄된 유형 이름이 없을 때만 직접 굵직하게 묶어주세요 (같은 단원 안에서 유형이 2~3개를 넘지 않게).${knownUnits.length ? `
 같은 단원은 항상 같은 이름으로 써야 합니다. 이 학년(${grade})에서 이미 쓰고 있는 "대단원 - 중단원" 목록이에요. 문항이 이 중 어느 단원에 해당하면 철자와 띄어쓰기까지 목록의 이름을 글자 그대로 쓰고, 어느 것에도 맞지 않는 새 단원일 때만 새 이름을 만드세요:
-${knownUnits.map(u => '- ' + u).join('\n')}` : ''}
+${knownUnits.map(u => '- ' + u).join('\n')}` : (gradeUnits && Object.keys(gradeUnits).length ? `
+같은 단원은 항상 같은 이름으로 써야 합니다. 아래는 학년별로 이미 쓰고 있는 "대단원 - 중단원" 목록이에요. 시험지의 학년에 해당하는 목록 중 문항이 맞는 단원이 있으면 철자와 띄어쓰기까지 글자 그대로 쓰고, 어느 것에도 맞지 않는 새 단원일 때만 새 이름을 만드세요:
+${Object.keys(gradeUnits).map(g => '[' + g + ']\n' + gradeUnits[g].map(u => '- ' + u).join('\n')).join('\n')}` : '')}
 또한 문항 하나하나마다(전체 문항 각각에 대해) 다음 두 가지를 판단해주세요:
 - 난이도: 문항별 정답률이 시험지에 표시되어 있다면 그 정답률을 기준으로 아래 표에 따라 매겨주세요. 정답률 정보가 없다면(신규 시험지 등) 문제 내용을 보고 합리적으로 추정해주세요.
   95% 이상 → 1(하) · 85~95% → 2(중하) · 70~85% → 3(중) · 60~70% → 4(중상) · 50~60% → 5(상) · 50% 미만 → 6(최상)
@@ -232,8 +246,13 @@ ${knownUnits.map(u => '- ' + u).join('\n')}` : ''}
 
 시험지 맨 위 제목에 "9월 5주차"처럼 주차가 인쇄돼 있으면, 그 주차를 week에 "9-5" 형식(월-주차 숫자)으로, 시험지에 인쇄된 제목을 printedTitle에 그대로 적어주세요. 주차가 인쇄돼 있지 않으면 week는 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
 
+시험지에 학년이 인쇄돼 있으면(제목이나 머리글의 "고1", "중2", "초5-1", "중1 LEVEL TEST" 같은 표기) 그 학년을 grade에 "초3"~"고3" 중 하나로("고1" 형식) 적어주세요. 학년이 안 보이면 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
+시험지에 실시일자(예: 2026.09.17)가 인쇄돼 있으면 date에 "YYYY-MM-DD" 형식으로, 없거나 "-"이면 빈 문자열("")로 적어주세요.
+
 아래 JSON 형식으로만 응답하세요. 다른 설명이나 마크다운 없이 JSON 객체만 출력하세요:
 {
+  "grade": "고1",
+  "date": "2026-09-17",
   "week": "9-5",
   "printedTitle": "[캐치유] 9월 5주차",
   "total": ${total},
@@ -260,11 +279,41 @@ function findFridayOptionForWeek(dateSel, label) {
 
 // AI가 시험지에서 읽은 주차(week "9-5")로 날짜를 그 주 금요일에 맞추고, 제목에 주차가 없으면 시험지에 인쇄된 제목을 넣음.
 // 파일 이름 등으로 이미 들어간 제목의 주차와 시험지에 인쇄된 주차가 다르면 인쇄된 쪽을 따르고 경고 문구를 돌려줌.
+// 시험지에 인쇄된 학년을 읽어서 학년 칸을 자동으로 채움 (고르지 않아도 됨). 이미 다른 학년이 골라져 있으면 시험지에 적힌 학년을 따름.
+function applyPrintedGrade(json) {
+  if (editingRoundId) return '';
+  const m = String(json.grade || '').match(/(초|중|고)\s*([1-6])/);
+  if (!m) return '';
+  const g = m[1] + m[2];
+  const sel = document.getElementById('roundGrade');
+  if (sel.value === g || !Array.from(sel.options).some(o => o.value === g)) return '';
+  const prev = sel.value;
+  sel.value = g;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  return prev
+    ? ` · 시험지에 적힌 학년(${g})으로 바꿨어요 (골라둔 ${prev}와 달라서 확인해주세요).`
+    : ` · 시험지에 적힌 학년 ${g}을(를) 자동으로 선택했어요.`;
+}
+// 시험지에 인쇄된 실시일자(YYYY-MM-DD) — 오늘 기준 너무 먼 날짜(예전 양식에 남은 날짜 등)는 믿지 않음
+function printedDateOf(json) {
+  const s = String(json.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const diff = (new Date(s + 'T00:00:00') - new Date(toISODate(new Date()) + 'T00:00:00')) / 86400000;
+  return diff >= -120 && diff <= 45 ? s : '';
+}
 function applyPrintedWeek(json) {
   if (editingRoundId) return '';
-  if (isElementaryGrade(document.getElementById('roundGrade').value)) return ' (초등은 날짜별 회차라서 날짜를 직접 골라주세요)';
+  if (isElementaryGrade(document.getElementById('roundGrade').value)) {
+    const pd = printedDateOf(json);
+    if (pd) { setRoundDate(pd); return ` · 시험지에 적힌 날짜 ${pd}로 선택했어요.`; }
+    return ' (초등은 날짜별 회차라서 날짜를 확인해주세요)';
+  }
   const wk = String(json.week || '').match(/^\s*(\d{1,2})\s*[-월]\s*(\d)/);
-  if (!wk) return ' (시험지에 주차가 안 보여서 날짜는 직접 확인해주세요)';
+  if (!wk) {
+    const pd = printedDateOf(json);
+    if (pd) { setRoundDate(pd); return ` · 시험지에 적힌 날짜 ${pd}로 선택했어요.`; }
+    return ' (시험지에 주차가 안 보여서 날짜는 직접 확인해주세요)';
+  }
   const label = `${parseInt(wk[1], 10)}-${wk[2]}주차`;
   const titleInput = document.getElementById('roundTitle');
   const weekRe = /(\d{1,2})\s*(?:월|-)\s*(\d)\s*주\s*차/;
@@ -286,7 +335,7 @@ function applyPrintedWeek(json) {
 function maybeAutoSaveRound(status) {
   if (editingRoundId) return false;
   if (!document.getElementById('roundGrade').value || !document.getElementById('roundDate').value) {
-    status.textContent += ' · 학년을 고른 뒤 "회차 저장"을 눌러주세요.';
+    status.textContent += ' · 시험지에서 학년·날짜를 못 읽었어요. 직접 고른 뒤 "회차 저장"을 눌러주세요.';
     return false;
   }
   document.getElementById('roundForm').requestSubmit();
@@ -316,7 +365,7 @@ async function analyzeExamWithAI() {
   let usage = null;
   try {
     const examGrade = document.getElementById('roundGrade').value;
-    const analysisContent = [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total, knownUnitsForGrade(examGrade), examGrade) }];
+    const analysisContent = [fileBlock, { type: 'text', text: EXAM_ANALYSIS_PROMPT_TEMPLATE(total, knownUnitsForGrade(examGrade), examGrade, examGrade ? null : knownUnitsByGrade()) }];
     let { text, stopReason, usage: u1 } = await callClaudeAPI({ content: analysisContent, maxTokens: 16000, effort: 'medium' });
     usage = u1;
     if (stopReason === 'max_tokens') {
@@ -334,7 +383,8 @@ async function analyzeExamWithAI() {
     pendingDifficulty = (json.difficulty && typeof json.difficulty === 'object') ? json.difficulty : null;
     pendingCompetency = (json.competency && typeof json.competency === 'object') ? json.competency : null;
     updateCoverageHint();
-    let weekNote = applyPrintedWeek(json);
+    let weekNote = applyPrintedGrade(json); // 시험지에 적힌 학년을 먼저 채우고, 그 학년 기준으로 날짜를 맞춤
+    weekNote += applyPrintedWeek(json);
     if (isElementaryGrade(document.getElementById('roundGrade').value)) {
       pendingDifficulty = elementaryFixedDifficulty(parseInt(document.getElementById('roundTotal').value, 10) || total);
       weekNote += ' · 초등 시험지라 난이도는 "중하"로 고정했어요.';
