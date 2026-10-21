@@ -236,7 +236,9 @@
       <p class="card-sub">캐치유테스트는 매주 금요일 실시. 학년별로 시험지를 업로드하며, 같은 학년에 다른 시험지가 있으면 추가 업로드.</p>
       <form id="roundForm">
         <div class="inline-form">
-          <select id="roundDate" required></select>
+          <select id="roundWeek" title="몇월 몇주차인지 고르기"></select>
+          <input type="date" id="roundDatePick" title="날짜를 직접 고르기 (아무 날짜나 가능)">
+          <select id="roundDate" style="display:none;"></select>
           <select id="roundGrade" required>
             <option value="" disabled selected>학년 선택</option>
             <option value="초3">초3</option>
@@ -264,6 +266,7 @@
           <p class="card-sub" style="margin:0;">시험지 업로드 후 실행하면 문항별 유형 · 2022 개정 교육과정 단원 · 핵심역량 · 난이도를 AI가 분석.</p>
           <div class="inline-form">
             <button type="button" class="btn primary" id="aiAnalyzeBtn">AI 자동 분석</button>
+            <label class="field-hint" style="display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="aiAutoSave" checked> 분석이 끝나면 자동으로 회차 저장</label>
             <span id="aiAnalyzeStatus" class="field-hint"></span>
           </div>
           <details class="manual-fallback">
@@ -457,8 +460,8 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=162"></script>
-<script src="textbook.js?v=15"></script>
+<script src="app.js?v=163"></script>
+<script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="cloud.js?v=5"></script>

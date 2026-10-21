@@ -72,6 +72,20 @@ function filterByCurrentTeacher(students) {
   const scoped = students.filter(inStudentScope);
   return t && !hasAllAccess() ? scoped.filter(s => s.teacher === t) : scoped;
 }
+// 드롭다운용: 담당 선생님을 고르면 그 선생님 학생이 맨 위, 다른 선생님 반 학생은 아래에 따로 묶여서 함께 보임
+// (숨기지 않아서 다른 반 학생도 바로 채점·조회할 수 있음). 담당 선생님을 안 고르면 전부 한 줄로.
+function splitMineAndOthers(students) {
+  const scoped = students.filter(inStudentScope);
+  const t = getCurrentTeacher();
+  if (!t) return { mine: scoped, others: [], t };
+  return { mine: scoped.filter(s => s.teacher === t), others: scoped.filter(s => s.teacher !== t), t };
+}
+function groupedOptions(mine, others, t, optFn) {
+  if (mine.length && others.length) {
+    return `<optgroup label="내 반 · ${escapeHtml(t)}">${mine.map(optFn).join('')}</optgroup><optgroup label="다른 반">${others.map(optFn).join('')}</optgroup>`;
+  }
+  return mine.concat(others).map(optFn).join('');
+}
 
 // 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
 // 구간을 5%p씩 위로 옮겨서(예전 기준보다 높은 정답률이어야 "쉬움"으로 분류됨), 같은 정답률이라도
@@ -245,8 +259,20 @@ function applyPrintedWeek(json) {
   // 날짜를 못 찾았으면 제목도 바꾸지 않음 (제목과 날짜가 서로 다른 주차를 가리키는 일이 없도록)
   if (!opt) return ` (시험지의 ${label}에 맞는 최근 날짜를 못 찾았어요. 날짜를 직접 골라주세요)`;
   if ((!typedLabel || typedLabel !== label) && printed && weekRe.test(printed)) titleInput.value = printed;
-  dateSel.value = opt.value;
+  setRoundDate(opt.value);
   return ` · 시험지에 적힌 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.` + note;
+}
+
+// 분석이 끝났을 때 체크박스가 켜져 있고, 새 시험지이고, 학년·날짜가 정해져 있으면 회차를 자동으로 저장함
+function maybeAutoSaveRound(status) {
+  const box = document.getElementById('aiAutoSave');
+  if (!box || !box.checked || editingRoundId) return false;
+  if (!document.getElementById('roundGrade').value || !document.getElementById('roundDate').value) {
+    status.textContent += ' · 학년을 고른 뒤 "회차 저장"을 눌러주세요.';
+    return false;
+  }
+  document.getElementById('roundForm').requestSubmit();
+  return true;
 }
 
 async function analyzeExamWithAI() {
@@ -299,6 +325,11 @@ async function analyzeExamWithAI() {
     status.style.color = weekNote.includes('⚠') || weekNote.includes('직접') ? 'var(--warn-ink)' : 'var(--good)';
     status.textContent = '분석 완료! 아래에서 내용을 확인하고 회차를 저장하세요.' + weekNote + usageCostText(usage);
     toast('AI 분석이 끝났어요.');
+    // 분석 결과를 바로 회차로 저장 (잘못됐으면 목록의 "수정"으로 고치면 됨)
+    if (maybeAutoSaveRound(status)) {
+      status.style.color = 'var(--good)';
+      status.textContent = '분석 완료! 회차로 자동 저장했어요.' + weekNote + usageCostText(usage) + ' (고칠 곳은 아래 목록에서 "수정")';
+    }
   } catch (err) {
     console.error(err);
     status.style.color = 'var(--critical)';
@@ -613,7 +644,47 @@ function populateRoundDateSelect(selectEl, grade, keepValue) {
   if (daily) populateDailySelect(selectEl, keepValue);
   else populateFridaySelect(selectEl, keepValue);
   selectEl.dataset.mode = daily ? 'daily' : 'friday';
+  if (selectEl.id === 'roundDate') updateRoundDateUI();
 }
+
+// 회차 날짜는 "몇월 몇주차" 드롭다운과 날짜 직접 선택(아무 날짜나 가능) 두 가지로 고름.
+// 실제 값은 숨겨진 목록(roundDate)이 들고 있고, 아래 두 함수가 세 칸을 항상 같은 날짜로 맞춤
+function updateRoundDateUI() {
+  const sel = document.getElementById('roundDate'), wk = document.getElementById('roundWeek'), dp = document.getElementById('roundDatePick');
+  if (!sel || !wk || !dp) return;
+  wk.style.display = appScope() === 'entrance' ? 'none' : ''; // 입학테스트는 주차 없이 날짜만 씀
+  const cur = sel.value;
+  const dates = Array.from(sel.options).map(o => o.value).filter(Boolean);
+  if (cur && !dates.includes(cur)) dates.push(cur);
+  dates.sort();
+  const labels = [];
+  dates.forEach(d => { const l = dateToWeekLabel(d); if (!labels.includes(l)) labels.push(l); });
+  wk.innerHTML = labels.map(l => `<option value="${l}">${l}</option>`).join('');
+  if (cur) wk.value = dateToWeekLabel(cur);
+  dp.value = cur || '';
+}
+function setRoundDate(iso) {
+  const sel = document.getElementById('roundDate');
+  if (!sel || !iso) return;
+  if (!Array.from(sel.options).some(o => o.value === iso)) {
+    const opt = document.createElement('option');
+    opt.value = iso; opt.textContent = `${iso} (${weekdayKo(iso)})`;
+    sel.insertBefore(opt, Array.from(sel.options).find(o => o.value > iso) || null); // 날짜순 자리에 끼워 넣음
+  }
+  sel.value = iso;
+  updateRoundDateUI();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const wk = document.getElementById('roundWeek'), dp = document.getElementById('roundDatePick');
+  if (wk) wk.addEventListener('change', () => {
+    // 고른 주차의 날짜: 금요일이 있으면 금요일, 없으면 그 주차의 첫 날짜
+    const sel = document.getElementById('roundDate');
+    const cands = Array.from(sel.options).map(o => o.value).filter(d => d && dateToWeekLabel(d) === wk.value);
+    if (!cands.length) return;
+    setRoundDate(cands.find(d => new Date(d + 'T00:00:00').getDay() === 5) || cands[0]);
+  });
+  if (dp) dp.addEventListener('change', () => { if (dp.value) setRoundDate(dp.value); });
+});
 
 function parseRange(str) {
   const set = new Set();
@@ -1143,7 +1214,7 @@ function syncRoundDateFromTitle() {
   const dateSel = document.getElementById('roundDate');
   const opt = findFridayOptionForWeek(dateSel, label);
   if (!opt || dateSel.value === opt.value) return;
-  dateSel.value = opt.value;
+  setRoundDate(opt.value);
   toast(`제목의 ${label}에 맞춰 날짜를 ${opt.textContent}로 선택했어요.`);
 }
 
@@ -1323,11 +1394,13 @@ function populateReportStudentSel() {
   const prev = sel.value;
   // 채점 입력 탭에서 "완료" 표시해둔 학생을 목록 맨 위로 올리고 "(완)"을 붙여서, 다 끝난 학생 보고서를
   // 바로 찾을 수 있게 함 (정렬은 안정 정렬이라 완료 여부 말고는 원래 순서 그대로 유지됨)
-  const eligible = filterByCurrentTeacher(state.students)
-    .slice()
-    .sort((a, b) => (state.studentDone[b.id] ? 1 : 0) - (state.studentDone[a.id] ? 1 : 0));
+  // 선택한 담당 선생님의 학생이 맨 위, 다른 반 학생은 아래에 함께 보임. 각 묶음 안에서는 "완료" 학생이 위로 감
+  const sp = splitMineAndOthers(state.students);
+  const doneFirst = (a, b) => (state.studentDone[b.id] ? 1 : 0) - (state.studentDone[a.id] ? 1 : 0);
+  const mine = sp.mine.slice().sort(doneFirst), others = sp.others.slice().sort(doneFirst);
+  const eligible = mine.concat(others);
   const realOptionsHtml = eligible.length
-    ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}${state.studentDone[s.id] ? ' (완)' : ''}</option>`).join('')
+    ? groupedOptions(mine, others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}${state.studentDone[s.id] ? ' (완)' : ''}</option>`)
     : `<option value="">${getCurrentTeacher() ? escapeHtml(getCurrentTeacher()) + ' 선생님 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
   // 실제 학생이 없어도 예시보고서는 항상 고를 수 있도록 고정 옵션을 하나 더 붙여둠
   sel.innerHTML = realOptionsHtml + (appScope() === 'entrance' ? '' : `<option value="${EXAMPLE_STUDENT_ID}">${escapeHtml(EXAMPLE_STUDENT.name)} (예시보고서 샘플)</option>`);
@@ -1353,12 +1426,10 @@ function populateScoreGradeSel() {
   const prev = sel.value;
   const order = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
   const roundGrades = Array.from(new Set(scopedRounds().map(r => r.grade).filter(Boolean)));
-  // 담당 선생님이 선택돼 있으면, 그 선생님 학생 중 아무도 없는 학년은 다운드롭에서 아예 뺌
+  // 담당 선생님이 선택돼 있으면, 그 선생님 학생이 있는 학년을 맨 위(내 반)에 두고 나머지 학년은 그 아래(다른 반)에 함께 보여줌
   // (시험 응시 학년이 따로 설정된 학생은 examGrade 기준으로 매칭 — 위 채점 대상 매칭 로직과 동일)
   const myStudents = filterByCurrentTeacher(state.students);
-  let grades = getCurrentTeacher() && !hasAllAccess()
-    ? roundGrades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g))
-    : roundGrades;
+  let grades = roundGrades;
   if (hasAllAccess()) {
     // 전체 권한 선생님은 학년 전부(초3~고3)를 항상 열어둠 — 시험지가 아직 없는 학년도 미리 보여야 함
     grades = Array.from(new Set([...grades, ...ALL_GRADES]));
@@ -1367,8 +1438,13 @@ function populateScoreGradeSel() {
     grades = Array.from(new Set([...grades, ...ELEMENTARY_GRADES]));
   }
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const mineGrades = getCurrentTeacher() && !hasAllAccess() ? grades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g)) : [];
+  const otherGrades = grades.filter(g => !mineGrades.includes(g));
+  const gradeOpt = g => `<option value="${g}">${g}</option>`;
   sel.innerHTML = grades.length
-    ? grades.map(g => `<option value="${g}">${g}</option>`).join('')
+    ? (mineGrades.length && otherGrades.length
+      ? `<optgroup label="내 반 · ${escapeHtml(getCurrentTeacher())}">${mineGrades.map(gradeOpt).join('')}</optgroup><optgroup label="다른 반">${otherGrades.map(gradeOpt).join('')}</optgroup>`
+      : grades.map(gradeOpt).join(''))
     : '<option value="">회차를 먼저 등록하세요</option>';
   if (grades.includes(prev)) sel.value = prev;
   populateScoreRoundGroupSel();
@@ -1464,9 +1540,11 @@ function populateScoreStudentSelect() {
     if (wd === 1 || wd === 3) eligible = eligible.filter(s => !/^T/i.test(s.class || ''));
     else if (wd === 2 || wd === 4) eligible = eligible.filter(s => !/^M/i.test(s.class || ''));
   }
-  eligible = filterByCurrentTeacher(eligible);
+  // 선택한 담당 선생님의 학생이 맨 위, 다른 선생님 반 학생은 그 아래 "다른 반"에 함께 보임 (숨기지 않음)
+  const sp = splitMineAndOthers(eligible);
+  eligible = sp.mine.concat(sp.others);
   sel.innerHTML = eligible.length
-    ? eligible.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`).join('')
+    ? groupedOptions(sp.mine, sp.others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`)
     : `<option value="">${round && round.grade ? (entrance ? ENTRANCE_CLASS + ' 반 ' : '') + escapeHtml(round.grade) + ' 학생이 없어요' : '학생을 먼저 등록하세요'}</option>`;
   // 시험지에 학생 힌트(이름 한 글자)가 있으면, 후보 중 그 글자가 이름에 들어간 학생이 딱 한 명일 때 그 학생을 기본으로 골라줌
   // (공용 파일에는 이름 전체를 올리지 않으므로 힌트만 담김. 틀리면 선생님이 바로 다른 학생을 고르면 됨)

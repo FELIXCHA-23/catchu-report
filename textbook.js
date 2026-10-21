@@ -18,7 +18,8 @@ async function loadTextbooks() {
 
 function tbBook() { return TB_BOOKS.find(b => b.id === tbState.bookId) || null; }
 function tbStudents() {
-  return filterByCurrentTeacher(state.students).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+  // 다른 선생님 반 학생도 같이 보임 — 아래 학생 칸이 선택한 선생님 반을 위로 올려서 보여줌
+  return state.students.filter(inStudentScope).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
 }
 // 문제 번호 → 유형 (교재마다 한 번만 계산해서 보관)
 function tbTypeMap(book) {
