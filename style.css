@@ -586,3 +586,6 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .rt-print { padding: 10px 12px; border: 1px solid var(--border); background: var(--accent-fill); display: flex; flex-direction: column; gap: 8px; }
 .rt-print-btns { display: flex; gap: 8px; }
 .rt-print-btns .btn { text-decoration: none; padding: 6px 14px; }
+
+.rt-print-inline { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rt-print-inline .btn { text-decoration: none; padding: 6px 12px; }

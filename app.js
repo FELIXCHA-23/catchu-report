@@ -1576,8 +1576,7 @@ function printCanvases(canvases) {
 async function printRetestSet(which) {
   const L = retestGenLast;
   if (!L) return;
-  const st = document.getElementById('rtPrintStatus');
-  const say = t => { if (st) st.textContent = t; };
+  const say = t => document.querySelectorAll('#rtPrintStatus, .rt-status').forEach(el => { el.textContent = t; });
   const prob = L.res.previews.slice(0, L.res.problemPages), ans = L.res.previews.slice(L.res.problemPages);
   if (which !== 'ans') {
     say('문제를 인쇄하고 있어요 (A4 · 1부)…');
@@ -1605,7 +1604,7 @@ function renderRetestGen(html) { const w = document.getElementById('retestGenWra
 function scheduleRetestGen(round, student, wrong) {
   clearTimeout(retestGenTimer);
   retestGenSeq++;
-  if (!wrong.length) { renderRetestGen(''); return; }
+  if (!wrong.length) { renderRetestGen('<div class="field-hint">오답을 체크하면 여기에 재시험지 PDF와 <b>출력</b> 버튼이 나와요.</div>'); return; }
   if (!round.retestPath && mergeRetestOnlyInto(round)) { saveState(); renderRounds(); }
   if (!round.retestPath) {
     const can = window.KMMS && !window.KMMS.demo;
@@ -1613,6 +1612,8 @@ function scheduleRetestGen(round, student, wrong) {
     return;
   }
   if (!(window.KMMS && window.KMMS.ready && window.RETEST)) return;
+  const cacheKey = `${round.id}|${student.id}|${wrong.join(',')}|${round.retestPath}|${round.retestAnsPath || ''}`;
+  if (retestGenLast && retestGenLast.key === cacheKey && retestGenLast.html) { renderRetestGen(retestGenLast.html); return; }
   renderRetestGen('<div class="field-hint">재시험지를 만드는 중…</div>');
   const seq = retestGenSeq;
   retestGenTimer = setTimeout(async () => {
@@ -1625,8 +1626,8 @@ function scheduleRetestGen(round, student, wrong) {
       retestGenUrl = URL.createObjectURL(res.blob);
       const miss = res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '';
       const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
-      retestGenLast = { res, student, round };
-      renderRetestGen(`<div class="rt-print"><b>${escapeHtml(student.name)} 재시험지</b> <span class="field-hint">오답 ${wrong.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span><div class="rt-print-btns"><button type="button" class="btn primary" data-rt-print="all">출력</button>${res.answerPages ? '<button type="button" class="btn ghost" data-rt-print="ans">빠른정답만 출력</button>' : ''}<a class="btn ghost" href="${retestGenUrl}" target="_blank" rel="noopener">PDF 열기</a><a class="btn ghost" href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a></div><div class="field-hint" id="rtPrintStatus">A4 · 문제 1부를 먼저 출력하고, 이어서 빠른정답 1장을 출력해요. 왼쪽 위 스테이플은 프린터 기본 설정에서 켜 두세요.</div>${miss}${noAns}</div>`);
+      retestGenLast = { res, student, round, key: cacheKey };
+      renderRetestGen(retestGenLast.html = `<div class="rt-print"><b>${escapeHtml(student.name)} 재시험지</b> <span class="field-hint">오답 ${wrong.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span><div class="rt-print-btns"><button type="button" class="btn primary" data-rt-print="all">출력</button>${res.answerPages ? '<button type="button" class="btn ghost" data-rt-print="ans">빠른정답만 출력</button>' : ''}<a class="btn ghost" href="${retestGenUrl}" target="_blank" rel="noopener">PDF 열기</a><a class="btn ghost" href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a></div><div class="field-hint" id="rtPrintStatus">A4 · 문제 1부를 먼저 출력하고, 이어서 빠른정답 1장을 출력해요. 왼쪽 위 스테이플은 프린터 기본 설정에서 켜 두세요.</div>${miss}${noAns}</div>`);
     } catch (e) {
       console.warn('retest gen failed', e);
       if (seq === retestGenSeq) renderRetestGen(`<div class="field-hint">재시험지를 만들지 못했어요: ${escapeHtml(e.message || String(e))}</div>`);
@@ -2375,6 +2376,7 @@ function renderScoreTab() {
   }));
   document.getElementById('quickWrongInput').value = rangeToString(Array.from(wrongSet));
   updateScoreSummary();
+  if (student) scheduleRetestGen(round, student, [...wrongSet].sort((x, y) => x - y));
 }
 
 function syncQuickInputFromGrid() {
@@ -2551,7 +2553,48 @@ function renderRetestTab() {
   renderRetestList();
 }
 
+// 재시험 탭: "재시험 결과 저장" 바로 옆에 — 이 학생이 본시험지에서 틀린 문제만 재시험지에서 뽑아 만든 PDF를 바로 출력/저장
+let rtTabSeq = 0, rtTabTimer = null, rtTabUrl = "";
+function renderRetestTabPdf() {
+  const wrap = document.getElementById('retestPrintWrap');
+  if (!wrap) return;
+  clearTimeout(rtTabTimer);
+  const seq = ++rtTabSeq;
+  const round = currentRetestRound(), student = currentRetestStudent();
+  const result = round && student ? state.results.find(r => r.studentId === student.id && r.roundId === round.id) : null;
+  const wrong = result ? [...result.wrong].sort((x, y) => x - y) : [];
+  if (!wrong.length) { wrap.innerHTML = ''; return; }
+  const can = window.KMMS && !window.KMMS.demo;
+  if (!round.retestPath && mergeRetestOnlyInto(round)) { saveState(); renderRounds(); }
+  if (!round.retestPath) {
+    wrap.innerHTML = `<span class="field-hint">이 회차는 재시험지가 없어요. ${can ? `<button type="button" class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 올리기</button>` : ''}</span>`;
+    return;
+  }
+  if (!(window.KMMS && window.KMMS.ready && window.RETEST)) { wrap.innerHTML = ''; return; }
+  const key = `${round.id}|${student.id}|${wrong.join(',')}|${round.retestPath}|${round.retestAnsPath || ''}|tab`;
+  if (retestGenLast && retestGenLast.key === key && retestGenLast.tabHtml) { wrap.innerHTML = retestGenLast.tabHtml; return; }
+  wrap.innerHTML = '<span class="field-hint">재시험지를 만드는 중…</span>';
+  rtTabTimer = setTimeout(async () => {
+    try {
+      const paperBuf = await window.KMMS.fetchBuf(round.retestPath);
+      const ansBuf = round.retestAnsPath ? await window.KMMS.fetchBuf(round.retestAnsPath) : null;
+      const res = await window.RETEST.build({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: wrong, title: `${round.grade || ''} ${roundLabel(round)} 재시험`.trim(), studentName: student.name, dateText: todayText() });
+      if (seq !== rtTabSeq) return;
+      if (rtTabUrl) URL.revokeObjectURL(rtTabUrl);
+      rtTabUrl = URL.createObjectURL(res.blob);
+      const miss = res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '';
+      const html = `<button type="button" class="btn" data-rt-print="all">재시험지 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${rtTabUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a> <span class="field-hint rt-status">A4 · 문제 ${res.problemPages}쪽 먼저, 이어서 빠른정답 ${res.answerPages}장</span>${miss}`;
+      retestGenLast = { res, student, round, key, tabHtml: html };
+      wrap.innerHTML = html;
+    } catch (e) {
+      console.warn('retest tab pdf failed', e);
+      if (seq === rtTabSeq) wrap.innerHTML = `<span class="field-hint">재시험지를 만들지 못했어요: ${escapeHtml(e.message || String(e))}</span>`;
+    }
+  }, 300);
+}
+
 function renderRetestGrid() {
+  renderRetestTabPdf();
   const wrap = document.getElementById('retestGridWrap');
   const round = currentRetestRound();
   const student = currentRetestStudent();

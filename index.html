@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=93">
+<link rel="stylesheet" href="style.css?v=94">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -400,6 +400,7 @@
       </div>
       <div class="inline-form" style="margin-top:14px;">
         <button type="button" class="btn primary" id="saveRetestBtn">재시험 결과 저장</button>
+        <span id="retestPrintWrap" class="rt-print-inline"></span>
         <span id="retestSummary" class="field-hint"></span>
       </div>
     </div>
@@ -494,7 +495,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=4"></script>
-<script src="app.js?v=193"></script>
+<script src="app.js?v=196"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
