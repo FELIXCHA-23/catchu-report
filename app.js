@@ -1472,10 +1472,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const card = document.getElementById('weeklyStatusCard');
   if (!card) return;
   const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
-  card.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); card.classList.add('drop-hot'); } });
-  card.addEventListener('dragleave', e => { if (!card.contains(e.relatedTarget)) card.classList.remove('drop-hot'); });
-  card.addEventListener('drop', e => {
-    if (!hasFiles(e)) return;
+  // 채점 입력 화면(업로드 현황 카드 안팎, 고2 아래 빈 곳까지)의 어디에 놓아도 받음. 다른 탭에서는 동작하지 않음
+  const inZone = e => {
+    const panel = document.getElementById('panel-score');
+    return !!panel && panel.classList.contains('active') && document.body.classList.contains('view-catchu')
+      && !document.getElementById('wsModal') && !(e.target.closest && e.target.closest('input[type=file]'));
+  };
+  document.addEventListener('dragover', e => { if (hasFiles(e) && inZone(e)) { e.preventDefault(); card.classList.add('drop-hot'); } });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) card.classList.remove('drop-hot'); });
+  document.addEventListener('dragend', () => card.classList.remove('drop-hot'));
+  document.addEventListener('drop', e => {
+    if (!hasFiles(e) || !inZone(e)) return;
     e.preventDefault(); card.classList.remove('drop-hot');
     const files = e.dataTransfer.files;
     if (files.length > 1) toast('한 번에 한 파일씩 올려 주세요. 첫 번째 파일만 올려요.');
