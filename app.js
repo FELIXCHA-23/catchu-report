@@ -1552,68 +1552,32 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// 인쇄 창 없이 바로 출력하는 크롬 창(--kiosk-printing)의 바탕화면 바로가기를 만들어 주는 .bat 파일 — 컴퓨터마다 한 번만 실행하면 됨
-function autoPrintBatText() {
-  const url = /^https:/.test(location.href) ? location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '') : 'https://felixcha-23.github.io/catchu-report/';
-  const text = String.raw`@echo off
-setlocal
-rem KMMS auto print: creates a Desktop shortcut that opens KMMS in a Chrome window which prints without the print dialog.
-set "CHROME="
-if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME (
-  echo Google Chrome was not found. Please install Chrome first.
-  pause
-  exit /b 1
-)
-powershell -NoProfile -Command "$q=[char]34; $a='--kiosk-printing --user-data-dir='+$q+$env:LocalAppData+'\KMMS-print-profile'+$q+' --app=__URL__'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\KMMS Auto Print.lnk'); $s.TargetPath='%CHROME%'; $s.Arguments=$a; $s.IconLocation='%CHROME%,0'; $s.Save(); Start-Process $s.FullName"
-echo.
-echo Done. From now on, open KMMS with the "KMMS Auto Print" shortcut on your Desktop.
-echo Sign in once in that window. Then set your printer defaults in Windows: A4, staple top-left, 1 copy.
-pause
-`;
-  return text.replace('__URL__', url).replace(/\r?\n/g, '\r\n');
-}
-document.addEventListener('click', e => {
-  const b = e.target.closest ? e.target.closest('[data-autoprint-bat]') : null;
-  if (!b) return;
-  e.preventDefault();
-  downloadAutoPrintBat();
-  toast('내려받은 파일을 한 번 실행하면 바탕화면에 "KMMS Auto Print" 바로가기가 생겨요.');
-});
-// 로그인하면 이 컴퓨터에서 처음 한 번만 자동으로 내려받음 (파일을 실행하는 건 브라우저 보안상 자동으로 할 수 없어서, 내려받은 파일을 한 번 열어야 함).
-// 이미 자동 인쇄 창(앱 창)에서 열었거나 Windows가 아니면 하지 않음
-function downloadAutoPrintBat() {
-  const blob = new Blob([autoPrintBatText()], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'KMMS_자동인쇄_바로가기_만들기.bat';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-function maybeOfferAutoPrint() {
-  if (window.KMMS_DESKTOP) return true;   // 데스크톱 앱에서는 따로 설정할 필요 없음
+// KMMS 데스크톱 앱 설치 파일(GitHub 릴리스의 최신 버전) — 앱에서는 재시험지를 인쇄 창 없이 바로, 문제 쪽은 왼쪽 위 스테이플까지 출력함
+const APP_DOWNLOAD_URL = 'https://github.com/FELIXCHA-23/catchu-report/releases/latest/download/KMMS-Setup.exe';
+const IS_WINDOWS = /Windows/i.test(navigator.userAgent || '');
+// 로그인한 뒤 이 컴퓨터에서 처음 한 번, 앱 받기 안내를 띄움 (이미 앱 안에서 열었거나 Windows가 아니면 안 띄움)
+function maybeOfferApp() {
+  if (window.KMMS_DESKTOP) return true;
   if (!(window.KMMS && window.KMMS.ready) || window.KMMS.demo) return false;
   let seen = false;
-  try { seen = !!localStorage.getItem('kmms_autoprint_offered'); } catch (e) {}
+  try { seen = !!localStorage.getItem('kmms_app_offered'); } catch (e) {}
   if (seen) return true;
-  const inAppWindow = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
-  const isWindows = /Windows/i.test(navigator.userAgent || '');
-  try { localStorage.setItem('kmms_autoprint_offered', '1'); } catch (e) {}
-  if (inAppWindow || !isWindows) return true;
-  downloadAutoPrintBat();
+  try { localStorage.setItem('kmms_app_offered', '1'); } catch (e) {}
+  if (!IS_WINDOWS) return true;
   const bar = document.createElement('div');
   bar.className = 'autoprint-banner no-print';
-  bar.innerHTML = `<div><b>인쇄 창 없이 바로 출력하는 설정 파일을 내려받았어요.</b><br>크롬 아래쪽(또는 오른쪽 위 다운로드)에서 <b>KMMS_자동인쇄_바로가기_만들기.bat</b>을 눌러 한 번만 실행하세요. 바탕화면에 "KMMS Auto Print"가 생기면, 앞으로 그걸로 KMMS를 여시면 돼요.</div><div class="autoprint-btns"><button type="button" class="btn ghost" data-autoprint-bat>다시 받기</button><button type="button" class="btn primary" data-autoprint-close>확인</button></div>`;
-  bar.addEventListener('click', e => { if (e.target.closest('[data-autoprint-close]')) bar.remove(); });
+  bar.innerHTML = `<div><b>KMMS 앱을 설치하면 재시험지가 인쇄 창 없이 바로 출력돼요.</b><br>8층 고속복사기로 A4 1부, 문제 쪽은 왼쪽 위 스테이플까지 자동으로 지정됩니다. 설치는 한 번만 하면 되고, 사이트가 업데이트되면 앱도 자동으로 최신이 돼요.<br><span class="field-hint">처음 설치할 때 윈도우가 "PC를 보호했습니다"라고 하면 "추가 정보 → 실행"을 누르세요.</span></div><div class="autoprint-btns"><button type="button" class="btn ghost" data-app-later>나중에</button><a class="btn primary" href="${APP_DOWNLOAD_URL}" data-app-close style="text-decoration:none;">KMMS 앱 받기</a></div>`;
+  bar.addEventListener('click', e => { if (e.target.closest('[data-app-later], [data-app-close]')) setTimeout(() => bar.remove(), 50); });
   document.body.appendChild(bar);
   return true;
 }
 document.addEventListener('DOMContentLoaded', () => {
-  const timer = setInterval(() => { if (maybeOfferAutoPrint()) clearInterval(timer); }, 3000);
+  const timer = setInterval(() => { if (maybeOfferApp()) clearInterval(timer); }, 3000);
+  // 대문의 "KMMS 앱 받기" 링크는 앱 안에서는 숨김
+  const link = document.getElementById('landingApp');
+  if (link && window.KMMS_DESKTOP) link.style.display = 'none';
 });
-const AUTOPRINT_HINT = window.KMMS_DESKTOP ? '' : '<div class="field-hint">인쇄 창 없이 바로 출력하려면 <a href="#" data-autoprint-bat>자동 인쇄 바로가기 받기</a> (컴퓨터마다 처음 한 번만)</div>';
+const AUTOPRINT_HINT = window.KMMS_DESKTOP ? '' : `<div class="field-hint">인쇄 창 없이 바로 출력(스테이플 포함)하려면 <a href="${APP_DOWNLOAD_URL}">KMMS 앱 받기</a> (컴퓨터마다 처음 한 번만)</div>`;
 
 // 만든 재시험지를 A4로 인쇄: 문제 쪽(1부)을 먼저 인쇄하고, 이어서 빠른정답 1장을 인쇄함. 인쇄 창을 거치므로 프린터 설정(스테이플·부수)은 프린터 기본값을 따름
 // (인쇄 창 없이 바로 나가게 하려면 크롬을 --kiosk-printing 으로 연 창에서 쓰면 됨 — "KMMS_자동인쇄_실행.bat")
