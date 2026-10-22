@@ -34,7 +34,11 @@
   }
 
   // 문제지: 쪽마다 "큰 번호표(01, 02…)"를 찾아 각 문제가 차지하는 칸을 계산함. 정답·해설 쪽은 건너뜀.
-  // 한 쪽은 2단(왼쪽 열 / 오른쪽 열)이고, 문제는 번호표 위치부터 같은 열의 다음 번호표(없으면 쪽 아래)까지임.
+  // 한 쪽은 2단(왼쪽 열 / 오른쪽 열)이고, 문제는 번호표 위치부터 같은 열의 다음 문제 직전까지임.
+  // 문제 위에는 "| 유형명 | 정답률 64%" 와 "[유사] 출처" 두 줄(머리글)이 붙어 있는데, 재시험지에는 필요 없으므로
+  //  - 위쪽: 이 문제의 머리글 바로 아래부터 자르고
+  //  - 아래쪽: 다음 문제의 머리글이 시작하는 곳 직전에서 끊음 (다음 문제의 유형명이 딸려 들어오지 않게)
+  // 번호표(01 같은 큰 숫자)는 나중에 1번부터 다시 그리도록 위치를 같이 기록함.
   async function scanProblems(pdf) {
     const found = {};
     for (let p = 1; p <= pdf.numPages; p++) {
@@ -42,24 +46,38 @@
       const vp = page.getViewport({ scale: 1 });
       const tc = await page.getTextContent();
       if (tc.items.some(it => it.str.trim() === '해설')) continue;
-      const marks = [];
-      tc.items.forEach(it => {
-        const s = it.str.trim();
-        if (!/^\d{1,2}$/.test(s)) return;
-        const size = Math.hypot(it.transform[0], it.transform[1]);
-        if (size < 15) return;                                  // 큰 번호표만 (쪽 번호·본문 숫자는 작음)
-        const top = vp.height - (it.transform[5] + size * 0.8); // 위에서부터의 y(pt)
-        marks.push({ num: parseInt(s, 10), x: it.transform[4], y: top });
-      });
       const half = vp.width / 2;
+      const colOf = x => (x < half ? 0 : 1);
+      // 모든 글자 조각의 위치 (위에서부터 y, 글자 크기, 아랫선)
+      const items = tc.items.filter(it => it.str && it.str.trim()).map(it => {
+        const size = Math.hypot(it.transform[0], it.transform[1]);
+        const base = vp.height - it.transform[5];
+        return { str: it.str.trim(), x: it.transform[4], w: it.width || 0, size, base, top: base - size * 0.8 };
+      });
+      const marks = [];
+      items.forEach(it => {
+        if (!/^\d{1,2}$/.test(it.str) || it.size < 15) return;      // 큰 번호표만 (쪽 번호·본문 숫자는 작음)
+        marks.push({ num: parseInt(it.str, 10), x: it.x, w: it.w, size: it.size, base: it.base, y: it.top });
+      });
+      // 각 문제의 머리글: 번호표 위쪽 가까이에서 "|" 로 시작하는 줄부터 번호표 위까지
       marks.forEach(m => {
-        const col = m.x < half ? 0 : 1;
-        const same = marks.filter(o => (o.x < half ? 0 : 1) === col && o.y > m.y + 10).sort((a, b) => a.y - b.y);
-        const bottom = same.length ? same[0].y - 6 : vp.height - FOOTER_PT;
+        const pipes = items.filter(it => it.str.startsWith('|') && Math.abs(it.x - m.x) < 14 && it.top < m.y - 4 && m.y - it.top < 70);
+        if (!pipes.length) { m.headTop = null; m.headBottom = null; return; }
+        m.headTop = Math.min(...pipes.map(it => it.top)) - 2;
+        const lines = items.filter(it => it.top >= m.headTop + 1 && it.top < m.y - 1 && it.x >= (colOf(m.x) === 0 ? 0 : half) && it.x < (colOf(m.x) === 0 ? half : vp.width));
+        m.headBottom = Math.max(...lines.map(it => it.base)) + 3;
+      });
+      marks.forEach(m => {
+        const col = colOf(m.x);
+        const same = marks.filter(o => colOf(o.x) === col && o.y > m.y + 10).sort((a, b) => a.y - b.y);
+        const next = same[0];
+        const bottom = next ? (next.headTop != null ? next.headTop - 2 : next.y - 6) : vp.height - FOOTER_PT;
         if (found[m.num]) return;                               // 같은 번호가 또 나오면 처음 것만
+        const top = Math.max(0, m.headBottom != null ? Math.max(m.headBottom, m.y - 6) : m.y - 6);
         found[m.num] = {
-          page: p, top: Math.max(0, m.y - 8), bottom,
+          page: p, top, bottom,
           left: col === 0 ? 24 : half + 4, right: col === 0 ? half - 4 : vp.width - 24,
+          mark: { left: m.x - 1.5, right: m.x + m.w + 2, top: m.y - 1, bottom: m.base + 2, base: m.base, size: m.size },
         };
       });
     }
@@ -81,7 +99,7 @@
       if (size < 7 || size > 14) return;
       const top = vp.height - (it.transform[5] + size * 0.8);
       if (top > vp.height - 70) return;                         // 아래 쪽 번호
-      marks.push({ num: parseInt(s, 10), x: it.transform[4], y: top + size / 2 });
+      marks.push({ num: parseInt(s, 10), x: it.transform[4], y: top + size / 2, w: it.width || size * 1.2, size, base: vp.height - it.transform[5] });
     });
     if (!marks.length) return found;
     // 머리말의 "30문제" 같은 숫자를 번호표로 오인하지 않도록, 표가 시작하는 "01"보다 위에 있는 것은 버림
@@ -102,7 +120,8 @@
       const down = (next ? (next.y - r.y) / 2 : (prev ? (r.y - prev.y) / 2 : 14)) * 0.82;
       r.items.sort((a, b) => a.x - b.x).forEach((m, ci, arr) => {
         if (found[m.num]) return;
-        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 4, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6 };
+        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 4, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6,
+          mark: { left: m.x - 1, right: m.x + m.w + 1.5, top: m.base - m.size * 0.85, bottom: m.base + m.size * 0.25, base: m.base, size: m.size } };
       });
     });
     return found;
@@ -115,6 +134,7 @@
       const page = await pdf.getPage(p);
       const tc = await page.getTextContent();
       if (!tc.items.some(it => /정답/.test(it.str))) continue;
+      if (tc.items.some(it => it.str.trim() === '해설')) continue;   // 해설 쪽은 빠른정답 표가 아님
       const spots = await scanAnswers(pdf, p);
       if (Object.keys(spots).length >= 5) return { page: p, spots };
     }
@@ -167,6 +187,22 @@
       const octx = out.getContext('2d');
       octx.fillStyle = '#fff'; octx.fillRect(0, 0, out.width, out.height);
       octx.drawImage(src, x, y, w, h, 0, 0, w, h);
+      if (spec.mark && spec.label) {
+        // 원래 번호표(03 같은 숫자)를 지우고, 같은 자리·같은 색으로 재시험지 번호(1, 2, 3…)를 다시 씀
+        const mk = spec.mark;
+        const mx = Math.floor(mk.left * S), my = Math.floor(mk.top * S), mw = Math.ceil((mk.right - mk.left) * S), mh = Math.ceil((mk.bottom - mk.top) * S);
+        let best = null, bestC = 40;
+        try {
+          const d = src.getContext('2d').getImageData(Math.max(0, mx), Math.max(0, my), Math.max(1, mw), Math.max(1, mh)).data;
+          for (let k = 0; k < d.length; k += 4) { const c = Math.max(d[k], d[k + 1], d[k + 2]) - Math.min(d[k], d[k + 1], d[k + 2]); if (c > bestC) { bestC = c; best = [d[k], d[k + 1], d[k + 2]]; } }
+        } catch (e) { /* 색을 못 읽으면 검정 */ }
+        const ox = mx - x, oy = my - y;
+        octx.fillStyle = '#fff'; octx.fillRect(ox - 2, oy - 2, mw + 6, mh + 4);
+        octx.fillStyle = best ? `rgb(${best[0]},${best[1]},${best[2]})` : '#111';
+        octx.font = `900 ${Math.round(mk.size * S * 0.98)}px ${FONT}`;
+        octx.textBaseline = 'alphabetic'; octx.textAlign = 'left';
+        octx.fillText(spec.label, ox, Math.round(mk.base * S) - y);
+      }
       return trim(out, 6);
     };
   }
@@ -250,7 +286,7 @@
     const found = nums.filter(n => spots[n]), missing = nums.filter(n => !spots[n]);
     if (!found.length) throw new Error('재시험지에서 해당 번호의 문제를 찾지 못했어요. 재시험지 PDF가 맞는지 확인해주세요.');
     const crops = [];
-    for (const n of found) crops.push({ n, img: await crop(spots[n]) });
+    for (let k = 0; k < found.length; k++) crops.push({ n: found[k], img: await crop({ ...spots[found[k]], label: String(k + 1) }) });
 
     // 빠른정답: 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 재시험지 PDF 맨 뒤의 정답 쪽에서 같은 번호의 정답 칸만 잘라 둠
     let answersFound = [];
@@ -261,7 +297,7 @@
       if (opts.ansBuf) aspots = await scanAnswers(ans, 1);
       else { const f = await findAnswerPage(ans); aspots = f ? f.spots : {}; }
       const acrop = makeCropper(ans);
-      for (const n of found) if (aspots[n]) acs.push({ n, img: await acrop(aspots[n]) });
+      for (let k = 0; k < found.length; k++) { const n = found[k]; if (aspots[n]) acs.push({ n, img: await acrop({ ...aspots[n], label: String(k + 1) }) }); }
       answersFound = acs.map(a => a.n);
     } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e); }
 
@@ -276,7 +312,7 @@
     const metaTitle = opts.title || '';
     for (let pi = 0; pi < totalProblemPages; pi++) {
       const { cv, ctx } = newPage();
-      drawHeader(ctx, { kind: '재시험', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
+      drawHeader(ctx, { kind: '캐치유 재시험', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
       ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(PAGE_W / 2, TOP - 10); ctx.lineTo(PAGE_W / 2, BOT); ctx.stroke();
       crops.slice(pi * 4, pi * 4 + 4).forEach((c, k) => {
         const col = k < 2 ? 0 : 1, row = k % 2;
@@ -291,7 +327,7 @@
     // 빠른정답 쪽: 같은 번호의 정답 칸만 모아 붙임
     if (hasAns) {
       const { cv, ctx } = newPage();
-      drawHeader(ctx, { kind: '빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
+      drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
       const cols = 3, cw = (R - L - (cols - 1) * 30) / cols, rowH = 150;
       acs.forEach((a, i) => {
         const c = i % cols, r = Math.floor(i / cols);

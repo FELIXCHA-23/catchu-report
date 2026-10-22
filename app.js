@@ -1689,7 +1689,7 @@ function scheduleRetestGen(round, student, wrong) {
     try {
       const paperBuf = await window.KMMS.fetchBuf(round.retestPath);
       const ansBuf = round.retestAnsPath ? await window.KMMS.fetchBuf(round.retestAnsPath) : null;
-      const res = await window.RETEST.build({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: wrong, title: `${round.grade || ''} ${roundLabel(round)} 재시험`.trim(), studentName: student.name, dateText: todayText() });
+      const res = await window.RETEST.build({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: wrong, title: `${round.grade || ''} ${roundLabel(round)}`.trim(), studentName: student.name, dateText: todayText() });
       if (seq !== retestGenSeq) return;
       if (retestGenUrl) URL.revokeObjectURL(retestGenUrl);
       retestGenUrl = URL.createObjectURL(res.blob);
@@ -2654,7 +2654,7 @@ function renderRetestTabPdf() {
     try {
       const paperBuf = await window.KMMS.fetchBuf(round.retestPath);
       const ansBuf = round.retestAnsPath ? await window.KMMS.fetchBuf(round.retestAnsPath) : null;
-      const res = await window.RETEST.build({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: wrong, title: `${round.grade || ''} ${roundLabel(round)} 재시험`.trim(), studentName: student.name, dateText: todayText() });
+      const res = await window.RETEST.build({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: wrong, title: `${round.grade || ''} ${roundLabel(round)}`.trim(), studentName: student.name, dateText: todayText() });
       if (seq !== rtTabSeq) return;
       if (rtTabUrl) URL.revokeObjectURL(rtTabUrl);
       rtTabUrl = URL.createObjectURL(res.blob);
