@@ -3025,6 +3025,35 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ===== 재시험 탭 왼쪽: 시험지(학년)별 오답 순위 — 가장 많이 틀린 문항 번호를 오답 인원수 순으로, 가로막대 + 오답률 ===== */
+// 오답 순위에서 문항을 누르면 그 문제를 바로 보여줌 (올라가 있는 본시험지 PDF에서 뽑음, 없으면 재시험지, 둘 다 없으면 유형 이름만)
+async function showRankProblem(round, q, n, pct, N) {
+  closeWsModal();
+  const t = typeForQuestion(round, q);
+  const ov = document.createElement('div');
+  ov.id = 'wsModal'; ov.className = 'ws-modal';
+  ov.innerHTML = `<div class="ws-modal-box rk-modal"><h3>${escapeHtml(roundLabel(round))} · ${q}번</h3>
+    <div class="field-hint">오답 ${n}명 / ${N}명 (${pct}%)${t ? ' · ' + escapeHtml(t.name) + (t.unit ? ' · ' + escapeHtml(t.unit) : '') : ''}</div>
+    <div id="rkProblem" class="rk-problem"><span class="field-hint">문제를 불러오는 중…</span></div>
+    <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">닫기</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('#wsModalCancel')) closeWsModal(); });
+  const box = () => document.getElementById('rkProblem');
+  const path = round.examPath || round.retestPath;
+  if (!path || !(window.KMMS && window.KMMS.ready && window.RETEST)) { box().innerHTML = '<div class="field-hint">시험지 파일이 올라가 있고 로그인한 상태에서 문제가 보여요.</div>'; return; }
+  try {
+    const buf = await window.KMMS.fetchBuf(path);
+    const cv = await window.RETEST.renderProblem(buf.slice(0), q);
+    if (!document.getElementById('rkProblem')) return;
+    if (!cv) { box().innerHTML = '<div class="field-hint">시험지 파일에서 이 번호의 문제를 찾지 못했어요.</div>'; return; }
+    box().innerHTML = '';
+    const img = new Image(); img.src = cv.toDataURL('image/jpeg', 0.9); img.alt = `${q}번 문제`; img.style.cssText = 'max-width:100%;height:auto;display:block;border:1px solid var(--line);';
+    box().appendChild(img);
+    if (!round.examPath) box().insertAdjacentHTML('beforeend', '<div class="field-hint">본시험지 파일이 없어 재시험지(유사 문제)를 보여줘요.</div>');
+  } catch (e) {
+    console.warn(e);
+    if (box()) box().innerHTML = `<div class="field-hint">문제를 불러오지 못했어요: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
 let rkShowAll = false;
 function renderRetestRank() {
   const card = document.getElementById('retestRankCard');
@@ -3061,7 +3090,7 @@ function renderRetestRank() {
   const html = shown.map((row, i) => {
     const t = typeForQuestion(round, row.q);
     const pct = Math.round(row.n / N * 100);
-    return `<div class="rk-row" title="${t ? escapeHtml(t.name) : ''}">
+    return `<div class="rk-row" data-rk-q="${row.q}" data-rk-n="${row.n}" data-rk-pct="${pct}" title="${t ? escapeHtml(t.name) + ' — ' : ''}눌러서 문제 보기">
       <span class="rk-rank">${i + 1}</span><span class="rk-q">${row.q}번</span>
       <span class="rk-bar"><i style="width:${Math.max(6, Math.round(row.n / max * 100))}%;${t ? `background:${t.color || TYPE_COLORS[t.idx % TYPE_COLORS.length]};` : ''}"></i></span>
       <span class="rk-n">${row.n}명</span><span class="rk-pct">${pct}%</span></div>`;
@@ -3069,6 +3098,7 @@ function renderRetestRank() {
   body.innerHTML = `<div class="field-hint rk-sum">채점 ${N}명 · 오답이 나온 문항 ${rows.length}개 · 오답 인원수 순</div>
     <div class="rk-head"><span></span><span>번호</span><span>오답 인원</span><span>인원</span><span>오답률</span></div>${html}
     ${rows.length > TOP ? `<button type="button" class="icon-btn rk-more" id="rkMore">${rkShowAll ? '상위 ' + TOP + '개만 보기' : '전체 ' + rows.length + '개 보기'}</button>` : ''}`;
+  body.querySelectorAll('.rk-row').forEach(el => el.addEventListener('click', () => showRankProblem(round, +el.dataset.rkQ, +el.dataset.rkN, +el.dataset.rkPct, N)));
   const more = document.getElementById('rkMore');
   if (more) more.addEventListener('click', () => { rkShowAll = !rkShowAll; renderRetestRank(); });
 }

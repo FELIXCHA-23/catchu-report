@@ -81,6 +81,7 @@
           left: col === 0 ? 24 : half + 4, right: col === 0 ? half - 4 : vp.width - 24,
           mark: { left: m.x - 1.5, right: m.x + m.w + 2, top: m.y - 1, bottom: m.base + 2, base: m.base, size: m.size },
           align: true,   // 번호 높이를 맞춰 붙이기 위해 위·옆 여백을 자르지 않음
+          headTop: m.headTop,
         };
       });
     }
@@ -485,11 +486,21 @@
     return { title, range, types };
   }
 
+  // 시험지 PDF에서 한 문제를 그림으로 뽑음 (유형명 머리글 포함, 번호는 그대로) — 오답 순위에서 문항을 눌러 볼 때 씀. 못 찾으면 null
+  async function renderProblem(paperBuf, num) {
+    const pdf = await openPdf(paperBuf);
+    const spots = await scanProblems(pdf);
+    const sp = spots[num];
+    if (!sp) return null;
+    const crop = makeCropper(pdf);
+    return crop({ ...sp, align: false, mark: undefined, label: undefined, top: sp.headTop != null ? Math.max(0, sp.headTop) : sp.top });
+  }
+
   // 올려 둔 재시험지에서 찾을 수 있는 문제 번호 목록(검사용)
   async function listProblemNumbers(paperBuf) {
     const pdf = await openPdf(paperBuf);
     return Object.keys(await scanProblems(pdf)).map(Number).sort((a, b) => a - b);
   }
 
-  window.RETEST = { build, listProblemNumbers, describePaper, loadPdfJs };
+  window.RETEST = { build, listProblemNumbers, describePaper, renderProblem, loadPdfJs };
 })();

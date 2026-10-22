@@ -621,3 +621,8 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 @media (min-width: 1340px) {
   #retestRankCard { position: absolute; right: calc(100% + 14px); top: 0; width: 280px; }
 }
+
+.rk-row { cursor: pointer; }
+.rk-row:hover { background: var(--accent-fill); }
+.ws-modal-box.rk-modal { max-width: 760px; max-height: 90vh; overflow-y: auto; }
+.rk-problem { min-height: 60px; }
