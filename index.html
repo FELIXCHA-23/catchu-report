@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=87">
+<link rel="stylesheet" href="style.css?v=88">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -225,7 +225,10 @@
   <!-- 시험지 -->
   <section class="tab-panel" id="panel-rounds">
     <div class="card">
-      <h2>본시험지 등록</h2>
+      <h2>시험지 등록</h2>
+      <div class="reg-split">
+      <div class="reg-col" id="mainExamCol">
+      <h3 class="reg-title">본시험지</h3>
       <p class="card-sub">캐치유테스트는 매주 금요일 실시. 학년별로 시험지를 업로드하며, 같은 학년에 다른 시험지가 있으면 추가 업로드.</p>
       <form id="roundForm">
         <div class="inline-form">
@@ -282,15 +285,17 @@
 
         <button type="submit" class="btn primary" style="margin-top:12px;">회차 저장</button>
       </form>
-    </div>
-    <div class="card" id="retestUploadCard">
-      <h2>재시험지 등록</h2>
-      <p class="card-sub">이미 등록된 회차를 골라 재시험지(문제)와 빠른정답 PDF를 올림. 본시험지와 같은 방식이며 유형 분석은 하지 않음. 둘 다 올려두면 채점 후 학생별 재시험지가 자동으로 만들어짐.</p>
-      <div class="inline-form">
-        <select id="rtGradeSel" title="학년으로 좁히기"></select>
-        <select id="rtRoundSel" style="min-width:260px;" title="재시험지를 붙일 회차"></select>
       </div>
-      <div id="rtBody"></div>
+      <div class="reg-col" id="retestUploadCard">
+        <h3 class="reg-title">재시험지</h3>
+        <p class="card-sub">등록된 회차를 고른 뒤 재시험지 PDF를 올림. 정답(빠른정답)은 재시험지 맨 뒤에 붙여서 같이 올리면 됨. 유형 분석은 하지 않음.</p>
+        <div class="inline-form">
+          <select id="rtGradeSel" title="학년으로 좁히기"></select>
+          <select id="rtRoundSel" title="재시험지를 붙일 회차"></select>
+        </div>
+        <div id="rtBody"></div>
+      </div>
+      </div>
     </div>
     <div class="card">
       <h2>시험지 분석 파일 가져오기</h2>
@@ -338,14 +343,17 @@
     </div>
     <div class="card" id="scoreMainCard">
       <h2>채점 입력</h2>
-      <p class="card-sub">학년 · 주차(또는 날짜) · 시험지 · 학생을 선택한 뒤 틀린 문항 번호를 클릭.</p>
+      <p class="card-sub">학년 · 주차(또는 날짜) · 시험지 · 학생을 선택한 뒤 틀린 문항 번호를 클릭. 주차는 시험지에 적힌 주차를 따르고, 없으면 날짜 기준이며, 아래에서 직접 바꿀 수 있음.</p>
       <div class="inline-form">
         <select id="scoreGradeSel"></select>
-        <select id="scoreWeekSel" title="몇월 몇주차"></select>
-        <input type="date" id="scoreDateInput" title="달력에서 날짜 선택">
+        <input type="date" id="scoreDateInput" title="날짜로 찾기 (달력)">
         <input type="hidden" id="scoreRoundGroupSel">
+      </div>
+      <div class="week-pick" id="scoreWeekWrap"><span class="field-hint">주차</span><div id="scoreWeekList" class="week-list"></div></div>
+      <div class="inline-form" style="margin-top:8px;">
         <select id="scoreRoundSel"></select>
         <select id="scoreStudentSel"></select>
+        <span id="scoreWeekFixWrap" class="week-fix"><span class="field-hint">이 시험지 주차</span><select id="scoreRoundWeekSel"></select></span>
       </div>
       <div id="scoreDateHint" class="field-hint" style="margin-top:6px;"></div>
       <div id="scoreGridWrap"></div>
@@ -480,8 +488,8 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="retest.js?v=1"></script>
-<script src="app.js?v=181"></script>
+<script src="retest.js?v=2"></script>
+<script src="app.js?v=182"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

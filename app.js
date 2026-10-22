@@ -1241,8 +1241,39 @@ function dateToWeekLabel(dateStr) {
   return `${wed.getMonth() + 1}-${Math.ceil(wed.getDate() / 7)}주차`;
 }
 
+// 시험지 이름에 "9월3주차" / "9-3주차"처럼 적힌 주차를 읽음 (없으면 빈 문자열)
+function weekFromTitle(t) {
+  const s = String(t || '');
+  let m = s.match(/(\d{1,2})\s*월\s*(\d)\s*주\s*차?/);
+  if (!m) m = s.match(/(?<!\d)(\d{1,2})\s*-\s*(\d)\s*주\s*차/);
+  return m ? `${parseInt(m[1], 10)}-${parseInt(m[2], 10)}주차` : '';
+}
+// 회차의 주차: 선생님이 직접 고른 주차(round.week) > 시험지 이름에 적힌 주차 > 날짜로 계산한 주차.
+// 입학테스트는 주차 없이 날짜만 씀
+function roundWeekLabel(round) {
+  if (typeof appScope === 'function' && appScope() === 'entrance') return dateToWeekLabel(round.date);
+  return round.week || weekFromTitle(round.title) || dateToWeekLabel(round.date);
+}
+function roundWeekSource(round) {
+  if (round.week) return '선생님이 직접 고름';
+  if (weekFromTitle(round.title)) return '시험지 이름에 적힌 주차';
+  return '날짜 기준';
+}
 function roundLabel(round) {
-  return dateToWeekLabel(round.date);
+  return roundWeekLabel(round);
+}
+// 주차 범위("OO부터 OO까지")용: 같은 주차(같은 해)의 회차를 한 칸으로 묶고, 그 주차에서 가장 이른 날짜를 대표 날짜로 씀
+function roundWeekKey(r) { return (r.date || '').slice(0, 4) + '|' + roundWeekLabel(r); }
+function weekStartMap() {
+  const m = new Map();
+  scopedRounds().forEach(r => { const k = roundWeekKey(r); if (!m.has(k) || r.date < m.get(k)) m.set(k, r.date); });
+  return m;
+}
+function roundWeekDate(r, map) { return (map || weekStartMap()).get(roundWeekKey(r)) || r.date; }
+function weekRangeOptions() {
+  const m = weekStartMap();
+  const list = [...m.entries()].map(([k, d]) => ({ d, label: k.split('|').slice(1).join('|') })).sort((x, y) => x.d.localeCompare(y.d));
+  return { map: m, dates: list.map(x => x.d), html: list.map(x => `<option value="${x.d}">${escapeHtml(x.label)} (${shortDate(x.d)})</option>`).join('') };
 }
 
 // 개별시험지(그 학생 전용 회차)는 이름을 같이 표시. 아직 학생이 배정 안 됐으면(공용으로 막 들어온 경우) "미지정"으로 표시
@@ -1293,14 +1324,14 @@ function examCellHtml(r) {
   return `<div class="drop-part">${local} ${up}</div>`;
 }
 
-// 재시험지 칸: 재시험지(문제) + 빠른정답 PDF. 둘 다 올려둬야 학생별 재시험지가 만들어짐
+// 재시험지 칸: 재시험지 PDF 한 개 (맨 뒤에 빠른정답 쪽 포함)
 function retestCellHtml(r) {
   const can = window.KMMS && !window.KMMS.demo;
   const part = (kind, label, path) => {
     const btn = can ? `<button class="icon-btn" data-exam-upload="${r.id}" data-kind="${kind}">${path ? '교체' : '올리기'}</button>` : '';
     return `<div class="drop-part">${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}</div>`;
   };
-  return part('retest', '재시험지', r.retestPath) + part('retestAns', '빠른정답', r.retestAnsPath);
+  return part('retest', '재시험지', r.retestPath);
 }
 
 /* ===== 채점 입력: 주간 시험지 업로드 현황 (중1~고2) ===== */
@@ -1319,14 +1350,13 @@ function renderWeeklyStatus() {
   document.getElementById('wsLabel').textContent = label + (wsWeekOffset === 0 ? ' (이번 주)' : '');
   const can = window.KMMS && !window.KMMS.demo;
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
-  const all = scopedRounds().filter(r => !r.individual && r.total === 30 && dateToWeekLabel(r.date) === label);
+  const all = scopedRounds().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
   const chip = (r, name, path, upAttrs, viewAttrs) => `<div class="ws-row"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
       ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`, `data-exam-open="${r.id}"`)}
-      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`, `data-aux-open="${r.id}" data-kind="retest"`)}
-      ${chip(r, '정답', r.retestAnsPath, `data-exam-upload="${r.id}" data-kind="retestAns"`, `data-aux-open="${r.id}" data-kind="retestAns"`)}</div>`).join('')
+      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`, `data-aux-open="${r.id}" data-kind="retest"`)}</div>`).join('')
       : '<div class="ws-round field-hint">이 주 시험지 회차가 없어요</div>';
     return `<div class="ws-grade"><b>${g}</b>${body}</div>`;
   }).join('');
@@ -1348,7 +1378,7 @@ function scheduleRetestGen(round, student, wrong) {
   if (!wrong.length) { renderRetestGen(''); return; }
   if (!round.retestPath) {
     const can = window.KMMS && !window.KMMS.demo;
-    renderRetestGen(`<div class="field-hint">이 회차는 재시험지가 아직 없어요. ${can ? `<button class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 올리기</button> <button class="icon-btn" data-exam-upload="${round.id}" data-kind="retestAns">빠른정답 올리기</button>` : ''}</div>`);
+    renderRetestGen(`<div class="field-hint">이 회차는 재시험지가 아직 없어요. ${can ? `<button class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 올리기</button>` : ''}</div>`);
     return;
   }
   if (!(window.KMMS && window.KMMS.ready && window.RETEST)) return;
@@ -1363,7 +1393,7 @@ function scheduleRetestGen(round, student, wrong) {
       if (retestGenUrl) URL.revokeObjectURL(retestGenUrl);
       retestGenUrl = URL.createObjectURL(res.blob);
       const miss = res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '';
-      const noAns = round.retestAnsPath ? '' : '<div class="field-hint">빠른정답 PDF가 없어 정답 페이지는 빠졌어요.</div>';
+      const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
       renderRetestGen(`<b>${escapeHtml(student.name)} 재시험지</b> (${res.pageCount}쪽) <a href="${retestGenUrl}" target="_blank" rel="noopener">열기·인쇄</a> <a href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">저장</a>${miss}${noAns}`);
     } catch (e) {
       console.warn('retest gen failed', e);
@@ -1392,10 +1422,10 @@ function renderRetestUpload() {
   const can = window.KMMS && !window.KMMS.demo;
   const box = (kind, label, path, name) => `<div class="upload-box drop-part">
       <div><b>${label}</b> <span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 없음'}</span></div>
-      ${path ? `<div class="field-hint">${escapeHtml(name || '')}</div><a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<div class="field-hint">업로드된 ${label} 없음. 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>`}
+      ${path ? `<div class="field-hint">${escapeHtml(name || '')}</div><a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<div class="field-hint">업로드된 ${label} 없음 (맨 뒤에 정답 쪽 포함). 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>`}
       ${can ? `<button type="button" class="btn ghost" data-exam-upload="${r.id}" data-kind="${kind}">${label} ${path ? '교체' : '업로드'} (이미지 · PDF)</button>` : '<div class="field-hint">이 모드에서는 올릴 수 없어요.</div>'}
     </div>`;
-  body.innerHTML = box('retest', '재시험지', r.retestPath, r.retestName) + box('retestAns', '빠른정답', r.retestAnsPath, r.retestAnsName);
+  body.innerHTML = box('retest', '재시험지', r.retestPath, r.retestName);
 }
 document.addEventListener('DOMContentLoaded', () => {
   ['rtGradeSel', 'rtRoundSel'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', renderRetestUpload); });
@@ -1646,9 +1676,9 @@ function populateResetPanelDateSel() {
   const fromSel = document.getElementById('resetPanelFromSel');
   const toSel = document.getElementById('resetPanelToSel');
   if (!fromSel || !toSel) return;
-  const dates = Array.from(new Set(scopedRounds().map(r => r.date))).sort();
+  const wr = weekRangeOptions(), dates = wr.dates;
   const prevFrom = fromSel.value, prevTo = toSel.value;
-  const opts = dates.map(d => `<option value="${d}">${escapeHtml(dateToWeekLabel(d))} (${shortDate(d)})</option>`).join('');
+  const opts = wr.html;
   fromSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
   toSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
   fromSel.value = dates.includes(prevFrom) ? prevFrom : (dates[0] || '');
@@ -1674,11 +1704,18 @@ function populateReportStudentSel() {
   if (eligible.some(s => s.id === prev) || prev === EXAMPLE_STUDENT_ID) sel.value = prev;
 }
 
-// 학년 안에서 날짜별로 회차를 묶음 (같은 날짜에 진도가 달라 시험지가 여러 개여도 "N-M주차"는 하나로 묶여요)
+// 학년 안에서 주차별로 회차를 묶음 (주차는 직접 고른 값 > 시험지 이름에 적힌 값 > 날짜 순으로 정해짐)
 function scoreRoundGroups(grade) {
   const rounds = scopedRounds().filter(r => r.grade === grade);
-  const dates = Array.from(new Set(rounds.map(r => r.date))).sort((a, b) => a.localeCompare(b));
-  return dates.map(date => ({ date, label: dateToWeekLabel(date), rounds: rounds.filter(r => r.date === date) }));
+  const by = new Map();
+  rounds.forEach(r => {
+    const k = roundWeekKey(r);
+    if (!by.has(k)) by.set(k, { key: k, label: roundWeekLabel(r), rounds: [], dates: [] });
+    const g = by.get(k); g.rounds.push(r); if (!g.dates.includes(r.date)) g.dates.push(r.date);
+  });
+  const groups = [...by.values()];
+  groups.forEach(g => { g.dates.sort(); g.date = g.dates[g.dates.length - 1]; g.first = g.dates[0]; });
+  return groups.sort((x, y) => x.first.localeCompare(y.first));
 }
 
 // 담당 학생이 아직 없는 학년이라도 초등 학년은 항상 다 열어두는 선생님 — 신입생 입학테스트를
@@ -1717,68 +1754,90 @@ function populateScoreGradeSel() {
   populateScoreRoundGroupSel();
 }
 
-// 주차 드롭다운(몇월 몇주차) + 달력(날짜)로 회차를 고름. 실제 값은 숨은 입력(scoreRoundGroupSel)에 날짜로 저장됨.
-// requested: 선택하고 싶은 날짜 — 그 날 시험이 없으면 같은 주차에서 가장 가까운 시험일로 맞추고 안내함
-function populateScoreRoundGroupSel(requested) {
+// 주차를 쭉 펼쳐 놓은 목록(몇월 몇주차) + 달력(날짜)로 회차를 고름. 실제 값은 숨은 입력(scoreRoundGroupSel)에 주차 키로 저장됨.
+// req: { key } 그 주차로 / { date } 그 날짜의 시험지로 — 그 날 시험이 없으면 알려주고 지금 선택을 유지함
+function populateScoreRoundGroupSel(req) {
   const grade = document.getElementById('scoreGradeSel').value;
   const hidden = document.getElementById('scoreRoundGroupSel');
-  const weekSel = document.getElementById('scoreWeekSel');
+  const list = document.getElementById('scoreWeekList');
   const dateInp = document.getElementById('scoreDateInput');
   const hint = document.getElementById('scoreDateHint');
   const groups = grade ? scoreRoundGroups(grade) : [];
   const dayTxt = d => `${shortDate(d)}(${weekdayKo(d)})`;
+  const entrance = appScope() === 'entrance';
 
-  const weeks = [];
-  [...groups].reverse().forEach(g => { if (!weeks.includes(g.label)) weeks.push(g.label); });
-  weekSel.innerHTML = weeks.length
-    ? weeks.map(w => `<option value="${w}">${w}</option>`).join('')
-    : '<option value="">회차가 없어요</option>';
-
-  // 학년을 바꿔서 이전 선택 날짜가 이 학년에 없을 때는 "없다"고 하지 않고 가장 최근 시험으로 자연스럽게 이동함
-  let want = requested || hidden.value;
-  let use = '', note = '';
+  let use = '', note = '', prefDate = '';
   if (groups.length) {
-    if (want && groups.some(g => g.date === want)) use = want;
-    else if (want && requested) {
-      const sameWeek = groups.filter(g => g.label === dateToWeekLabel(want));
-      if (sameWeek.length) {
-        const t = new Date(want + 'T00:00:00').getTime();
-        use = sameWeek.reduce((a, b) => Math.abs(new Date(a.date + 'T00:00:00') - t) <= Math.abs(new Date(b.date + 'T00:00:00') - t) ? a : b).date;
-        note = `${dayTxt(want)}에는 시험이 없어서, 같은 주차의 ${dayTxt(use)} 시험을 보여드려요.`;
-      } else {
-        note = appScope() === 'entrance' ? `${dayTxt(want)}에는 등록된 시험지가 없어요.` : `${dateToWeekLabel(want)}(${dayTxt(want)})에는 등록된 시험지가 없어요.`;
+    if (req && req.key && groups.some(g => g.key === req.key)) use = req.key;
+    else if (req && req.date) {
+      const hit = groups.find(g => g.rounds.some(r => r.date === req.date));
+      if (hit) { use = hit.key; prefDate = req.date; }
+      else {
+        const lbl = dateToWeekLabel(req.date);
+        const same = groups.find(g => g.label === lbl && g.key.slice(0, 4) === req.date.slice(0, 4));
+        if (same) { use = same.key; note = `${dayTxt(req.date)}에는 시험이 없어서, 같은 주차(${same.label})의 시험지를 보여드려요.`; }
+        else note = entrance ? `${dayTxt(req.date)}에는 등록된 시험지가 없어요.` : `${lbl}(${dayTxt(req.date)})에는 등록된 시험지가 없어요.`;
       }
-    } else use = groups[groups.length - 1].date;
+    }
+    if (!use) use = hidden.value && groups.some(g => g.key === hidden.value) ? hidden.value : groups[groups.length - 1].key;
   }
   hidden.value = use;
-  if (use) {
-    weekSel.value = dateToWeekLabel(use);
-    dateInp.value = use;
-  } else {
-    dateInp.value = want || '';
-  }
-  const weekDates = use ? groups.filter(g => g.label === dateToWeekLabel(use)).map(g => dayTxt(g.date)) : [];
-  hint.textContent = note || (appScope() === 'entrance' ? '' : weekDates.length ? `이 주차 시험일: ${weekDates.join(' · ')}` : (groups.length ? '' : '이 학년은 아직 등록된 시험지가 없어요.'));
-  populateScoreExamSel();
+
+  // 주차 목록은 드롭다운으로 접어 두지 않고 전부 펼쳐 보여줌 (최근 주차가 맨 앞)
+  const labelCount = {};
+  groups.forEach(g => { labelCount[g.label] = (labelCount[g.label] || 0) + 1; });
+  list.innerHTML = groups.length
+    ? [...groups].reverse().map(g => `<button type="button" class="week-chip${g.key === use ? ' on' : ''}" data-key="${escapeHtml(g.key)}" title="${g.dates.map(shortDate).join(', ')}">${escapeHtml(g.label)}${labelCount[g.label] > 1 ? `<small>${g.key.slice(0, 4)}</small>` : ''}<small>${shortDate(g.first)}</small></button>`).join('')
+    : '<span class="field-hint">회차가 없어요</span>';
+
+  const g = groups.find(x => x.key === use);
+  dateInp.value = prefDate || (g ? g.date : (req && req.date) || '');
+  const weekDates = g ? g.dates.map(dayTxt) : [];
+  hint.textContent = note || (entrance ? '' : weekDates.length ? `이 주차 시험일: ${weekDates.join(' · ')}` : (groups.length ? '' : '이 학년은 아직 등록된 시험지가 없어요.'));
+  populateScoreExamSel(prefDate);
 }
 
-// 같은 회차(날짜)에 시험지가 여러 개인 경우(진도가 다른 반) 어떤 시험지인지 고름
-function populateScoreExamSel() {
+// 같은 주차에 시험지가 여러 개인 경우(진도가 다른 반, 날짜가 다른 시험 등) 어떤 시험지인지 고름
+function populateScoreExamSel(prefDate) {
   const grade = document.getElementById('scoreGradeSel').value;
-  const date = document.getElementById('scoreRoundGroupSel').value;
+  const key = document.getElementById('scoreRoundGroupSel').value;
   const sel = document.getElementById('scoreRoundSel');
   const prev = sel.value;
   // 입학테스트 화면은 학년·날짜와 상관없이 등록된 입학테스트 시험지를 전부 고를 수 있음 (최신순)
   const entranceAll = appScope() === 'entrance';
   const rounds = entranceAll
     ? scopedRounds().slice().sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.grade || '').localeCompare(y.grade || ''))
-    : scopedRounds().filter(r => r.grade === grade && r.date === date);
+    : scopedRounds().filter(r => r.grade === grade && roundWeekKey(r) === key).sort((x, y) => x.date.localeCompare(y.date));
+  const multiDate = new Set(rounds.map(r => r.date)).size > 1;
   sel.innerHTML = rounds.length
-    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ' + shortDate(r.date) + ' · ') : ''}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
+    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ' + shortDate(r.date) + ' · ') : (multiDate ? shortDate(r.date) + ' · ' : '')}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
     : '<option value="">시험지를 먼저 등록하세요</option>';
-  if (entranceAll && !rounds.some(r => r.id === prev)) { const m = rounds.find(r => r.grade === grade && r.date === date); if (m) sel.value = m.id; }
+  if (entranceAll && !rounds.some(r => r.id === prev)) { const m = rounds.find(r => r.grade === grade && r.date === (prefDate || document.getElementById('scoreDateInput').value)); if (m) sel.value = m.id; }
   if (rounds.some(r => r.id === prev)) sel.value = prev;
+  if (prefDate) { const m = rounds.find(r => r.date === prefDate); if (m) sel.value = m.id; }
+  populateScoreWeekFix();
   populateScoreStudentSelect();
+}
+
+// 선택한 시험지의 주차를 선생님이 직접 바꿀 수 있게 함 (시험지에 주차가 안 적혀 있고 날짜와 다를 때 등)
+function populateScoreWeekFix() {
+  const wrap = document.getElementById('scoreWeekFixWrap');
+  const sel = document.getElementById('scoreRoundWeekSel');
+  if (!wrap || !sel) return;
+  const round = currentScoreRound();
+  if (!round || appScope() === 'entrance') { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const auto = weekFromTitle(round.title) || dateToWeekLabel(round.date);
+  const labels = [];
+  for (let k = -8; k <= 8; k++) {
+    const d = new Date(round.date + 'T00:00:00'); d.setDate(d.getDate() + k * 7);
+    const l = dateToWeekLabel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    if (!labels.includes(l)) labels.push(l);
+  }
+  if (round.week && !labels.includes(round.week)) labels.push(round.week);
+  sel.innerHTML = `<option value="">자동 · ${auto} (${weekFromTitle(round.title) ? '시험지 이름' : '날짜'} 기준)</option>` + labels.map(l => `<option value="${l}">${l}</option>`).join('');
+  sel.value = round.week || '';
+  sel.title = '지금 주차: ' + roundWeekLabel(round) + ' (' + roundWeekSource(round) + ')';
 }
 
 const ENTRANCE_CLASS = '입학테스트';
@@ -1886,12 +1945,14 @@ function renderStudentResetPanel() {
   const rangeStart = fromRaw && toRaw && fromRaw > toRaw ? toRaw : fromRaw;
   const rangeEnd = fromRaw && toRaw && fromRaw > toRaw ? fromRaw : toRaw;
   const inRange = date => !rangeStart || !rangeEnd || (date >= rangeStart && date <= rangeEnd);
+  const wmap = weekStartMap();
+  const rdate = round => roundWeekDate(round, wmap);
 
   const studentCardHTML = (student, done) => {
     const allMyResults = state.results.filter(r => r.studentId === student.id);
     const myResults = allMyResults
       .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
-      .filter(({ round }) => !round || inRange(round.date))
+      .filter(({ round }) => !round || inRange(rdate(round)))
       .sort((a, b) => (a.round?.date || '').localeCompare(b.round?.date || ''));
     const rows = myResults.length ? myResults.map(({ result, round }) => {
       const label = round ? `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}` : '(삭제된 회차)';
@@ -1980,7 +2041,7 @@ function renderStudentResetPanel() {
     if (!student) return;
     const idsToDelete = state.results
       .filter(r => r.studentId === student.id)
-      .filter(r => { const round = state.rounds.find(x => x.id === r.roundId); return !round || inRange(round.date); })
+      .filter(r => { const round = state.rounds.find(x => x.id === r.roundId); return !round || inRange(rdate(round)); })
       .map(r => r.id);
     if (!idsToDelete.length) return;
     const periodTxt = (rangeStart && rangeEnd) ? `${rangeStart} ~ ${rangeEnd} 기간의 ` : '';
@@ -2077,17 +2138,26 @@ function updateScoreSummary() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scoreGradeSel').addEventListener('change', () => { populateScoreRoundGroupSel(); renderScoreTab(); });
-  // 주차를 바꾸면 그 주차의 가장 늦은 시험일로, 달력에서 날짜를 고르면 그 날짜로 이동
-  document.getElementById('scoreWeekSel').addEventListener('change', () => {
-    const grade = document.getElementById('scoreGradeSel').value;
-    const label = document.getElementById('scoreWeekSel').value;
-    const inWeek = scoreRoundGroups(grade).filter(g => g.label === label);
-    if (inWeek.length) populateScoreRoundGroupSel(inWeek[inWeek.length - 1].date);
+  // 주차 목록에서 주차를 누르면 그 주차의 시험지로, 달력에서 날짜를 고르면 그 날짜의 시험지로 이동
+  document.getElementById('scoreWeekList').addEventListener('click', e => {
+    const b = e.target.closest('.week-chip');
+    if (!b) return;
+    populateScoreRoundGroupSel({ key: b.dataset.key });
     renderScoreTab();
   });
   document.getElementById('scoreDateInput').addEventListener('change', () => {
     const v = document.getElementById('scoreDateInput').value;
-    if (v) { populateScoreRoundGroupSel(v); renderScoreTab(); }
+    if (v) { populateScoreRoundGroupSel({ date: v }); renderScoreTab(); }
+  });
+  document.getElementById('scoreRoundWeekSel').addEventListener('change', () => {
+    const round = currentScoreRound();
+    if (!round) return;
+    const v = document.getElementById('scoreRoundWeekSel').value;
+    if (v) round.week = v; else delete round.week;
+    saveState();
+    populateScoreRoundGroupSel({ key: roundWeekKey(round) });
+    renderScoreTab(); renderRounds();
+    toast(`이 시험지를 ${roundWeekLabel(round)}로 분류했어요.`);
   });
   document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', () => {
@@ -2269,9 +2339,9 @@ function updateRetestSummary() {
 function populateRetestRangeSel() {
   const fromSel = document.getElementById('retestFromSel'), toSel = document.getElementById('retestToSel');
   if (!fromSel || !toSel) return;
-  const dates = Array.from(new Set(scopedRounds().map(r => r.date))).sort();
+  const wr = weekRangeOptions(), dates = wr.dates;
   const prevFrom = fromSel.value, prevTo = toSel.value;
-  const opts = dates.map(d => `<option value="${d}">${escapeHtml(dateToWeekLabel(d))} (${shortDate(d)})</option>`).join('') || '<option value="">회차가 없어요</option>';
+  const opts = wr.html || '<option value="">회차가 없어요</option>';
   fromSel.innerHTML = opts; toSel.innerHTML = opts;
   fromSel.value = dates.includes(prevFrom) ? prevFrom : (dates[0] || '');
   toSel.value = dates.includes(prevTo) ? prevTo : (dates[dates.length - 1] || '');
@@ -2288,6 +2358,7 @@ function renderRetestList() {
   const rs = fromRaw && toRaw && fromRaw > toRaw ? toRaw : fromRaw;
   const re = fromRaw && toRaw && fromRaw > toRaw ? fromRaw : toRaw;
   const inRange = date => !rs || !re || (date >= rs && date <= re);
+  const wmap = weekStartMap();
 
   const currentTeacher = getCurrentTeacher();
   const students = state.students.filter(inStudentScope)
@@ -2299,7 +2370,7 @@ function renderRetestList() {
     const items = state.results
       .filter(r => r.studentId === s.id && r.wrong.length)
       .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
-      .filter(x => x.round && inRange(x.round.date))
+      .filter(x => x.round && inRange(roundWeekDate(x.round, wmap)))
       .map(x => ({ ...x, rt: state.retests.find(t => t.studentId === s.id && t.roundId === x.round.id) }))
       .sort((a, b) => b.round.date.localeCompare(a.round.date));
     return { s, items, done: items.filter(x => x.rt).length };

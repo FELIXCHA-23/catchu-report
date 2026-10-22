@@ -1,6 +1,6 @@
 /* 재시험지 자동 생성 — 회차에 미리 올려 둔 "재시험지 PDF"에서, 학생이 틀린 번호의 문제만 잘라 모아
    그 학생 전용 재시험지(PDF)를 만든다. 문제는 한 장에 4문제씩 2단(시험지 모양)으로 배치하고,
-   "빠른정답 PDF"가 올라와 있으면 같은 번호의 정답만 잘라 끝에 붙인다.
+   재시험지 PDF 맨 뒤의 빠른정답 쪽(또는 예전 방식으로 따로 올린 빠른정답 PDF)에서 같은 번호의 정답만 잘라 끝에 붙인다.
    - PDF 읽기·자르기: pdf.js (필요할 때만 CDN에서 불러옴), PDF 만들기: jsPDF(이미 페이지에 있음)
    - 한글 글꼴 문제를 피하려고 머리말·배치는 전부 캔버스에 그려서 이미지로 PDF에 넣음 */
 (function () {
@@ -67,9 +67,10 @@
   }
 
   // 빠른정답: 번호표(두 자리 숫자)가 표 모양으로 늘어서 있음. 각 번호의 칸 = 번호 오른쪽 ~ 다음 열 번호 앞, 위아래는 이웃 행과의 가운데까지.
-  async function scanAnswers(pdf) {
+  async function scanAnswers(pdf, pageNo) {
+    pageNo = pageNo || 1;
     const found = {};
-    const page = await pdf.getPage(1);
+    const page = await pdf.getPage(pageNo);
     const vp = page.getViewport({ scale: 1 });
     const tc = await page.getTextContent();
     const marks = [];
@@ -101,10 +102,23 @@
       const down = (next ? (next.y - r.y) / 2 : (prev ? (r.y - prev.y) / 2 : 14)) * 0.82;
       r.items.sort((a, b) => a.x - b.x).forEach((m, ci, arr) => {
         if (found[m.num]) return;
-        found[m.num] = { page: 1, top: r.y - up, bottom: r.y + down, left: m.x - 4, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6 };
+        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 4, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6 };
       });
     });
     return found;
+  }
+
+  // 재시험지 PDF 맨 뒤에 빠른정답 표가 붙어 있음 — 뒤쪽 쪽부터 거슬러 올라가며 "정답"이라는 글자가 있고
+  // 번호표가 여러 개 늘어선 쪽을 찾음 (못 찾으면 null)
+  async function findAnswerPage(pdf) {
+    for (let p = pdf.numPages; p >= 1 && p > pdf.numPages - 4; p--) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      if (!tc.items.some(it => /정답/.test(it.str))) continue;
+      const spots = await scanAnswers(pdf, p);
+      if (Object.keys(spots).length >= 5) return { page: p, spots };
+    }
+    return null;
   }
 
   // 잘라낸 그림의 흰 여백을 줄임
@@ -253,16 +267,19 @@
         const x = col === 0 ? L : PAGE_W / 2 + GAP / 2, y = TOP + row * (cellH + GAP);
         fitImage(ctx, c.img, x, y, colW, cellH, 1.5);
       });
-      drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${pi + 1}/${totalProblemPages + (opts.ansBuf ? 1 : 0)}`);
+      drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${pi + 1}/${totalProblemPages + 1}`);
       pages.push(cv);
     }
 
     // 빠른정답 쪽: 같은 번호의 정답 칸만 모아 붙임
     let answersFound = [];
-    if (opts.ansBuf) {
+    {
       try {
-        const ans = await openPdf(opts.ansBuf);
-        const aspots = await scanAnswers(ans);
+        // 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 재시험지 PDF 맨 뒤의 정답 쪽을 씀
+        const ans = opts.ansBuf ? await openPdf(opts.ansBuf) : paper;
+        let aspots, apage = 1;
+        if (opts.ansBuf) aspots = await scanAnswers(ans, 1);
+        else { const f = await findAnswerPage(ans); aspots = f ? f.spots : {}; apage = f ? f.page : 0; }
         const acrop = makeCropper(ans);
         const acs = [];
         for (const n of found) if (aspots[n]) acs.push({ n, img: await acrop(aspots[n]) });

@@ -509,7 +509,7 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 @media (max-width: 700px) { .landing-buttons { grid-template-columns: 1fr; } }
 
 /* 입학테스트 화면은 주차 없이 날짜(달력)만 사용 */
-.view-entrance #scoreWeekSel { display: none; }
+.view-entrance #scoreWeekWrap, .view-entrance #scoreWeekFixWrap { display: none; }
 .view-entrance #tabNav [data-tab="retest"] { display: none; }
 .view-entrance #scoreGradeSel, .view-entrance #scoreDateInput, .view-entrance #scoreDateHint { display: none; }
 .view-entrance #tabNav [data-tab="rounds"] { margin-left: auto; }
@@ -529,3 +529,21 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .ra-actions .btn { padding: 4px 10px; font-size: 12px; }
 @media (max-width: 900px) { .report-layout { grid-template-columns: 1fr; } .report-archive { position: static; max-height: none; } }
 @media print { .report-layout { display: block; } .report-archive { display: none; } }
+
+/* 시험지 등록: 본시험지(왼쪽) · 재시험지(오른쪽)를 한 박스에 */
+.reg-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+.reg-col + .reg-col { border-left: 1px solid var(--line); padding-left: 24px; }
+.reg-title { margin: 0 0 6px; font-size: 15px; font-weight: 700; }
+@media (max-width: 900px) { .reg-split { grid-template-columns: 1fr; } .reg-col + .reg-col { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 16px; } }
+
+/* 채점 입력: 주차를 펼쳐 놓은 목록 */
+.week-pick { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; }
+.week-pick > .field-hint { flex: none; padding-top: 7px; }
+.week-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 118px; overflow-y: auto; }
+.week-chip { border: 1px solid var(--border); background: var(--surface-page); color: var(--ink); padding: 5px 10px; font-size: 13px; cursor: pointer; border-radius: 2px; }
+.week-chip small { margin-left: 5px; font-size: 11px; color: var(--muted); }
+.week-chip:hover { background: var(--line); }
+.week-chip.on { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 700; }
+.week-chip.on small { color: #ddd; }
+.week-fix { display: inline-flex; align-items: center; gap: 6px; }
+.week-fix select { min-width: 250px; }
