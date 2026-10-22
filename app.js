@@ -100,7 +100,9 @@ function inRoundScope(r) {
   if (sc === 'all') return true;
   return sc === 'entrance' ? isEntranceRound(r) : !isEntranceRound(r);
 }
-function scopedRounds() { return state.rounds.filter(inRoundScope); }
+// retestOnly: 본시험지 없이 재시험지만 먼저 올려서 만든 임시 회차 — 업로드 현황판·재시험지 올리기에서만 쓰고, 채점·보고서에는 나오지 않음
+function scopedRoundsAll() { return state.rounds.filter(inRoundScope); }
+function scopedRounds() { return scopedRoundsAll().filter(r => !r.retestOnly); }
 function filterByCurrentTeacher(students) {
   const t = getCurrentTeacher();
   const scoped = students.filter(inStudentScope);
@@ -515,7 +517,7 @@ function utf8ToB64(str) {
 // 공용 파일에 올릴 회차 내용 — 시험지 원본(examFile)과 이 컴퓨터 학생 연결(studentId)은 빼고,
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
 function sharedRoundPayload(r) {
-  if (r.studentName && !r.individual) return null;
+  if (r.retestOnly || (r.studentName && !r.individual)) return null;
   const { examFile, studentId, examPath, examName, ...rest } = r;
   return rest;
 }
@@ -1350,8 +1352,8 @@ function renderWeeklyStatus() {
   document.getElementById('wsLabel').textContent = label + (wsWeekOffset === 0 ? ' (이번 주)' : '');
   const can = window.KMMS && !window.KMMS.demo;
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
-  const all = scopedRounds().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
-  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
+  const all = scopedRoundsAll().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
+  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? '<span class="field-hint">끌어다 놓아 분석</span>' : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round" data-round="${r.id}"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
@@ -1368,10 +1370,44 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('wsToday').addEventListener('click', () => go(0));
 });
 
+// 본시험지가 아직 없어도 재시험지를 먼저 올릴 수 있게, 재시험지만 가진 임시 회차를 만듦.
+// 나중에 같은 학년·주차의 본시험지를 등록하면 자동으로 합쳐짐(아래 mergeRetestOnlyInto)
+function createRetestOnlyRound(grade, date, fileName) {
+  const r = { id: uid(), date, grade, total: 30, types: [], title: String(fileName || '').replace(/\.[^.]+$/, '') || undefined, week: dateToWeekLabel(date), retestOnly: true };
+  state.rounds.push(r);
+  return r;
+}
+function mergeRetestOnlyInto(round) {
+  const key = roundWeekKey(round);
+  const p = state.rounds.find(x => x.retestOnly && x.id !== round.id && x.grade === round.grade && roundWeekKey(x) === key);
+  if (!p) return false;
+  ['retestPath', 'retestName', 'retestAnsPath', 'retestAnsName'].forEach(k => { if (p[k] && !round[k]) round[k] = p[k]; });
+  state.rounds = state.rounds.filter(x => x.id !== p.id);
+  return true;
+}
+// 지금 현황판에서 보고 있는 주차의 금요일(YYYY-MM-DD)
+function wsFridayIso() {
+  const d = new Date(wsDateOf(wsWeekOffset) + 'T00:00:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 4);
+  return toISODate(d);
+}
+async function uploadRetestOnly(grade, date, file) {
+  const fr = await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(file); });
+  // 같은 학년·주차의 정식 회차(본시험지)가 이미 있으면 그 회차에 붙이고, 없을 때만 임시 회차를 만듦
+  const probe = { date, grade, week: dateToWeekLabel(date) };
+  const real = scopedRounds().find(x => x.grade === grade && roundWeekKey(x) === roundWeekKey(probe));
+  const r = real || createRetestOnlyRound(grade, date, file.name);
+  toast('재시험지를 올리는 중…');
+  const ok = await window.KMMS.uploadAux(r, 'retest', { name: file.name, dataUrl: fr });
+  if (!ok) { if (!real) { state.rounds = state.rounds.filter(x => x.id !== r.id); saveState(); renderRounds(); } return false; }
+  toast(real ? `${grade} 재시험지를 올렸어요.` : `${grade} 재시험지를 올렸어요. 본시험지는 나중에 올리면 자동으로 합쳐져요.`);
+  return true;
+}
+
 /* ===== 채점 입력 · 시험지 업로드 현황: 바로 올리기 / 끌어다 놓기(본시험지·재시험지 고르는 팝업) / 삭제 ===== */
 function wsRounds() {
   const label = dateToWeekLabel(wsDateOf(wsWeekOffset));
-  return scopedRounds().filter(r => !r.individual && r.total === 30 && WS_GRADES.includes(r.grade) && roundWeekLabel(r) === label)
+  return scopedRoundsAll().filter(r => !r.individual && r.total === 30 && WS_GRADES.includes(r.grade) && roundWeekLabel(r) === label)
     .sort((x, y) => WS_GRADES.indexOf(x.grade) - WS_GRADES.indexOf(y.grade) || x.date.localeCompare(y.date));
 }
 function closeWsModal() { const m = document.getElementById('wsModal'); if (m) m.remove(); }
@@ -1426,16 +1462,21 @@ function openWsUpload(file, opt) {
   };
   const chooseRetestRound = () => {
     const rounds = wsRounds();
-    if (!rounds.length) { closeWsModal(); toast('이 주차에는 등록된 회차가 없어요. 본시험지를 먼저 올려 등록하세요.'); return; }
     const exact = opt.roundId && rounds.find(r => r.id === opt.roundId);
     const inGrade = opt.grade ? rounds.filter(r => r.grade === opt.grade) : [];
-    const only = exact || (inGrade.length === 1 ? inGrade[0] : (rounds.length === 1 ? rounds[0] : null));
+    let only = exact || (inGrade.length === 1 ? inGrade[0] : null);
+    if (!only && !opt.grade && rounds.length === 1) only = rounds[0];
     if (only) { uploadRetest(only); return; }
+    // 학년을 알고 그 주에 그 학년 회차가 없으면 본시험지 없이 바로 만들어서 올림
+    if (opt.grade && !inGrade.length) { closeWsModal(); uploadRetestOnly(opt.grade, wsFridayIso(), file); return; }
+    const noRound = WS_GRADES.filter(g => !rounds.some(r => r.grade === g));
     const box = document.querySelector('#wsModal .ws-modal-box');
-    box.innerHTML = `<h3>어느 회차의 재시험지인가요?</h3><div class="ws-modal-file">${escapeHtml(file.name)}</div>
-      <div class="ws-choices">${rounds.map(r => `<button type="button" class="ws-bigbtn" data-pick-round="${r.id}">${escapeHtml(r.grade)} · ${escapeHtml(r.title || shortDate(r.date))}${r.retestPath ? '<small>이미 재시험지가 있어요 (교체돼요)</small>' : ''}</button>`).join('')}</div>
+    box.innerHTML = `<h3>어느 학년·회차의 재시험지인가요?</h3><div class="ws-modal-file">${escapeHtml(file.name)}</div>
+      <div class="ws-choices">${rounds.map(r => `<button type="button" class="ws-bigbtn" data-pick-round="${r.id}">${escapeHtml(r.grade)} · ${escapeHtml(r.title || shortDate(r.date))}${r.retestPath ? '<small>이미 재시험지가 있어요 (교체돼요)</small>' : ''}</button>`).join('')}
+      ${noRound.map(g => `<button type="button" class="ws-bigbtn" data-new-grade="${g}">${g}<small>본시험지 없이 재시험지만 먼저 올려요</small></button>`).join('')}</div>
       <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div>`;
     box.querySelectorAll('[data-pick-round]').forEach(b => b.addEventListener('click', () => uploadRetest(state.rounds.find(r => r.id === b.dataset.pickRound))));
+    box.querySelectorAll('[data-new-grade]').forEach(b => b.addEventListener('click', () => { closeWsModal(); uploadRetestOnly(b.dataset.newGrade, wsFridayIso(), file); }));
   };
   const handle = kind => {
     if (kind === 'main') { closeWsModal(); startMainExamAnalysis(file, opt.grade || ''); return; }
@@ -1511,14 +1552,61 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// 만든 재시험지를 A4로 인쇄: 문제 쪽(1부)을 먼저 인쇄하고, 이어서 빠른정답 1장을 인쇄함. 인쇄 창을 거치므로 프린터 설정(스테이플·부수)은 프린터 기본값을 따름
+// (인쇄 창 없이 바로 나가게 하려면 크롬을 --kiosk-printing 으로 연 창에서 쓰면 됨 — "KMMS_자동인쇄_실행.bat")
+function printCanvases(canvases) {
+  return new Promise(async resolve => {
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(f);
+    const d = f.contentDocument;
+    d.open();
+    d.write(`<!doctype html><html><head><meta charset="utf-8"><title>재시험지</title><style>@page{size:A4 portrait;margin:0}html,body{margin:0;padding:0;background:#fff}img{display:block;width:210mm;height:297mm;break-after:page;page-break-after:always}img:last-child{break-after:auto;page-break-after:auto}</style></head><body>${canvases.map(c => `<img src="${c.toDataURL('image/jpeg', 0.92)}">`).join('')}</body></html>`);
+    d.close();
+    await Promise.all([...d.images].map(img => img.complete ? null : new Promise(r => { img.onload = r; img.onerror = r; })));
+    const w = f.contentWindow;
+    let finished = false;
+    const done = () => { if (finished) return; finished = true; setTimeout(() => { f.remove(); resolve(true); }, 400); };
+    w.onafterprint = done;
+    setTimeout(done, 180000);
+    w.focus();
+    w.print();
+  });
+}
+async function printRetestSet(which) {
+  const L = retestGenLast;
+  if (!L) return;
+  const st = document.getElementById('rtPrintStatus');
+  const say = t => { if (st) st.textContent = t; };
+  const prob = L.res.previews.slice(0, L.res.problemPages), ans = L.res.previews.slice(L.res.problemPages);
+  if (which !== 'ans') {
+    say('문제를 인쇄하고 있어요 (A4 · 1부)…');
+    await printCanvases(prob);
+  }
+  if (ans.length) {
+    if (which !== 'ans') await new Promise(r => setTimeout(r, 1000));
+    say('빠른정답 1장을 인쇄하고 있어요…');
+    await printCanvases(ans);
+  }
+  say('인쇄를 보냈어요.');
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest ? e.target.closest('[data-rt-print]') : null;
+  if (!b) return;
+  e.preventDefault();
+  b.disabled = true;
+  printRetestSet(b.dataset.rtPrint).finally(() => { b.disabled = false; });
+});
+
 /* ===== 채점 후 학생별 재시험지 자동 생성 ===== */
-let retestGenTimer = null, retestGenSeq = 0, retestGenUrl = '';
+let retestGenTimer = null, retestGenSeq = 0, retestGenUrl = '', retestGenLast = null;
 function todayText() { const d = new Date(); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
 function renderRetestGen(html) { const w = document.getElementById('retestGenWrap'); if (w) w.innerHTML = html; }
 function scheduleRetestGen(round, student, wrong) {
   clearTimeout(retestGenTimer);
   retestGenSeq++;
   if (!wrong.length) { renderRetestGen(''); return; }
+  if (!round.retestPath && mergeRetestOnlyInto(round)) { saveState(); renderRounds(); }
   if (!round.retestPath) {
     const can = window.KMMS && !window.KMMS.demo;
     renderRetestGen(`<div class="field-hint">이 회차는 재시험지가 아직 없어요. ${can ? `<button class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 올리기</button>` : ''}</div>`);
@@ -1537,12 +1625,13 @@ function scheduleRetestGen(round, student, wrong) {
       retestGenUrl = URL.createObjectURL(res.blob);
       const miss = res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '';
       const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
-      renderRetestGen(`<b>${escapeHtml(student.name)} 재시험지</b> (${res.pageCount}쪽) <a href="${retestGenUrl}" target="_blank" rel="noopener">열기·인쇄</a> <a href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">저장</a>${miss}${noAns}`);
+      retestGenLast = { res, student, round };
+      renderRetestGen(`<div class="rt-print"><b>${escapeHtml(student.name)} 재시험지</b> <span class="field-hint">오답 ${wrong.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span><div class="rt-print-btns"><button type="button" class="btn primary" data-rt-print="all">출력</button>${res.answerPages ? '<button type="button" class="btn ghost" data-rt-print="ans">빠른정답만 출력</button>' : ''}<a class="btn ghost" href="${retestGenUrl}" target="_blank" rel="noopener">PDF 열기</a><a class="btn ghost" href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a></div><div class="field-hint" id="rtPrintStatus">A4 · 문제 1부를 먼저 출력하고, 이어서 빠른정답 1장을 출력해요. 왼쪽 위 스테이플은 프린터 기본 설정에서 켜 두세요.</div>${miss}${noAns}</div>`);
     } catch (e) {
       console.warn('retest gen failed', e);
       if (seq === retestGenSeq) renderRetestGen(`<div class="field-hint">재시험지를 만들지 못했어요: ${escapeHtml(e.message || String(e))}</div>`);
     }
-  }, 1200);
+  }, 700);
 }
 
 
@@ -1551,24 +1640,46 @@ function renderRetestUpload() {
   const card = document.getElementById('retestUploadCard');
   if (!card) return;
   const gSel = document.getElementById('rtGradeSel'), rSel = document.getElementById('rtRoundSel'), body = document.getElementById('rtBody');
-  const all = [...scopedRounds()].sort((a, b) => b.date.localeCompare(a.date));
+  const all = [...scopedRoundsAll()].sort((a, b) => b.date.localeCompare(a.date));
   const grades = [...new Set(all.map(r => r.grade).filter(Boolean))];
   const gPrev = gSel.value;
   gSel.innerHTML = '<option value="">전체 학년</option>' + grades.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
   gSel.value = grades.includes(gPrev) ? gPrev : '';
   const list = gSel.value ? all.filter(r => r.grade === gSel.value) : all;
   const rPrev = rSel.value;
-  rSel.innerHTML = list.length ? list.map(r => `<option value="${r.id}">${escapeHtml((r.grade || '-') + ' · ' + shortDate(r.date) + (r.title ? ' · ' + r.title : ''))}</option>`).join('') : '<option value="">등록된 회차 없음</option>';
-  if (list.some(r => r.id === rPrev)) rSel.value = rPrev;
-  const r = list.find(x => x.id === rSel.value);
-  if (!r) { body.innerHTML = '<div class="empty-state">먼저 위에서 본시험지를 등록하세요.</div>'; return; }
+  rSel.innerHTML = list.map(r => `<option value="${r.id}">${escapeHtml((r.grade || '-') + ' · ' + shortDate(r.date) + (r.title ? ' · ' + r.title : '') + (r.retestOnly ? ' (재시험지만)' : ''))}</option>`).join('') + '<option value="__new">＋ 본시험지 없이 새로 올리기</option>';
+  if (rPrev === '__new' || !list.length) rSel.value = '__new'; else if (list.some(r => r.id === rPrev)) rSel.value = rPrev;
   const can = window.KMMS && !window.KMMS.demo;
-  const box = (kind, label, path, name) => `<div class="upload-box drop-part">
-      <div><b>${label}</b> <span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 없음'}</span></div>
-      ${path ? `<div class="field-hint">${escapeHtml(name || '')}</div><a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<div class="field-hint">업로드된 ${label} 없음 (맨 뒤에 정답 쪽 포함). 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>`}
-      ${can ? `<button type="button" class="btn ghost" data-exam-upload="${r.id}" data-kind="${kind}">${label} ${path ? '교체' : '업로드'} (이미지 · PDF)</button>` : '<div class="field-hint">이 모드에서는 올릴 수 없어요.</div>'}
+  if (rSel.value === '__new') {
+    const base = new Date(); base.setHours(0, 0, 0, 0); base.setDate(base.getDate() - ((base.getDay() + 6) % 7) + 4); // 이번 주 금요일
+    let weeks = '';
+    for (let k = -4; k <= 2; k++) { const d = new Date(base); d.setDate(base.getDate() + k * 7); const iso = toISODate(d); weeks += `<option value="${iso}"${k === 0 ? ' selected' : ''}>${dateToWeekLabel(iso)} · ${d.getMonth() + 1}/${d.getDate()}(금)</option>`; }
+    body.innerHTML = `<div class="upload-box drop-part" id="rtNewBox">
+      <div class="inline-form"><select id="rtNewGrade">${ALL_GRADES.map(g => `<option value="${g}">${g}</option>`).join('')}</select><select id="rtNewWeek">${weeks}</select></div>
+      <div class="field-hint">본시험지를 아직 안 올렸어도 재시험지를 먼저 올릴 수 있어요. 나중에 같은 학년·주차의 본시험지를 등록하면 자동으로 합쳐져요. 정답은 재시험지 맨 뒤에 붙여서 올리세요.</div>
+      ${can ? '<button type="button" class="btn ghost" id="rtNewPick">재시험지 업로드 (이미지 · PDF)</button>' : '<div class="field-hint">이 모드에서는 올릴 수 없어요.</div>'}
     </div>`;
-  body.innerHTML = box('retest', '재시험지', r.retestPath, r.retestName);
+    const go = f => {
+      if (!f) return;
+      if (!/^(application\/pdf|image\/)/.test(f.type)) { toast('PDF나 사진 파일만 올릴 수 있어요.'); return; }
+      if (f.size > 20 * 1024 * 1024) { toast('파일이 너무 커요. 20MB 이하로 올려주세요.'); return; }
+      uploadRetestOnly(document.getElementById('rtNewGrade').value, document.getElementById('rtNewWeek').value, f);
+    };
+    const pick = document.getElementById('rtNewPick');
+    if (pick) pick.addEventListener('click', () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'application/pdf,image/*'; i.onchange = () => go(i.files[0]); i.click(); });
+    const box = document.getElementById('rtNewBox');
+    box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drop-hot'); });
+    box.addEventListener('dragleave', () => box.classList.remove('drop-hot'));
+    box.addEventListener('drop', e => { e.preventDefault(); box.classList.remove('drop-hot'); if (can) go(e.dataTransfer.files[0]); });
+    return;
+  }
+  const r = list.find(x => x.id === rSel.value);
+  if (!r) { body.innerHTML = ''; return; }
+  body.innerHTML = `<div class="upload-box drop-part">
+      <div><b>재시험지</b> <span class="ws-badge ${r.retestPath ? 'ws-ok' : 'ws-no'}">${r.retestPath ? '✓ 업로드완료' : '✗ 없음'}</span></div>
+      ${r.retestPath ? `<div class="field-hint">${escapeHtml(r.retestName || '')}</div><a href="#" data-aux-open="${r.id}" data-kind="retest">재시험지 보기</a>` : '<div class="field-hint">업로드된 재시험지 없음 (맨 뒤에 정답 쪽 포함). 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>'}
+      ${can ? `<button type="button" class="btn ghost" data-exam-upload="${r.id}" data-kind="retest">재시험지 ${r.retestPath ? '교체' : '업로드'} (이미지 · PDF)</button>` : '<div class="field-hint">이 모드에서는 올릴 수 없어요.</div>'}
+    </div>`;
 }
 document.addEventListener('DOMContentLoaded', () => {
   ['rtGradeSel', 'rtRoundSel'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', renderRetestUpload); });
@@ -1788,6 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined };
       state.rounds.push(savedRound);
+      if (mergeRetestOnlyInto(savedRound)) toast('먼저 올려 둔 재시험지를 이 회차에 합쳤어요.');
     }
     saveState();
     // 새로 고른 시험지 파일은 서버의 비공개 저장소에도 올림 (로그인한 선생님만 볼 수 있음)

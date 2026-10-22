@@ -781,6 +781,9 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     delete bufCache[path];
     delete round[f[0]]; delete round[f[1]];
     saveState();
+    // 재시험지만 가진 임시 회차는 파일이 없어지면 회차째로 정리
+    if (round.retestOnly && !round.retestPath) state.rounds = state.rounds.filter(x => x.id !== round.id);
+    saveState();
     toast((kind === 'main' ? '본시험지' : '재시험지') + ' 파일을 삭제했어요.');
     if (typeof renderRounds === 'function') renderRounds();
     if (typeof renderScoreTab === 'function') renderScoreTab();

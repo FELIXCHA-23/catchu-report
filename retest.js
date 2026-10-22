@@ -252,11 +252,27 @@
     const crops = [];
     for (const n of found) crops.push({ n, img: await crop(spots[n]) });
 
+    // 빠른정답: 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 재시험지 PDF 맨 뒤의 정답 쪽에서 같은 번호의 정답 칸만 잘라 둠
+    let answersFound = [];
+    const acs = [];
+    try {
+      const ans = opts.ansBuf ? await openPdf(opts.ansBuf) : paper;
+      let aspots;
+      if (opts.ansBuf) aspots = await scanAnswers(ans, 1);
+      else { const f = await findAnswerPage(ans); aspots = f ? f.spots : {}; }
+      const acrop = makeCropper(ans);
+      for (const n of found) if (aspots[n]) acs.push({ n, img: await acrop(aspots[n]) });
+      answersFound = acs.map(a => a.n);
+    } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e); }
+
     // 문제 쪽: 한 쪽에 4문제, 왼쪽 열 위→아래, 오른쪽 열 위→아래 순서 (시험지와 같은 배치)
     const pages = [];
     const L = 90, R = PAGE_W - 90, TOP = 420, BOT = PAGE_H - 110, GAP = 34;
     const colW = (R - L - 2 * GAP) / 2, cellH = (BOT - TOP - GAP) / 2;
     const totalProblemPages = Math.ceil(crops.length / 4);
+    const hasAns = acs.length > 0;
+    const blankPages = 0;   // 정답은 문제 쪽 바로 뒤에 붙임
+    const totalPages = totalProblemPages + blankPages + (hasAns ? 1 : 0);
     const metaTitle = opts.title || '';
     for (let pi = 0; pi < totalProblemPages; pi++) {
       const { cv, ctx } = newPage();
@@ -267,44 +283,31 @@
         const x = col === 0 ? L : PAGE_W / 2 + GAP / 2, y = TOP + row * (cellH + GAP);
         fitImage(ctx, c.img, x, y, colW, cellH, 1.5);
       });
-      drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${pi + 1}/${totalProblemPages + 1}`);
+      drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${pi + 1}/${totalPages}`);
       pages.push(cv);
     }
+    if (blankPages) pages.push(newPage().cv);   // 양면 인쇄용 빈 쪽 (아무것도 그리지 않음)
 
     // 빠른정답 쪽: 같은 번호의 정답 칸만 모아 붙임
-    let answersFound = [];
-    {
-      try {
-        // 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 재시험지 PDF 맨 뒤의 정답 쪽을 씀
-        const ans = opts.ansBuf ? await openPdf(opts.ansBuf) : paper;
-        let aspots, apage = 1;
-        if (opts.ansBuf) aspots = await scanAnswers(ans, 1);
-        else { const f = await findAnswerPage(ans); aspots = f ? f.spots : {}; apage = f ? f.page : 0; }
-        const acrop = makeCropper(ans);
-        const acs = [];
-        for (const n of found) if (aspots[n]) acs.push({ n, img: await acrop(aspots[n]) });
-        answersFound = acs.map(a => a.n);
-        if (acs.length) {
-          const { cv, ctx } = newPage();
-          drawHeader(ctx, { kind: '빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
-          const cols = 3, cw = (R - L - (cols - 1) * 30) / cols, rowH = 150;
-          acs.forEach((a, i) => {
-            const c = i % cols, r = Math.floor(i / cols);
-            const x = L + c * (cw + 30), y = TOP + 10 + r * rowH;
-            if (y + rowH > BOT) return;
-            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
-            fitImage(ctx, a.img, x, y, cw, rowH - 30, 2.2);
-          });
-          drawFooter(ctx, `빠른 정답 ${opts.studentName || ''} · ${pages.length + 1}/${totalProblemPages + 1}`);
-          pages.push(cv);
-        }
-      } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e); }
+    if (hasAns) {
+      const { cv, ctx } = newPage();
+      drawHeader(ctx, { kind: '빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
+      const cols = 3, cw = (R - L - (cols - 1) * 30) / cols, rowH = 150;
+      acs.forEach((a, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        const x = L + c * (cw + 30), y = TOP + 10 + r * rowH;
+        if (y + rowH > BOT) return;
+        ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
+        fitImage(ctx, a.img, x, y, cw, rowH - 30, 2.2);
+      });
+      drawFooter(ctx, `빠른 정답 ${opts.studentName || ''} · ${pages.length + 1}/${totalPages}`);
+      pages.push(cv);
     }
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
     pages.forEach((cv, i) => { if (i) pdf.addPage(); pdf.addImage(cv.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, 210, 297); });
-    return { blob: pdf.output('blob'), pageCount: pages.length, found, missing, answersFound, previews: pages };
+    return { blob: pdf.output('blob'), pageCount: pages.length, problemPages: totalProblemPages, answerPages: hasAns ? 1 : 0, found, missing, answersFound, previews: pages };
   }
 
   // 올려 둔 재시험지에서 찾을 수 있는 문제 번호 목록(검사용)
