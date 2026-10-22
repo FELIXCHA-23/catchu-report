@@ -1375,53 +1375,97 @@ function wsRounds() {
     .sort((x, y) => WS_GRADES.indexOf(x.grade) - WS_GRADES.indexOf(y.grade) || x.date.localeCompare(y.date));
 }
 function closeWsModal() { const m = document.getElementById('wsModal'); if (m) m.remove(); }
-// file: 고른/끌어다 놓은 파일. opt: { kind('main'|'retest') 미리 골라둘 종류, roundId, grade }
+// 본시험지를 시험지 탭의 "본시험지 등록"과 똑같이 처리: 시험지 탭 양식에 파일을 넣고 → AI 분석 → 회차 자동 저장 → 서버 업로드 → 공용 파일 공유.
+// 주차는 시험지(제목·인쇄된 주차)가 우선, 없으면 현황판에서 보고 있는 주차의 금요일로 정함
+async function startMainExamAnalysis(file, grade) {
+  const btn = document.getElementById('aiAnalyzeBtn');
+  if (btn && btn.disabled) { toast('분석 중인 시험지가 있어요. 끝난 뒤 다시 올려주세요.'); return; }
+  resetRoundForm();
+  const gsel = document.getElementById('roundGrade');
+  if (grade) { gsel.value = grade; gsel.dispatchEvent(new Event('change', { bubbles: true })); }
+  const input = document.getElementById('examFileInput');
+  const dt = new DataTransfer(); dt.items.add(file);
+  input.files = dt.files;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  const st = document.getElementById('wsAnalyzeStatus');
+  if (st) { st.style.color = 'var(--ink)'; st.textContent = '⏳ AI가 유형을 분석하는 중이에요. 끝날 때까지 잠시만 기다려 주세요 (몇 초~1분)'; }
+  for (let n = 0; n < 150 && !(pendingExamFile && pendingExamFile.dataUrl); n++) await new Promise(r => setTimeout(r, 100));
+  if (!(pendingExamFile && pendingExamFile.dataUrl)) { if (st) st.textContent = '시험지 파일을 읽지 못했어요.'; return; }
+  // 제목(파일명)에 주차가 없으면 현황판에서 보고 있는 주차의 금요일로 날짜를 맞춰둠 (이후 AI가 시험지에서 읽은 주차가 있으면 그쪽이 우선)
+  if (!/(\d{1,2})\s*(?:월|-)\s*(\d)\s*주\s*차/.test(document.getElementById('roundTitle').value) && !isElementaryGrade(gsel.value)) {
+    const d = new Date(wsDateOf(wsWeekOffset) + 'T00:00:00');
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 4);
+    setRoundDate(toISODate(d));
+  }
+  analyzeExamWithAI();
+}
+// 시험지 탭의 분석 진행 문구를 현황판에도 보여줌 (채점 입력 화면에서 진행 상황을 볼 수 있게)
+document.addEventListener('DOMContentLoaded', () => {
+  const src = document.getElementById('aiAnalyzeStatus'), dst = document.getElementById('wsAnalyzeStatus');
+  if (!src || !dst) return;
+  new MutationObserver(() => { const t = src.textContent; dst.textContent = /분석 중이에요/.test(t) ? '⏳ AI가 유형 분석 중이에요. 끝날 때까지 기다려 주세요 (몇 초~1분)' : t; dst.style.color = src.style.color; }).observe(src, { childList: true, characterData: true, subtree: true });
+});
+
+// 끌어다 놓은(또는 고른) 파일이 본시험지인지 재시험지인지 물어봄.
+// 본시험지 → 바로 AI 유형 분석(시험지 탭과 동일) / 재시험지 → 바로 업로드(회차가 여러 개라 헷갈릴 때만 어느 회차인지 한 번 더 물음)
+// opt: { kind('main'|'retest') 이미 정해졌으면 묻지 않음, roundId, grade }
 function openWsUpload(file, opt) {
   opt = opt || {};
   if (!window.KMMS) { toast('로그인한 뒤에 올릴 수 있어요.'); return; }
   if (!/^(application\/pdf|image\/)/.test(file.type)) { toast('PDF나 사진 파일만 올릴 수 있어요.'); return; }
   if (file.size > 20 * 1024 * 1024) { toast(`파일이 너무 커요 (${(file.size / 1024 / 1024).toFixed(1)}MB). 20MB 이하로 올려주세요.`); return; }
-  const rounds = wsRounds();
-  if (!rounds.length) { toast('이 주차에는 시험지 회차가 없어요. 시험지 탭에서 본시험지를 먼저 등록하세요.'); return; }
   closeWsModal();
-  const pick = (opt.roundId && rounds.find(r => r.id === opt.roundId)) || (opt.grade && rounds.find(r => r.grade === opt.grade)) || rounds[0];
-  const ov = document.createElement('div');
-  ov.id = 'wsModal'; ov.className = 'ws-modal';
-  ov.innerHTML = `<div class="ws-modal-box" role="dialog" aria-label="시험지 올리기">
-    <h3>시험지 올리기</h3>
-    <div class="ws-modal-file">${escapeHtml(file.name)}</div>
-    <div class="ws-modal-sec"><b>어떤 시험지인가요?</b>
-      <div class="ws-kind"><label><input type="radio" name="wsKind" value="main"${opt.kind === 'main' ? ' checked' : ''}> 본시험지</label>
-      <label><input type="radio" name="wsKind" value="retest"${opt.kind === 'retest' ? ' checked' : ''}> 재시험지</label></div></div>
-    <div class="ws-modal-sec"><b>회차 (${escapeHtml(document.getElementById('wsLabel').textContent)})</b>
-      <select id="wsModalRound">${rounds.map(r => `<option value="${r.id}"${r.id === pick.id ? ' selected' : ''}>${escapeHtml(r.grade)} · ${escapeHtml(r.title || shortDate(r.date))}</option>`).join('')}</select>
-      <div id="wsModalNote" class="field-hint"></div></div>
-    <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button><button type="button" class="btn primary" id="wsModalOk" disabled>올리기</button></div>
-  </div>`;
-  document.body.appendChild(ov);
-  const kindOf = () => { const c = ov.querySelector('input[name=wsKind]:checked'); return c ? c.value : ''; };
-  const roundOf = () => state.rounds.find(r => r.id === ov.querySelector('#wsModalRound').value);
-  const refresh = () => {
-    const k = kindOf(), r = roundOf();
-    ov.querySelector('#wsModalOk').disabled = !k || !r;
-    const has = r && (k === 'main' ? r.examPath : k === 'retest' ? r.retestPath : '');
-    ov.querySelector('#wsModalNote').textContent = !k ? '본시험지인지 재시험지인지 골라 주세요.' : has ? `이 회차에는 이미 ${k === 'main' ? '본시험지' : '재시험지'}가 있어요. 올리면 교체돼요.` : '';
-  };
-  ov.addEventListener('change', refresh);
-  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('#wsModalCancel')) closeWsModal(); });
-  ov.querySelector('#wsModalOk').addEventListener('click', () => {
-    const k = kindOf(), r = roundOf();
-    if (!k || !r) return;
+  const uploadRetest = r => {
     closeWsModal();
     const fr = new FileReader();
     fr.onload = async () => {
-      toast('올리는 중…');
-      const f = { name: file.name, dataUrl: fr.result };
-      if (k === 'main') await window.KMMS.uploadExam(r, f); else await window.KMMS.uploadAux(r, 'retest', f);
+      toast('재시험지를 올리는 중…');
+      await window.KMMS.uploadAux(r, 'retest', { name: file.name, dataUrl: fr.result });
     };
     fr.readAsDataURL(file);
+  };
+  const chooseRetestRound = () => {
+    const rounds = wsRounds();
+    if (!rounds.length) { closeWsModal(); toast('이 주차에는 등록된 회차가 없어요. 본시험지를 먼저 올려 등록하세요.'); return; }
+    const exact = opt.roundId && rounds.find(r => r.id === opt.roundId);
+    const inGrade = opt.grade ? rounds.filter(r => r.grade === opt.grade) : [];
+    const only = exact || (inGrade.length === 1 ? inGrade[0] : (rounds.length === 1 ? rounds[0] : null));
+    if (only) { uploadRetest(only); return; }
+    const box = document.querySelector('#wsModal .ws-modal-box');
+    box.innerHTML = `<h3>어느 회차의 재시험지인가요?</h3><div class="ws-modal-file">${escapeHtml(file.name)}</div>
+      <div class="ws-choices">${rounds.map(r => `<button type="button" class="ws-bigbtn" data-pick-round="${r.id}">${escapeHtml(r.grade)} · ${escapeHtml(r.title || shortDate(r.date))}${r.retestPath ? '<small>이미 재시험지가 있어요 (교체돼요)</small>' : ''}</button>`).join('')}</div>
+      <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div>`;
+    box.querySelectorAll('[data-pick-round]').forEach(b => b.addEventListener('click', () => uploadRetest(state.rounds.find(r => r.id === b.dataset.pickRound))));
+  };
+  const handle = kind => {
+    if (kind === 'main') { closeWsModal(); startMainExamAnalysis(file, opt.grade || ''); return; }
+    // 모달이 아직 없으면(버튼으로 종류를 이미 정한 경우) 회차 고르는 창을 띄울 틀부터 만듦
+    if (!document.getElementById('wsModal')) {
+      const m = document.createElement('div'); m.id = 'wsModal'; m.className = 'ws-modal';
+      m.innerHTML = '<div class="ws-modal-box"></div>';
+      m.addEventListener('click', e => { if (e.target === m || e.target.closest('#wsModalCancel')) closeWsModal(); });
+      document.body.appendChild(m);
+    }
+    chooseRetestRound();
+  };
+  if (opt.kind) { handle(opt.kind); return; }
+  const ov = document.createElement('div');
+  ov.id = 'wsModal'; ov.className = 'ws-modal';
+  ov.innerHTML = `<div class="ws-modal-box" role="dialog" aria-label="시험지 올리기">
+    <h3>어떤 시험지인가요?</h3>
+    <div class="ws-modal-file">${escapeHtml(file.name)}</div>
+    <div class="ws-choices">
+      <button type="button" class="ws-bigbtn" data-wskind-pick="main">본시험지<small>AI가 문항별 유형을 분석해서 등록해요 (몇 초~1분, 기다리면 돼요)</small></button>
+      <button type="button" class="ws-bigbtn" data-wskind-pick="retest">재시험지<small>분석 없이 바로 업로드해요</small></button>
+    </div>
+    <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => {
+    if (e.target === ov || e.target.closest('#wsModalCancel')) { closeWsModal(); return; }
+    const b = e.target.closest('[data-wskind-pick]');
+    if (b) handle(b.dataset.wskindPick);
   });
-  refresh();
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeWsModal(); });
 document.addEventListener('DOMContentLoaded', () => {
@@ -1435,8 +1479,8 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault(); card.classList.remove('drop-hot');
     const files = e.dataTransfer.files;
     if (files.length > 1) toast('한 번에 한 파일씩 올려 주세요. 첫 번째 파일만 올려요.');
-    const row = e.target.closest('.ws-row'), rnd = e.target.closest('.ws-round'), gr = e.target.closest('.ws-grade');
-    openWsUpload(files[0], { kind: row ? row.dataset.wskind : '', roundId: rnd ? rnd.dataset.round : '', grade: gr ? gr.dataset.grade : '' });
+    const rnd = e.target.closest('.ws-round'), gr = e.target.closest('.ws-grade');
+    openWsUpload(files[0], { roundId: rnd ? rnd.dataset.round : '', grade: gr ? gr.dataset.grade : '' });
   });
   card.addEventListener('click', async e => {
     const pickBtn = e.target.closest('[data-ws-pick]');
