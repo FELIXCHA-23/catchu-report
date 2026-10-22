@@ -225,7 +225,7 @@
   <!-- 시험지 -->
   <section class="tab-panel" id="panel-rounds">
     <div class="card">
-      <h2>새 시험지 등록</h2>
+      <h2>본시험지 등록</h2>
       <p class="card-sub">캐치유테스트는 매주 금요일 실시. 학년별로 시험지를 업로드하며, 같은 학년에 다른 시험지가 있으면 추가 업로드.</p>
       <form id="roundForm">
         <div class="inline-form">
@@ -282,6 +282,15 @@
 
         <button type="submit" class="btn primary" style="margin-top:12px;">회차 저장</button>
       </form>
+    </div>
+    <div class="card" id="retestUploadCard">
+      <h2>재시험지 등록</h2>
+      <p class="card-sub">이미 등록된 회차를 골라 재시험지(문제)와 빠른정답 PDF를 올림. 본시험지와 같은 방식이며 유형 분석은 하지 않음. 둘 다 올려두면 채점 후 학생별 재시험지가 자동으로 만들어짐.</p>
+      <div class="inline-form">
+        <select id="rtGradeSel" title="학년으로 좁히기"></select>
+        <select id="rtRoundSel" style="min-width:260px;" title="재시험지를 붙일 회차"></select>
+      </div>
+      <div id="rtBody"></div>
     </div>
     <div class="card">
       <h2>시험지 분석 파일 가져오기</h2>
@@ -382,8 +391,16 @@
       </div>
     </div>
     <div class="card">
-      <h2>재시험 기록</h2>
-      <div id="retestListWrap"></div>
+      <h2>학생별 재시험 채점 현황</h2>
+      <p class="card-sub">오답이 있는 회차마다 재시험을 쳤는지 한눈에 확인. 재시험만 따로 기간을 정해서 볼 수 있음 (채점 입력 탭의 기간과 별개).</p>
+      <div class="inline-form">
+        <select id="retestFromSel"></select>
+        <span class="field-hint">부터</span>
+        <select id="retestToSel"></select>
+        <span class="field-hint">까지 회차만 표시</span>
+      </div>
+      <div id="retestStatusSum" class="field-hint" style="margin-top:8px;"></div>
+      <div id="retestListWrap" style="margin-top:12px;"></div>
     </div>
   </section>
 
@@ -464,7 +481,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=1"></script>
-<script src="app.js?v=179"></script>
+<script src="app.js?v=181"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

@@ -1372,8 +1372,38 @@ function scheduleRetestGen(round, student, wrong) {
   }, 1200);
 }
 
+
+/* ===== 시험지 탭: 재시험지 등록 (본시험지와 같은 업로드 칸, 유형 분석 없음) ===== */
+function renderRetestUpload() {
+  const card = document.getElementById('retestUploadCard');
+  if (!card) return;
+  const gSel = document.getElementById('rtGradeSel'), rSel = document.getElementById('rtRoundSel'), body = document.getElementById('rtBody');
+  const all = [...scopedRounds()].sort((a, b) => b.date.localeCompare(a.date));
+  const grades = [...new Set(all.map(r => r.grade).filter(Boolean))];
+  const gPrev = gSel.value;
+  gSel.innerHTML = '<option value="">전체 학년</option>' + grades.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+  gSel.value = grades.includes(gPrev) ? gPrev : '';
+  const list = gSel.value ? all.filter(r => r.grade === gSel.value) : all;
+  const rPrev = rSel.value;
+  rSel.innerHTML = list.length ? list.map(r => `<option value="${r.id}">${escapeHtml((r.grade || '-') + ' · ' + shortDate(r.date) + (r.title ? ' · ' + r.title : ''))}</option>`).join('') : '<option value="">등록된 회차 없음</option>';
+  if (list.some(r => r.id === rPrev)) rSel.value = rPrev;
+  const r = list.find(x => x.id === rSel.value);
+  if (!r) { body.innerHTML = '<div class="empty-state">먼저 위에서 본시험지를 등록하세요.</div>'; return; }
+  const can = window.KMMS && !window.KMMS.demo;
+  const box = (kind, label, path, name) => `<div class="upload-box drop-part">
+      <div><b>${label}</b> <span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 없음'}</span></div>
+      ${path ? `<div class="field-hint">${escapeHtml(name || '')}</div><a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<div class="field-hint">업로드된 ${label} 없음. 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>`}
+      ${can ? `<button type="button" class="btn ghost" data-exam-upload="${r.id}" data-kind="${kind}">${label} ${path ? '교체' : '업로드'} (이미지 · PDF)</button>` : '<div class="field-hint">이 모드에서는 올릴 수 없어요.</div>'}
+    </div>`;
+  body.innerHTML = box('retest', '재시험지', r.retestPath, r.retestName) + box('retestAns', '빠른정답', r.retestAnsPath, r.retestAnsName);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  ['rtGradeSel', 'rtRoundSel'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', renderRetestUpload); });
+});
+
 function renderRounds() {
   renderWeeklyStatus();
+  try { renderRetestUpload(); } catch (e) { console.warn(e); }
   const wrap = document.getElementById('roundListWrap');
   populateRoundGradeFilter();
   const gradeFilter = document.getElementById('roundGradeFilter')?.value || '';
@@ -2189,6 +2219,7 @@ function currentRetestRound() { return state.rounds.find(r => r.id === document.
 function currentRetestStudent() { return state.students.find(s => s.id === document.getElementById('retestStudentSel').value); }
 
 function renderRetestTab() {
+  populateRetestRangeSel();
   populateRetestStudentSelect();
   populateRetestRoundSelect();
   renderRetestGrid();
@@ -2233,62 +2264,100 @@ function updateRetestSummary() {
   summary.textContent = `정답 전환 ${corrected} / ${total} (${Math.round((corrected / total) * 100)}%)`;
 }
 
-// 학생별 채점 현황과 같은 형태 — 재시험 기록이 있는 학생을 반 순서대로 묶고, 학생 한 명의 재시험은
-// 하나의 접이식 카드 안에 전부 모아서 보여줌 (기록이 여러 회차에 걸쳐 있어도 학생별로 흩어지지 않게)
+// 재시험 탭의 "OO부터 OO까지" — 재시험 현황만 따로 기간을 정함 (채점 입력 탭의 기간과는 별개).
+// 선택값은 다시 그려도 유지되고, 기본값은 전체 기간임
+function populateRetestRangeSel() {
+  const fromSel = document.getElementById('retestFromSel'), toSel = document.getElementById('retestToSel');
+  if (!fromSel || !toSel) return;
+  const dates = Array.from(new Set(scopedRounds().map(r => r.date))).sort();
+  const prevFrom = fromSel.value, prevTo = toSel.value;
+  const opts = dates.map(d => `<option value="${d}">${escapeHtml(dateToWeekLabel(d))} (${shortDate(d)})</option>`).join('') || '<option value="">회차가 없어요</option>';
+  fromSel.innerHTML = opts; toSel.innerHTML = opts;
+  fromSel.value = dates.includes(prevFrom) ? prevFrom : (dates[0] || '');
+  toSel.value = dates.includes(prevTo) ? prevTo : (dates[dates.length - 1] || '');
+}
+
+// 학생별 재시험 채점 현황 — 고른 기간 안에서 원 시험에 오답이 있는(=재시험 대상) 회차마다
+// 재시험을 쳤는지(정답 전환 몇 문항) / 아직인지(미실시)를 학생별로 묶어 보여줌. 학생은 반 순서대로 묶음
 function renderRetestList() {
   const wrap = document.getElementById('retestListWrap');
+  if (!wrap) return;
   if (!state.studentMemoRetest) state.studentMemoRetest = {};
-  const roundLabelById = id => { const r = state.rounds.find(x => x.id === id); return r ? roundLabel(r) : '(삭제된 회차)'; };
+  const fromRaw = document.getElementById('retestFromSel')?.value || '';
+  const toRaw = document.getElementById('retestToSel')?.value || '';
+  const rs = fromRaw && toRaw && fromRaw > toRaw ? toRaw : fromRaw;
+  const re = fromRaw && toRaw && fromRaw > toRaw ? fromRaw : toRaw;
+  const inRange = date => !rs || !re || (date >= rs && date <= re);
 
-  const retestStudentIds = new Set(state.retests.map(rt => rt.studentId));
-  const students = filterByCurrentTeacher(state.students)
-    .filter(s => retestStudentIds.has(s.id))
+  const currentTeacher = getCurrentTeacher();
+  const students = state.students.filter(inStudentScope)
+    .filter(s => !currentTeacher || hasAllAccess() || s.teacher === currentTeacher)
     .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
 
-  if (!students.length) { wrap.innerHTML = '<div class="empty-state">아직 재시험 기록이 없어요.</div>'; return; }
+  // 학생별 재시험 대상 회차 (기간 안, 오답이 있는 것만) — 최신 회차가 위
+  const info = students.map(s => {
+    const items = state.results
+      .filter(r => r.studentId === s.id && r.wrong.length)
+      .map(r => ({ result: r, round: state.rounds.find(x => x.id === r.roundId) }))
+      .filter(x => x.round && inRange(x.round.date))
+      .map(x => ({ ...x, rt: state.retests.find(t => t.studentId === s.id && t.roundId === x.round.id) }))
+      .sort((a, b) => b.round.date.localeCompare(a.round.date));
+    return { s, items, done: items.filter(x => x.rt).length };
+  }).filter(x => x.items.length);
+
+  const sum = document.getElementById('retestStatusSum');
+  const totalItems = info.reduce((n, x) => n + x.items.length, 0), totalDone = info.reduce((n, x) => n + x.done, 0);
+  if (sum) sum.textContent = info.length ? `재시험 대상 ${info.length}명 · ${totalItems}건 중 ${totalDone}건 완료, ${totalItems - totalDone}건 미실시` : '';
+  if (!info.length) { wrap.innerHTML = '<div class="empty-state">이 기간엔 재시험 대상(오답이 있는 채점 기록)이 없어요.</div>'; return; }
+
+  const pending = info.filter(x => x.done < x.items.length), allDone = info.filter(x => x.done === x.items.length);
+  const roster = `<div class="reset-roster-bar">
+    <div class="reset-roster-group todo"><b>재시험 남음 ${pending.length}명</b><span>${pending.length ? pending.map(x => escapeHtml(x.s.name) + `(${x.items.length - x.done})`).join(', ') : '없음'}</span></div>
+    <div class="reset-roster-group done"><b>모두 완료 ${allDone.length}명</b><span>${allDone.length ? allDone.map(x => escapeHtml(x.s.name)).join(', ') : '없음'}</span></div>
+  </div>`;
+
+  const card = x => {
+    const rows = x.items.map(({ result, round, rt }) => {
+      const label = `${escapeHtml(round.grade || '')} ${roundLabel(round)}${roundTopicHint(round)}`;
+      const orig = result.wrong.length;
+      if (!rt) return `<tr><td>${label}</td><td>${shortDate(round.date)}</td><td><span class="ws-badge ws-no">미실시</span> <span class="field-hint">오답 ${orig}개</span></td><td class="row-actions"><button class="icon-btn" data-rt-go="${x.s.id}" data-round="${round.id}">채점하기</button></td></tr>`;
+      const corrected = orig - rt.stillWrong.length, pct = orig ? Math.round(corrected / orig * 100) : 0;
+      const sw = rt.stillWrong.length ? `아직 틀림: ${escapeHtml(rangeToString(rt.stillWrong))}` : '전부 정답 전환';
+      return `<tr><td>${label}</td><td>${shortDate(rt.date)} 재시험</td><td class="tnum"><span class="ws-badge ws-ok">완료</span> ${corrected} / ${orig} (${pct}%)<br><span class="field-hint">${sw}</span></td><td class="row-actions"><button class="icon-btn" data-rt-go="${x.s.id}" data-round="${round.id}">수정</button><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td></tr>`;
+    }).join('');
+    const memo = state.studentMemoRetest[x.s.id] || '';
+    return `<details class="manual-fallback${x.done === x.items.length ? ' is-done' : ''}">
+      <summary>
+        <span class="reset-summary-text">${x.done === x.items.length ? '✅ ' : ''}${escapeHtml(x.s.name)}${x.s.grade ? ' · ' + escapeHtml(x.s.grade) : ''} (재시험 ${x.done} / ${x.items.length}건)</span>
+        <input type="text" class="student-memo no-print" data-memo="${x.s.id}" placeholder="메모 한 줄" maxlength="60" value="${escapeHtml(memo)}">
+      </summary>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>날짜</th><th>재시험 결과</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </details>`;
+  };
 
   const groups = [];
-  students.forEach(s => {
-    const cls = s.class || '(반 미지정)';
+  info.forEach(x => {
+    const cls = x.s.class || '(반 미지정)';
     let g = groups.find(g => g.cls === cls);
-    if (!g) { g = { cls, students: [] }; groups.push(g); }
-    g.students.push(s);
+    if (!g) { g = { cls, list: [] }; groups.push(g); }
+    g.list.push(x);
   });
-
-  wrap.innerHTML = groups.map(g => `
-    <div class="reset-class-group">
-      <h3 class="reset-class-title">${escapeHtml(g.cls)}</h3>
-      ${g.students.map(student => {
-        const myRetests = state.retests.filter(rt => rt.studentId === student.id).sort((a, b) => b.date.localeCompare(a.date));
-        const rows = myRetests.map(rt => {
-          const result = state.results.find(r => r.studentId === rt.studentId && r.roundId === rt.roundId);
-          const originalCount = result ? result.wrong.length : rt.stillWrong.length;
-          const corrected = originalCount - rt.stillWrong.length;
-          const pct = originalCount ? Math.round((corrected / originalCount) * 100) : 0;
-          const stillWrongTxt = rt.stillWrong.length ? `아직 틀림: ${escapeHtml(rangeToString(rt.stillWrong))}` : '전부 정답 전환';
-          return `<tr>
-            <td>${roundLabelById(rt.roundId)}</td>
-            <td>${shortDate(rt.date)}</td>
-            <td class="tnum">${corrected} / ${originalCount} (${pct}%)<br><span class="field-hint">${stillWrongTxt}</span></td>
-            <td class="row-actions"><button class="icon-btn" data-del-retest="${rt.id}">삭제</button></td>
-          </tr>`;
-        }).join('');
-        const memo = state.studentMemoRetest[student.id] || '';
-        return `<details class="manual-fallback">
-          <summary>
-            <span class="reset-summary-text">${escapeHtml(student.name)}${student.grade ? ' · ' + escapeHtml(student.grade) : ''} (재시험 ${myRetests.length}건)</span>
-            <input type="text" class="student-memo no-print" data-memo="${student.id}" placeholder="메모 한 줄" maxlength="60" value="${escapeHtml(memo)}">
-          </summary>
-          <div class="table-wrap"><table class="data-table"><thead><tr><th>회차</th><th>재시험일</th><th>정답 전환</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>
-        </details>`;
-      }).join('')}
-    </div>`).join('');
+  wrap.innerHTML = roster + groups.map(g => `<div class="reset-class-group"><h3 class="reset-class-title">${escapeHtml(g.cls)}</h3>${g.list.map(card).join('')}</div>`).join('');
 
   wrap.querySelectorAll('[data-del-retest]').forEach(b => b.addEventListener('click', () => {
     if (!confirm('이 재시험 기록을 삭제할까요?')) return;
     state.retests = state.retests.filter(rt => rt.id !== b.dataset.delRetest);
-    saveState(); renderRetestList();
+    saveState(); renderRetestList(); renderRetestGrid();
     toast('삭제했어요.');
+  }));
+  // "채점하기/수정" — 위 재시험 채점 칸에 그 학생·회차를 바로 맞춰줌
+  wrap.querySelectorAll('[data-rt-go]').forEach(b => b.addEventListener('click', () => {
+    const ss = document.getElementById('retestStudentSel');
+    ss.value = b.dataset.rtGo;
+    populateRetestRoundSelect();
+    document.getElementById('retestRoundSel').value = b.dataset.round;
+    renderRetestGrid();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }));
 
   // 채점입력 탭의 메모(state.studentMemo)와는 별도 데이터(state.studentMemoRetest) — 재시험 탭 메모는 독립적으로 관리됨
@@ -2305,6 +2374,9 @@ function renderRetestList() {
     });
   });
 }
+document.addEventListener('DOMContentLoaded', () => {
+  ['retestFromSel', 'retestToSel'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', renderRetestList); });
+});
 
 // 재시험 결과 저장 — "재시험 결과 저장" 버튼과 빠른입력 Enter 저장이 공용으로 씀.
 // 같은 학생 · 같은 회차 기록이 이미 있으면 새로 쌓지 않고 그 기록을 덮어씀(중복 방지)
