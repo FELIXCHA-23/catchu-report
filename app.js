@@ -1353,7 +1353,7 @@ function renderWeeklyStatus() {
   const can = window.KMMS && !window.KMMS.demo;
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
   const all = scopedRoundsAll().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
-  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? '<span class="field-hint">끌어다 놓아 분석</span>' : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
+  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? `<button class="icon-btn" data-ph-link="${r.id}">본시험지에 연결</button><span class="field-hint">또는 끌어다 놓아 분석</span>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round" data-round="${r.id}"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
@@ -1377,13 +1377,76 @@ function createRetestOnlyRound(grade, date, fileName) {
   state.rounds.push(r);
   return r;
 }
+// 한 회차가 속할 수 있는 주차 표기들: 직접 고른 주차 · 시험지(파일) 이름에 적힌 주차 · 날짜로 계산한 주차
+function weekLabelsOf(r) {
+  const s = new Set();
+  [r.week, weekFromTitle(r.title), r.date ? dateToWeekLabel(r.date) : ''].forEach(x => { if (x) s.add(x); });
+  return s;
+}
+const RETEST_FIELDS = ['retestPath', 'retestName', 'retestAnsPath', 'retestAnsName'];
+// 같은 시험의 본시험지 회차 후보: 같은 학년이고 주차가 하나라도 겹치는 정식 회차 (개별시험지·임시 회차 제외)
+function findRealRounds(grade, labels, date) {
+  const L = new Set([].concat(labels).filter(Boolean));
+  return scopedRounds().filter(r => !r.individual && r.grade === grade && ([...weekLabelsOf(r)].some(x => L.has(x)) || (date && r.date === date)));
+}
+// 후보가 여러 개면 아직 재시험지가 없는 회차를 우선하고, 그래도 하나로 못 정하면 null (직접 연결하도록 둠)
+function pickReal(cands) {
+  if (cands.length === 1) return cands[0];
+  const empty = cands.filter(r => !r.retestPath);
+  return empty.length === 1 ? empty[0] : null;
+}
+function moveRetestFields(from, to, force) {
+  RETEST_FIELDS.forEach(k => { if (from[k] && (force || !to[k])) to[k] = from[k]; });
+}
 function mergeRetestOnlyInto(round) {
-  const key = roundWeekKey(round);
-  const p = state.rounds.find(x => x.retestOnly && x.id !== round.id && x.grade === round.grade && roundWeekKey(x) === key);
-  if (!p) return false;
-  ['retestPath', 'retestName', 'retestAnsPath', 'retestAnsName'].forEach(k => { if (p[k] && !round[k]) round[k] = p[k]; });
-  state.rounds = state.rounds.filter(x => x.id !== p.id);
+  const labels = weekLabelsOf(round);
+  const ps = state.rounds.filter(x => x.retestOnly && x.id !== round.id && x.grade === round.grade && ([...weekLabelsOf(x)].some(l => labels.has(l)) || x.date === round.date));
+  if (!ps.length) return false;
+  ps.sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+  ps.forEach(p => moveRetestFields(p, round, false));
+  const ids = new Set(ps.map(p => p.id));
+  state.rounds = state.rounds.filter(x => !ids.has(x.id));
   return true;
+}
+// 이미 따로 잡혀 있는 "재시험지만 있는 회차"를 같은 시험의 본시험지에 자동으로 합침 (후보가 하나로 정해질 때만)
+function reconcileRetestOnly() {
+  let n = 0;
+  state.rounds.filter(r => r.retestOnly).forEach(p => {
+    const real = pickReal(findRealRounds(p.grade, [...weekLabelsOf(p)], p.date));
+    if (!real || (real.retestPath && p.retestPath)) return;
+    moveRetestFields(p, real, false);
+    state.rounds = state.rounds.filter(x => x.id !== p.id);
+    n++;
+  });
+  if (n) { saveState(); try { toast(`따로 올라가 있던 재시험지 ${n}개를 본시험지와 한 세트로 합쳤어요.`); } catch (e) {} }
+  return n;
+}
+// 본시험지 연결: 임시 회차(재시험지만 있는 것)를 사용자가 고른 본시험지 회차에 합침
+function openLinkRetestOnly(phId) {
+  const ph = state.rounds.find(r => r.id === phId);
+  if (!ph) return;
+  closeWsModal();
+  const cands = scopedRounds().filter(r => !r.individual && r.grade === ph.grade).sort((x, y) => y.date.localeCompare(x.date)).slice(0, 12);
+  const ov = document.createElement('div');
+  ov.id = 'wsModal'; ov.className = 'ws-modal';
+  ov.innerHTML = `<div class="ws-modal-box"><h3>어느 본시험지의 재시험지인가요?</h3>
+    <div class="ws-modal-file">${escapeHtml(ph.title || '재시험지')}</div>
+    <div class="ws-choices">${cands.length ? cands.map(r => `<button type="button" class="ws-bigbtn" data-link-to="${r.id}">${escapeHtml(r.grade)} · ${escapeHtml(roundLabel(r))} · ${shortDate(r.date)}<small>${escapeHtml(r.title || (r.types[0] ? r.types[0].name : ''))}${r.retestPath ? ' — 이미 재시험지가 있어요 (바뀌어요)' : ''}</small></button>`).join('') : '<div class="field-hint">같은 학년의 본시험지가 아직 없어요. 먼저 본시험지를 올려 등록하세요.</div>'}</div>
+    <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => {
+    if (e.target === ov || e.target.closest('#wsModalCancel')) { closeWsModal(); return; }
+    const b = e.target.closest('[data-link-to]');
+    if (!b) return;
+    const to = state.rounds.find(r => r.id === b.dataset.linkTo);
+    if (!to) return;
+    moveRetestFields(ph, to, true);
+    state.rounds = state.rounds.filter(x => x.id !== ph.id);
+    saveState();
+    closeWsModal();
+    refreshAfterFileChange();
+    toast('본시험지와 한 세트로 연결했어요.');
+  });
 }
 // 지금 현황판에서 보고 있는 주차의 금요일(YYYY-MM-DD)
 function wsFridayIso() {
@@ -1393,10 +1456,13 @@ function wsFridayIso() {
 }
 async function uploadRetestOnly(grade, date, file) {
   const fr = await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(file); });
-  // 같은 학년·주차의 정식 회차(본시험지)가 이미 있으면 그 회차에 붙이고, 없을 때만 임시 회차를 만듦
-  const probe = { date, grade, week: dateToWeekLabel(date) };
-  const real = scopedRounds().find(x => x.grade === grade && roundWeekKey(x) === roundWeekKey(probe));
+  // 같은 학년·같은 주차의 정식 회차(본시험지)가 있으면 그 회차에 붙이고, 없을 때만 임시 회차를 만듦.
+  // 주차는 파일 이름에 적힌 주차("10월4주차")를 먼저 보고, 없으면 보고 있는 주차(날짜)로 정함
+  const fileWeek = weekFromTitle(file.name);
+  let real = pickReal(findRealRounds(grade, [fileWeek], null));
+  if (!real) real = pickReal(findRealRounds(grade, [dateToWeekLabel(date)], date));
   const r = real || createRetestOnlyRound(grade, date, file.name);
+  if (!real && fileWeek) r.week = fileWeek;
   toast('재시험지를 올리는 중…');
   const ok = await window.KMMS.uploadAux(r, 'retest', { name: file.name, dataUrl: fr });
   if (!ok) { if (!real) { state.rounds = state.rounds.filter(x => x.id !== r.id); saveState(); renderRounds(); } return false; }
@@ -1461,6 +1527,12 @@ function openWsUpload(file, opt) {
     fr.readAsDataURL(file);
   };
   const chooseRetestRound = () => {
+    // 파일 이름에 적힌 주차("[캐치유] 10월4주차 재시험.pdf")와 같은 주차의 본시험지가 하나로 정해지면 그 회차에 바로 붙임
+    const fw = weekFromTitle(file.name);
+    if (fw) {
+      const hit = scopedRounds().filter(r => !r.individual && WS_GRADES.includes(r.grade) && (!opt.grade || r.grade === opt.grade) && weekLabelsOf(r).has(fw));
+      if (hit.length === 1) { uploadRetest(hit[0]); return; }
+    }
     const rounds = wsRounds();
     const exact = opt.roundId && rounds.find(r => r.id === opt.roundId);
     const inGrade = opt.grade ? rounds.filter(r => r.grade === opt.grade) : [];
@@ -1540,6 +1612,8 @@ document.addEventListener('DOMContentLoaded', () => {
       input.click();
       return;
     }
+    const link = e.target.closest('[data-ph-link]');
+    if (link) { e.preventDefault(); openLinkRetestOnly(link.dataset.phLink); return; }
     const del = e.target.closest('[data-exam-del]');
     if (del) {
       e.preventDefault();
@@ -1734,6 +1808,7 @@ function refreshAfterFileChange() {
 }
 
 function renderRounds() {
+  try { reconcileRetestOnly(); } catch (e) { console.warn(e); }
   renderWeeklyStatus();
   try { renderRetestUpload(); } catch (e) { console.warn(e); }
   const wrap = document.getElementById('roundListWrap');
