@@ -518,7 +518,7 @@ function utf8ToB64(str) {
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
 function sharedRoundPayload(r) {
   if (r.retestOnly || (r.studentName && !r.individual)) return null;
-  const { examFile, studentId, examPath, examName, ...rest } = r;
+  const { examFile, studentId, examPath, examName, retestPath, retestName, retestAnsPath, retestAnsName, ...rest } = r;   // 서버 파일 경로는 공용(GitHub) 파일에 넣지 않음
   return rest;
 }
 
@@ -2555,13 +2555,14 @@ let lastAppliedRetestStudentId = null;
 function populateRetestStudentSelect() {
   const sel = document.getElementById('retestStudentSel');
   const prev = sel.value;
-  const currentTeacher = getCurrentTeacher();
   const studentIdsWithWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.studentId));
-  const students = state.students.filter(inStudentScope)
-    .filter(s => studentIdsWithWrong.has(s.id) && (!currentTeacher || hasAllAccess() || s.teacher === currentTeacher))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  // 담당 선생님이 고른 "내 학생"을 맨 위(내 반)에, 다른 선생님 반 학생은 그 아래(다른 반)에 가나다순으로 보여줌 (채점 입력과 같은 방식)
+  const byName = (x, y) => x.name.localeCompare(y.name, 'ko');
+  const sp = splitMineAndOthers(state.students.filter(s => studentIdsWithWrong.has(s.id)));
+  const mine = sp.mine.slice().sort(byName), others = sp.others.slice().sort(byName);
+  const students = mine.concat(others);
   sel.innerHTML = students.length
-    ? students.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
+    ? groupedOptions(mine, others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`)
     : '<option value="">오답이 있는 학생이 없어요</option>';
   const freshFromScoring = lastScoredStudentId && lastScoredStudentId !== lastAppliedRetestStudentId && students.some(s => s.id === lastScoredStudentId);
   if (freshFromScoring) {
@@ -2705,7 +2706,7 @@ function renderRetestList() {
   const currentTeacher = getCurrentTeacher();
   const students = state.students.filter(inStudentScope)
     .filter(s => !currentTeacher || hasAllAccess() || s.teacher === currentTeacher)
-    .sort((a, b) => classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));
+    .sort((a, b) => (a.teacher === currentTeacher ? 0 : 1) - (b.teacher === currentTeacher ? 0 : 1) || classSortKey(a.class) - classSortKey(b.class) || (a.class || '').localeCompare(b.class || '') || a.name.localeCompare(b.name, 'ko'));   // 내 학생이 맨 위
 
   // 학생별 재시험 대상 회차 (기간 안, 오답이 있는 것만) — 최신 회차가 위
   const info = students.map(s => {
@@ -4589,11 +4590,13 @@ async function syncSharedRounds() {
       } else {
         // examFile과, 개별시험지를 이 컴퓨터에서 이미 어느 학생에게 배정했는지(studentId)는
         // 이 컴퓨터에서만 의미 있는 정보라 공용 파일 동기화로 덮어쓰지 않고 그대로 유지함
-        const keepExamFile = state.rounds[idx].examFile;
-        const keepStudentId = state.rounds[idx].studentId;
-        const keepExamPath = state.rounds[idx].examPath, keepExamName = state.rounds[idx].examName;
-        state.rounds[idx] = { ...sr, examFile: keepExamFile, studentId: keepStudentId };
-        if (keepExamPath) { state.rounds[idx].examPath = keepExamPath; state.rounds[idx].examName = keepExamName; }
+        // 서버에 올린 시험지·재시험지 파일 정보(examPath/retestPath 등)와 직접 고른 주차(week)도 공용 파일로 덮어쓰면 안 됨 —
+        // 예전에는 이걸 지워서, 올려 둔 재시험지가 앱을 열 때마다 없어졌음
+        const old = state.rounds[idx];
+        const merged = { ...sr, examFile: old.examFile, studentId: old.studentId };
+        ['examPath', 'examName', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName'].forEach(k => { if (old[k] !== undefined) merged[k] = old[k]; else delete merged[k]; });
+        if (old.week !== undefined) merged.week = old.week;
+        state.rounds[idx] = merged;
       }
       if (!state.sharedRoundIds.includes(sr.id)) state.sharedRoundIds.push(sr.id);
     });

@@ -553,6 +553,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (typeof renderAll === 'function') renderAll();
       pollTimer = setInterval(poll, POLL_MS);
       schedulePush(); // 시작 전에 생긴 로컬 변경(공용 시험지 반영 등) 올리기
+      setTimeout(() => { healRetestFiles().catch(e => console.warn('heal failed', e)); }, 2500);   // 끊어진 재시험지 연결 되찾기
     } catch (e) {
       console.error(e);
       gate(`<h1>불러오기 실패</h1><p class="kg-sub">${esc(e.message || e)}</p><button type="button" class="kg-main" onclick="location.reload()">새로고침</button>`);
@@ -746,6 +747,34 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (typeof refreshAfterFileChange === 'function') { refreshAfterFileChange(); return; }
     if (typeof renderRounds === 'function') renderRounds();
     if (typeof renderScoreTab === 'function') renderScoreTab();
+  }
+
+  // 예전 버그(공용 회차를 불러올 때 재시험지 연결 정보가 지워짐)로 연결이 끊긴 재시험지를 되찾음:
+  // 서버 저장소에는 파일이 그대로 남아 있으므로, 최근 회차 중 재시험지가 없는 것은 저장소 폴더(retests/<회차id>/)를 살펴
+  // 가장 최근에 올린 파일을 다시 연결함. 로그인 후 한 번만 조용히 실행
+  async function healRetestFiles() {
+    if (!ready || demoMode || !sb) return 0;
+    const since = new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10);
+    const targets = (state.rounds || []).filter(r => !r.retestPath && !r.individual && (r.date || '') >= since);
+    let fixed = 0;
+    const one = async r => {
+      try {
+        const { data, error } = await sb.storage.from('exams').list('retests/' + r.id, { limit: 100 });
+        if (error || !data || !data.length) return;
+        const latest = prefix => data.filter(f => f.name.startsWith(prefix + '_')).sort((a, b) => (parseInt(b.name.split('_')[1], 10) || 0) - (parseInt(a.name.split('_')[1], 10) || 0))[0];
+        const rt = latest('retest');
+        if (rt) { r.retestPath = `retests/${r.id}/${rt.name}`; r.retestName = r.retestName || '재시험지'; fixed++; }
+        const ra = latest('retestAns');
+        if (ra && !r.retestAnsPath) { r.retestAnsPath = `retests/${r.id}/${ra.name}`; r.retestAnsName = r.retestAnsName || '빠른정답'; }
+      } catch (e) { /* 폴더가 없거나 권한이 없으면 건너뜀 */ }
+    };
+    for (let i = 0; i < targets.length; i += 4) await Promise.all(targets.slice(i, i + 4).map(one));
+    if (fixed) {
+      saveState();
+      refreshAfterFile();
+      toast(`올려 두셨던 재시험지 ${fixed}개를 다시 연결했어요.`);
+    }
+    return fixed;
   }
 
   // 이미 만든 회차에 시험지(PDF·이미지)를 올리거나 교체
