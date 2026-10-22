@@ -1851,30 +1851,59 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// KMMS 데스크톱 앱 설치 파일(GitHub 릴리스의 최신 버전) — 앱에서는 재시험지를 인쇄 창 없이 바로, 문제 쪽은 왼쪽 위 스테이플까지 출력함
+// KMMS 데스크톱 앱 설치 파일(GitHub 릴리스의 최신 버전) — 앱에서는 재시험지를 인쇄 창 없이 바로, 문제 쪽은 양면 + 왼쪽 위 스테이플까지 출력함
 const APP_DOWNLOAD_URL = 'https://github.com/FELIXCHA-23/catchu-report/releases/latest/download/KMMS-Setup.exe';
+const APP_LATEST_VERSION = '1.2.0';   // 새 설치 파일을 릴리스에 올릴 때 이 값도 같이 올림 (설치된 앱이 이보다 낮으면 새 버전 안내가 뜸)
 const IS_WINDOWS = /Windows/i.test(navigator.userAgent || '');
-// 로그인한 뒤 이 컴퓨터에서 처음 한 번, 앱 받기 안내를 띄움 (이미 앱 안에서 열었거나 Windows가 아니면 안 띄움)
+function cmpVer(a, b) {
+  const x = String(a || '0').split('.').map(n => parseInt(n, 10) || 0), y = String(b || '0').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); }
+  return 0;
+}
+const installedAppVersion = () => window.KMMS_DESKTOP ? (window.KMMS_DESKTOP.version || '1.0.0') : '';
+function showAppBanner(html) {
+  const bar = document.createElement('div');
+  bar.className = 'autoprint-banner no-print';
+  bar.innerHTML = html;
+  bar.addEventListener('click', e => { if (e.target.closest('[data-app-later], [data-app-close]')) setTimeout(() => bar.remove(), 50); });
+  document.body.appendChild(bar);
+}
+// 로그인한 뒤: 앱이 없으면 이 컴퓨터에서 처음 한 번 설치 안내, 앱이 이미 있으면 새 버전이 나왔을 때 한 번 업데이트 안내
 function maybeOfferApp() {
-  if (window.KMMS_DESKTOP) return true;
   if (!(window.KMMS && window.KMMS.ready) || window.KMMS.demo) return false;
+  const inst = installedAppVersion();
+  if (inst) {
+    if (cmpVer(inst, APP_LATEST_VERSION) >= 0) return true;
+    let seen = '';
+    try { seen = localStorage.getItem('kmms_app_update_seen') || ''; } catch (e) {}
+    if (seen === APP_LATEST_VERSION) return true;
+    try { localStorage.setItem('kmms_app_update_seen', APP_LATEST_VERSION); } catch (e) {}
+    showAppBanner(`<div><b>KMMS 앱 새 버전이 있어요</b> (설치된 버전 ${inst} → 최신 ${APP_LATEST_VERSION})<br>재시험지 문제 쪽을 <b>양면 + 왼쪽 위 스테이플</b>로 인쇄하는 등 인쇄 기능이 바뀌었어요. 받은 설치 파일을 실행하면 지금 앱 위에 덮어 설치되고, 로그인은 그대로 유지돼요.<br><span class="field-hint">윈도우가 "PC를 보호했습니다"라고 하면 "추가 정보 → 실행"을 누르세요. 설치 전에 앱은 꺼 두세요.</span></div><div class="autoprint-btns"><button type="button" class="btn ghost" data-app-later>나중에</button><a class="btn primary" href="${APP_DOWNLOAD_URL}" data-app-close style="text-decoration:none;">새 버전 받기</a></div>`);
+    return true;
+  }
   let seen = false;
   try { seen = !!localStorage.getItem('kmms_app_offered'); } catch (e) {}
   if (seen) return true;
   try { localStorage.setItem('kmms_app_offered', '1'); } catch (e) {}
   if (!IS_WINDOWS) return true;
-  const bar = document.createElement('div');
-  bar.className = 'autoprint-banner no-print';
-  bar.innerHTML = `<div><b>KMMS 앱을 설치하면 재시험지가 인쇄 창 없이 바로 출력돼요.</b><br>8층 고속복사기로 A4 1부, 문제 쪽은 왼쪽 위 스테이플까지 자동으로 지정됩니다. 설치는 한 번만 하면 되고, 사이트가 업데이트되면 앱도 자동으로 최신이 돼요.<br><span class="field-hint">처음 설치할 때 윈도우가 "PC를 보호했습니다"라고 하면 "추가 정보 → 실행"을 누르세요.</span></div><div class="autoprint-btns"><button type="button" class="btn ghost" data-app-later>나중에</button><a class="btn primary" href="${APP_DOWNLOAD_URL}" data-app-close style="text-decoration:none;">KMMS 앱 받기</a></div>`;
-  bar.addEventListener('click', e => { if (e.target.closest('[data-app-later], [data-app-close]')) setTimeout(() => bar.remove(), 50); });
-  document.body.appendChild(bar);
+  showAppBanner(`<div><b>KMMS 앱을 설치하면 재시험지가 인쇄 창 없이 바로 출력돼요.</b><br>8층 고속복사기로 A4 1부, 문제 쪽은 양면 + 왼쪽 위 스테이플까지 자동으로 지정됩니다. 설치는 한 번만 하면 되고, 사이트가 업데이트되면 앱도 자동으로 최신이 돼요.<br><span class="field-hint">처음 설치할 때 윈도우가 "PC를 보호했습니다"라고 하면 "추가 정보 → 실행"을 누르세요.</span></div><div class="autoprint-btns"><button type="button" class="btn ghost" data-app-later>나중에</button><a class="btn primary" href="${APP_DOWNLOAD_URL}" data-app-close style="text-decoration:none;">KMMS 앱 받기</a></div>`);
   return true;
 }
 document.addEventListener('DOMContentLoaded', () => {
   const timer = setInterval(() => { if (maybeOfferApp()) clearInterval(timer); }, 3000);
-  // 대문의 "KMMS 앱 받기" 링크는 앱 안에서는 숨김
-  const link = document.getElementById('landingApp');
-  if (link && window.KMMS_DESKTOP) link.style.display = 'none';
+  // 대문의 "KMMS 앱 받기" 링크: 앱을 이미 쓰는 사람도 새 버전을 받을 수 있게 항상 보임 (앱 안에서는 설치된 버전과 최신 버전을 같이 표시)
+  const box = document.getElementById('landingApp');
+  if (box) {
+    const inst = installedAppVersion();
+    const a = box.querySelector('a'), sp = box.querySelector('span');
+    if (inst) {
+      a.textContent = cmpVer(inst, APP_LATEST_VERSION) < 0 ? 'KMMS 앱 새 버전 받기' : 'KMMS 앱 다시 받기';
+      sp.textContent = `설치된 버전 ${inst} · 최신 버전 ${APP_LATEST_VERSION}${cmpVer(inst, APP_LATEST_VERSION) < 0 ? ' — 업데이트할 수 있어요' : ' — 최신이에요'}`;
+    } else {
+      a.textContent = 'KMMS 앱 받기 (Windows)';
+      sp.textContent = `설치하면 재시험지가 인쇄 창 없이 바로, 양면·스테이플까지 출력돼요 · 최신 버전 ${APP_LATEST_VERSION}`;
+    }
+  }
 });
 const AUTOPRINT_HINT = window.KMMS_DESKTOP ? '' : `<div class="field-hint">인쇄 창 없이 바로 출력(스테이플 포함)하려면 <a href="${APP_DOWNLOAD_URL}">KMMS 앱 받기</a> (컴퓨터마다 처음 한 번만)</div>`;
 
