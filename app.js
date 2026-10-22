@@ -4675,8 +4675,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   landingSel.value = getCurrentTeacher();
   landingSel.addEventListener('change', e => onTeacherChanged(e.target.value));
   ['landingLogo', 'textbookLogo'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = logoBlock(); });
-  document.getElementById('goCatchuBtn').addEventListener('click', () => showView('catchu'));
-  document.getElementById('goEntranceBtn').addEventListener('click', () => showView('entrance'));
+  // 처음 화면에서 들어올 때는 마지막으로 보던 탭이 아니라 항상 "채점 입력" 탭으로 열림
+  document.getElementById('goCatchuBtn').addEventListener('click', () => { showView('catchu'); switchTab('score'); });
+  document.getElementById('goEntranceBtn').addEventListener('click', () => { showView('entrance'); switchTab('score'); });
   document.getElementById('goTextbookBtn').addEventListener('click', () => showView('textbook'));
   document.querySelectorAll('[data-go-home]').forEach(b => {
     b.addEventListener('click', () => showView('landing'));
