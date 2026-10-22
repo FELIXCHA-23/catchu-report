@@ -1593,6 +1593,7 @@ function downloadAutoPrintBat() {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 function maybeOfferAutoPrint() {
+  if (window.KMMS_DESKTOP) return true;   // 데스크톱 앱에서는 따로 설정할 필요 없음
   if (!(window.KMMS && window.KMMS.ready) || window.KMMS.demo) return false;
   let seen = false;
   try { seen = !!localStorage.getItem('kmms_autoprint_offered'); } catch (e) {}
@@ -1612,11 +1613,17 @@ function maybeOfferAutoPrint() {
 document.addEventListener('DOMContentLoaded', () => {
   const timer = setInterval(() => { if (maybeOfferAutoPrint()) clearInterval(timer); }, 3000);
 });
-const AUTOPRINT_HINT = '<div class="field-hint">인쇄 창 없이 바로 출력하려면 <a href="#" data-autoprint-bat>자동 인쇄 바로가기 받기</a> (컴퓨터마다 처음 한 번만)</div>';
+const AUTOPRINT_HINT = window.KMMS_DESKTOP ? '' : '<div class="field-hint">인쇄 창 없이 바로 출력하려면 <a href="#" data-autoprint-bat>자동 인쇄 바로가기 받기</a> (컴퓨터마다 처음 한 번만)</div>';
 
 // 만든 재시험지를 A4로 인쇄: 문제 쪽(1부)을 먼저 인쇄하고, 이어서 빠른정답 1장을 인쇄함. 인쇄 창을 거치므로 프린터 설정(스테이플·부수)은 프린터 기본값을 따름
 // (인쇄 창 없이 바로 나가게 하려면 크롬을 --kiosk-printing 으로 연 창에서 쓰면 됨 — "KMMS_자동인쇄_실행.bat")
 function printCanvases(canvases) {
+  // KMMS 데스크톱 앱에서 열었으면 인쇄 창 없이 바로 프린터로 보냄 (A4 · 1부)
+  if (window.KMMS_DESKTOP && window.KMMS_DESKTOP.print) {
+    return window.KMMS_DESKTOP.print(canvases.map(c => c.toDataURL('image/jpeg', 0.92)), '재시험지')
+      .then(r => { if (r && r.ok === false) toast('인쇄하지 못했어요: ' + (r.reason || '프린터를 확인해 주세요')); return true; })
+      .catch(() => true);
+  }
   return new Promise(async resolve => {
     const f = document.createElement('iframe');
     f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
