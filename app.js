@@ -1556,6 +1556,53 @@ async function matchPlaceholdersFor(round) {
   toast('먼저 올려 둔 재시험지를 이 본시험지와 한 세트로 합쳤어요.');
 }
 
+/* ===== 같은 시험이 두 번 등록되어 따로 잡힌 정식 회차 합치기 =====
+ * 예) 공용 목록에서 온 "…(10월4주차)" 회차와 직접 올려 분석한 "…10월4주차" 회차 — 하나에는 본시험지, 다른 하나에는 재시험지만 붙어 있는 경우.
+ * 같은 학년 · 날짜가 비슷하고(7일 이내) · 제목이 괄호·띄어쓰기만 다르거나 문항별 유형이 거의 같으면 같은 시험으로 보고 하나로 합침.
+ * 채점·재시험 기록과 시험지·재시험지 파일은 남기는 회차로 모두 옮기고, 합쳐진 회차는 공용 목록에서 다시 살아나지 않게 기억해 둠. */
+function sameExamRounds(a, b) {
+  if (a.id === b.id || a.individual || b.individual || a.retestOnly || b.retestOnly) return false;
+  if (a.grade !== b.grade || !a.date || !b.date) return false;
+  if (!(Math.abs((new Date(a.date) - new Date(b.date)) / 86400000) <= 7)) return false;
+  if (normT(a.title) && normT(a.title) === normT(b.title)) return true;
+  const tr = typeRatio(roundTypeMap(a), roundTypeMap(b));
+  return tr.n >= 10 && tr.ratio >= 0.9;
+}
+function reconcileDuplicateRounds() {
+  const list = state.rounds.filter(r => !r.individual && !r.retestOnly);
+  const used = new Set();
+  let merged = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (used.has(list[i].id)) continue;
+    const group = [list[i]];
+    for (let j = i + 1; j < list.length; j++) if (!used.has(list[j].id) && sameExamRounds(list[i], list[j])) group.push(list[j]);
+    if (group.length < 2) continue;
+    group.forEach(g => used.add(g.id));
+    // 남길 회차: 파일이 많이 붙어 있고 채점 기록이 많은 것 (같으면 id가 작은 것)
+    const score = r => (r.examPath ? 1000 : 0) + (r.retestPath ? 100 : 0) + state.results.filter(x => x.roundId === r.id).length;
+    group.sort((x, y) => score(y) - score(x) || String(x.id).localeCompare(String(y.id)));
+    const keep = group[0];
+    group.slice(1).forEach(o => {
+      ['examPath', 'examName', 'examFile', 'mainInfo', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'difficulty', 'competency', 'week', 'hintName'].forEach(k => { if (keep[k] === undefined && o[k] !== undefined) keep[k] = o[k]; });
+      state.results = state.results.filter(r => {
+        if (r.roundId !== o.id) return true;
+        if (state.results.some(x => x !== r && x.roundId === keep.id && x.studentId === r.studentId)) return false;   // 같은 학생 기록이 이미 있으면 남기는 쪽 것을 씀
+        r.roundId = keep.id; return true;
+      });
+      state.retests = (state.retests || []).filter(r => {
+        if (r.roundId !== o.id) return true;
+        if (state.retests.some(x => x !== r && x.roundId === keep.id && x.studentId === r.studentId)) return false;
+        r.roundId = keep.id; return true;
+      });
+      state.rounds = state.rounds.filter(x => x.id !== o.id);
+      if (!state.mergedRoundIds) state.mergedRoundIds = {};
+      state.mergedRoundIds[o.id] = keep.id;
+      merged++;
+    });
+  }
+  if (merged) { saveState(); try { toast(`같은 시험으로 따로 등록돼 있던 회차 ${merged}개를 하나로 합쳤어요 (본시험지·재시험지·채점 기록 모두 유지).`); } catch (e) {} }
+  return merged;
+}
 // 이미 따로 잡혀 있는 "재시험지만 있는 회차"를 같은 시험의 본시험지에 자동으로 합침 (후보가 하나로 정해질 때만)
 function reconcileRetestOnly() {
   let n = 0;
@@ -1987,6 +2034,7 @@ function refreshAfterFileChange() {
 }
 
 function renderRounds() {
+  try { reconcileDuplicateRounds(); } catch (e) { console.warn(e); }
   try { reconcileRetestOnly(); } catch (e) { console.warn(e); }
   renderWeeklyStatus();
   try { renderRetestUpload(); } catch (e) { console.warn(e); }
@@ -5000,6 +5048,7 @@ async function syncSharedRounds() {
     const sharedIds = new Set(shared.map(sr => sr.id));
 
     shared.forEach(sr => {
+      if (state.mergedRoundIds && state.mergedRoundIds[sr.id]) return;   // 다른 회차에 합쳐진 회차는 다시 만들지 않음
       const idx = state.rounds.findIndex(r => r.id === sr.id);
       if (idx === -1) {
         state.rounds.push({ ...sr });
