@@ -774,6 +774,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       refreshAfterFile();
       toast(`올려 두셨던 재시험지 ${fixed}개를 다시 연결했어요.`);
     }
+    try { if (typeof reconcileRetestTyped === 'function') await reconcileRetestTyped(); } catch (e) { console.warn(e); }
     return fixed;
   }
 
@@ -786,12 +787,20 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     const f = AUX_FIELDS[kind];
     if (!ready || !round || !f || !file || !file.dataUrl) return false;
     try {
+      // 재시험지는 올리기 전에 고른 회차와 유형이 맞는지 확인하고, 더 잘 맞는 시험지가 있으면 선생님께 물어봄 (app.js checkRetestMatch)
+      window.__lastRetestInfo = file.__matched ? window.__lastRetestInfo : null;
+      if (kind === 'retest' && !file.__matched && typeof checkRetestMatch === 'function') {
+        const r2 = await checkRetestMatch(round, file);
+        if (!r2) return false;
+        round = r2;
+      }
       const { blob, ext } = await toPdfBlob(file);
       const path = `retests/${round.id}/${kind}_${Date.now()}.${ext}`;
       const { error } = await sb.storage.from('exams').upload(path, blob, { contentType: blob.type || undefined, upsert: false });
       if (error) throw error;
       const old = round[f[0]];
       round[f[0]] = path; round[f[1]] = file.name;
+      if (kind === 'retest' && window.__lastRetestInfo) { round.retestInfo = window.__lastRetestInfo; window.__lastRetestInfo = null; }   // 읽어 둔 제목·범위·유형표 (나중에 같은 시험 찾기에 씀)
       if (old) sb.storage.from('exams').remove([old]).catch(() => {});
       saveState();
       toast((kind === 'retest' ? '재시험지' : '재시험 빠른정답') + '를 서버에 올렸어요.');

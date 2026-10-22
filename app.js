@@ -518,7 +518,7 @@ function utf8ToB64(str) {
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
 function sharedRoundPayload(r) {
   if (r.retestOnly || (r.studentName && !r.individual)) return null;
-  const { examFile, studentId, examPath, examName, retestPath, retestName, retestAnsPath, retestAnsName, ...rest } = r;   // 서버 파일 경로는 공용(GitHub) 파일에 넣지 않음
+  const { examFile, studentId, examPath, examName, retestPath, retestName, retestAnsPath, retestAnsName, retestInfo, mainInfo, ...rest } = r;   // 서버 파일 경로·읽어 둔 유형표는 공용(GitHub) 파일에 넣지 않음
   return rest;
 }
 
@@ -1383,7 +1383,7 @@ function weekLabelsOf(r) {
   [r.week, weekFromTitle(r.title), r.date ? dateToWeekLabel(r.date) : ''].forEach(x => { if (x) s.add(x); });
   return s;
 }
-const RETEST_FIELDS = ['retestPath', 'retestName', 'retestAnsPath', 'retestAnsName'];
+const RETEST_FIELDS = ['retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo'];
 // 같은 시험의 본시험지 회차 후보: 같은 학년이고 주차가 하나라도 겹치는 정식 회차 (개별시험지·임시 회차 제외)
 function findRealRounds(grade, labels, date) {
   const L = new Set([].concat(labels).filter(Boolean));
@@ -1398,9 +1398,10 @@ function pickReal(cands) {
 function moveRetestFields(from, to, force) {
   RETEST_FIELDS.forEach(k => { if (from[k] && (force || !to[k])) to[k] = from[k]; });
 }
+const hasTypeInfo = p => !!(p.retestInfo && p.retestInfo.types && Object.keys(p.retestInfo.types).length >= 5);
 function mergeRetestOnlyInto(round) {
   const labels = weekLabelsOf(round);
-  const ps = state.rounds.filter(x => x.retestOnly && x.id !== round.id && x.grade === round.grade && ([...weekLabelsOf(x)].some(l => labels.has(l)) || x.date === round.date));
+  const ps = state.rounds.filter(x => x.retestOnly && !hasTypeInfo(x) && x.id !== round.id && x.grade === round.grade && ([...weekLabelsOf(x)].some(l => labels.has(l)) || x.date === round.date));
   if (!ps.length) return false;
   ps.sort((x, y) => (y.date || '').localeCompare(x.date || ''));
   ps.forEach(p => moveRetestFields(p, round, false));
@@ -1408,10 +1409,157 @@ function mergeRetestOnlyInto(round) {
   state.rounds = state.rounds.filter(x => !ids.has(x.id));
   return true;
 }
+
+/* ===== 본시험지 ↔ 재시험지 한 세트 찾기 =====
+ * 재시험지 PDF에는 문제마다 "| 유형명 | 정답률" 줄이 있고, 본시험지에도 같은 유형명이 있음.
+ * 그래서 문항 번호별 유형명을 맞춰 보면(숫자만 바뀐 유사 문제면 거의 전부 일치) 같은 시험인지 알 수 있음.
+ * 기본은 이 유형 일치도, 보조로 주차·범위(부제)를 보고, 확실하지 않으면 선생님께 어느 시험지인지 물어봄. */
+const normT = s => String(s || '').replace(/[\s·.,()\[\]'"“”‘’~|\-–—:]/g, '');
+function typeRatio(a, b) {
+  let n = 0, hit = 0;
+  Object.keys(a || {}).forEach(k => {
+    const x = normT(a[k]), y = normT((b || {})[k]);
+    if (!x || !y) return;
+    n++;
+    if (x === y || x.includes(y) || y.includes(x)) hit++;
+  });
+  return { n, hit, ratio: n ? hit / n : 0 };
+}
+function roundTypeMap(round) {
+  const m = {};
+  for (let q = 1; q <= (round.total || 30); q++) { const t = typeForQuestion(round, q); if (t && t.name) m[q] = t.name; }
+  return m;
+}
+function dataUrlToBuf(du) {
+  const b64 = String(du || '').split(',')[1] || '';
+  const bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8.buffer;
+}
+// 파일에서 제목·범위·문항별 유형명 읽기 (PDF일 때만. 사진은 읽지 못하므로 빈 값)
+async function describeFile(file) {
+  try {
+    if (!(window.RETEST && window.RETEST.describePaper) || !/^data:application\/pdf/.test(file.dataUrl || '')) return null;
+    const info = await window.RETEST.describePaper(dataUrlToBuf(file.dataUrl));
+    return info && Object.keys(info.types || {}).length ? info : (info && (info.title || info.range) ? info : null);
+  } catch (e) { console.warn('describe failed', e); return null; }
+}
+// 이 회차의 본시험지 유형표: 저장해 둔 것 > 서버의 본시험지 PDF에서 읽은 것 > 분석해 둔 유형 이름
+async function infoOfRound(round) {
+  if (round.mainInfo && round.mainInfo.types && Object.keys(round.mainInfo.types).length >= 5) return round.mainInfo.types;
+  if (round.examPath && window.KMMS && window.KMMS.ready && window.RETEST && window.RETEST.describePaper) {
+    try {
+      const buf = await window.KMMS.fetchBuf(round.examPath);
+      const info = await window.RETEST.describePaper(buf.slice(0));
+      if (Object.keys(info.types || {}).length >= 5) { round.mainInfo = info; saveState(); return info.types; }
+    } catch (e) { /* 파일을 못 읽으면 분석해 둔 유형 이름으로 */ }
+  }
+  return roundTypeMap(round);
+}
+// 재시험지 정보(info)와 후보 회차들을 견줘 점수를 매김
+async function scoreRounds(info, rounds) {
+  const out = [];
+  for (const r of rounds) {
+    const tr = typeRatio(info.types, await infoOfRound(r));
+    const wk = weekFromTitle(info.title);
+    const weekHit = !!wk && weekLabelsOf(r).has(wk);
+    const rg = normT(info.range);
+    const rangeHit = rg.length >= 4 && normT(r.title || '').includes(rg);
+    out.push({ round: r, n: tr.n, hit: tr.hit, ratio: tr.ratio, weekHit, rangeHit, score: (tr.n >= 5 ? tr.ratio * 10 : 0) + (weekHit ? 1 : 0) + (rangeHit ? 2 : 0) });
+  }
+  return out.sort((x, y) => y.score - x.score);
+}
+// 확실한가? 유형이 5개 이상 견줘지고 거의 다 맞으며 2등과 차이가 클 때 (유형을 못 읽었으면 주차+범위가 둘 다 맞고 하나뿐일 때)
+function confidentBest(ranked) {
+  const b = ranked[0], s = ranked[1];
+  if (!b) return null;
+  if (b.n >= 5) return b.ratio >= 0.8 && (!s || s.n < 5 || s.ratio <= b.ratio - 0.25) ? b : null;
+  if (b.weekHit && b.rangeHit && (!s || !(s.weekHit && s.rangeHit))) return b;
+  return null;
+}
+function matchLabel(c) { return (c.n >= 5 ? `유형 ${c.hit}/${c.n} 일치` : '유형은 비교 못 했어요') + (c.weekHit ? ' · 주차 일치' : '') + (c.rangeHit ? ' · 범위 일치' : ''); }
+// 선생님께 물어봄: 이 재시험지가 어느 본시험지의 것인지. 돌려주는 값: { round } | { placeholder: true } | null(취소)
+function askRetestTarget(fileName, ranked, opt) {
+  opt = opt || {};
+  return new Promise(resolve => {
+    closeWsModal();
+    const ov = document.createElement('div');
+    ov.id = 'wsModal'; ov.className = 'ws-modal';
+    ov.innerHTML = `<div class="ws-modal-box"><h3>${escapeHtml(opt.title || '어느 본시험지의 재시험지인가요?')}</h3>
+      <div class="ws-modal-file">${escapeHtml(fileName || '')}</div>
+      ${opt.note ? `<div class="field-hint">${escapeHtml(opt.note)}</div>` : ''}
+      <div class="ws-choices">${ranked.slice(0, 8).map((c, i) => `<button type="button" class="ws-bigbtn" data-pick="${c.round.id}">${i === 0 && c.score >= 8 ? '⭐ ' : ''}${escapeHtml(c.round.grade)} · ${escapeHtml(roundLabel(c.round))} · ${shortDate(c.round.date)}<small>${escapeHtml(c.round.title || (c.round.types[0] ? c.round.types[0].name : ''))}<br>${escapeHtml(matchLabel(c))}${c.round.retestPath ? ' · 이미 재시험지가 있어요(바뀌어요)' : ''}</small></button>`).join('')}
+        ${opt.allowPlaceholder ? '<button type="button" class="ws-bigbtn" data-placeholder>어디에도 없어요 — 본시험지는 나중에 올릴게요<small>재시험지만 먼저 올려 두고, 본시험지를 올리면 자동으로 찾아서 합쳐요</small></button>' : ''}</div>
+      <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => {
+      if (e.target === ov || e.target.closest('#wsModalCancel')) { closeWsModal(); resolve(null); return; }
+      const b = e.target.closest('[data-pick]');
+      if (b) { const r = state.rounds.find(x => x.id === b.dataset.pick); closeWsModal(); resolve(r ? { round: r } : null); return; }
+      if (e.target.closest('[data-placeholder]')) { closeWsModal(); resolve({ placeholder: true }); }
+    });
+  });
+}
+// 같은 학년의 최근 본시험지 후보
+function recentRealRounds(grade) {
+  const since = new Date(Date.now() - 100 * 86400000).toISOString().slice(0, 10);
+  return scopedRounds().filter(r => !r.individual && r.grade === grade && (r.date || '') >= since);
+}
+// 재시험지 업로드 직전에 호출됨(cloud.js uploadAux): 고른 회차가 이 재시험지와 맞는지 확인하고, 더 잘 맞는 회차가 있으면 물어봄
+// 돌려주는 값: 붙일 회차 / null(취소)
+async function checkRetestMatch(round, file) {
+  window.__lastRetestInfo = null;
+  const info = await describeFile(file);
+  if (info) window.__lastRetestInfo = info;
+  if (!info || round.retestOnly || !info.types || Object.keys(info.types).length < 5) return round;
+  const cur = typeRatio(info.types, await infoOfRound(round));
+  if (cur.n < 5 || cur.ratio >= 0.5) return round;   // 잘 맞으면 그대로
+  const ranked = await scoreRounds(info, recentRealRounds(round.grade));
+  const better = ranked.filter(c => c.n >= 5 && c.ratio >= 0.8);
+  const ans = await askRetestTarget(file.name, ranked.filter(c => c.n >= 5 && c.ratio >= 0.5 || c.round.id === round.id), {
+    title: '선택한 회차와 유형이 달라 보여요',
+    note: better.length ? '이 재시험지는 아래 시험지와 유형이 더 잘 맞아요. 붙일 시험지를 골라 주세요.' : `선택한 회차(${roundLabel(round)})와 유형이 거의 맞지 않아요. 그래도 붙이려면 그 회차를 누르세요.`,
+  });
+  return ans && ans.round ? ans.round : null;
+}
+// 본시험지를 등록한 직후: 먼저 올려 둔 재시험지(임시 회차) 중 이 시험지의 것을 찾아 합침. 확실하지 않으면 물어봄
+async function matchPlaceholdersFor(round) {
+  const phs = state.rounds.filter(p => p.retestOnly && p.grade === round.grade && p.retestPath);
+  if (!phs.length) return;
+  const mine = await infoOfRound(round);
+  const scored = phs.map(p => {
+    const tr = typeRatio(p.retestInfo && p.retestInfo.types, mine);
+    const wk = p.retestInfo && weekFromTitle(p.retestInfo.title);
+    const weekHit = [...weekLabelsOf(p)].some(l => weekLabelsOf(round).has(l)) || (!!wk && weekLabelsOf(round).has(wk));
+    const rg = p.retestInfo ? normT(p.retestInfo.range) : '';
+    const rangeHit = rg.length >= 4 && normT(round.title || '').includes(rg);
+    return { p, n: tr.n, hit: tr.hit, ratio: tr.ratio, weekHit, rangeHit, score: (tr.n >= 5 ? tr.ratio * 10 : 0) + (weekHit ? 1 : 0) + (rangeHit ? 2 : 0) };
+  }).sort((x, y) => y.score - x.score);
+  const b = scored[0], s = scored[1];
+  const sure = b.n >= 5 ? (b.ratio >= 0.8 && (!s || s.n < 5 || s.ratio <= b.ratio - 0.25)) : (b.weekHit && (!s || !s.weekHit));
+  let pick = sure ? b.p : null;
+  if (!pick) {
+    const plausible = scored.filter(c => c.n >= 5 ? c.ratio >= 0.4 : c.weekHit);
+    if (!plausible.length) return;   // 관련 있어 보이는 게 없으면 그대로 둠
+    const ans = await askRetestTarget('', plausible.map(c => ({ round: c.p, n: c.n, hit: c.hit, ratio: c.ratio, weekHit: c.weekHit, rangeHit: c.rangeHit, score: c.score })), {
+      title: '먼저 올려 둔 재시험지가 있어요',
+      note: `방금 등록한 시험지(${round.title || roundLabel(round)})의 재시험지는 어느 것인가요? 해당 없으면 취소하세요.`,
+    });
+    if (!ans || !ans.round) return;
+    pick = ans.round;
+  }
+  moveRetestFields(pick, round, true);
+  if (pick.retestInfo) round.retestInfo = pick.retestInfo;
+  state.rounds = state.rounds.filter(x => x.id !== pick.id);
+  saveState();
+  refreshAfterFileChange();
+  toast('먼저 올려 둔 재시험지를 이 본시험지와 한 세트로 합쳤어요.');
+}
+
 // 이미 따로 잡혀 있는 "재시험지만 있는 회차"를 같은 시험의 본시험지에 자동으로 합침 (후보가 하나로 정해질 때만)
 function reconcileRetestOnly() {
   let n = 0;
-  state.rounds.filter(r => r.retestOnly).forEach(p => {
+  state.rounds.filter(r => r.retestOnly && !hasTypeInfo(r)).forEach(p => {
     const real = pickReal(findRealRounds(p.grade, [...weekLabelsOf(p)], p.date));
     if (!real || (real.retestPath && p.retestPath)) return;
     moveRetestFields(p, real, false);
@@ -1419,6 +1567,19 @@ function reconcileRetestOnly() {
     n++;
   });
   if (n) { saveState(); try { toast(`따로 올라가 있던 재시험지 ${n}개를 본시험지와 한 세트로 합쳤어요.`); } catch (e) {} }
+  return n;
+}
+async function reconcileRetestTyped() {
+  let n = 0;
+  for (const p of state.rounds.filter(r => r.retestOnly && hasTypeInfo(r))) {
+    const ranked = await scoreRounds(p.retestInfo, recentRealRounds(p.grade));
+    const sure = confidentBest(ranked);
+    if (!sure) continue;
+    moveRetestFields(p, sure.round, false);
+    state.rounds = state.rounds.filter(x => x.id !== p.id);
+    n++;
+  }
+  if (n) { saveState(); refreshAfterFileChange(); toast(`따로 올라가 있던 재시험지 ${n}개를 같은 시험의 본시험지와 합쳤어요.`); }
   return n;
 }
 // 본시험지 연결: 임시 회차(재시험지만 있는 것)를 사용자가 고른 본시험지 회차에 합침
@@ -1456,15 +1617,32 @@ function wsFridayIso() {
 }
 async function uploadRetestOnly(grade, date, file) {
   const fr = await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(file); });
-  // 같은 학년·같은 주차의 정식 회차(본시험지)가 있으면 그 회차에 붙이고, 없을 때만 임시 회차를 만듦.
-  // 주차는 파일 이름에 적힌 주차("10월4주차")를 먼저 보고, 없으면 보고 있는 주차(날짜)로 정함
-  const fileWeek = weekFromTitle(file.name);
-  let real = pickReal(findRealRounds(grade, [fileWeek], null));
-  if (!real) real = pickReal(findRealRounds(grade, [dateToWeekLabel(date)], date));
+  // 이 재시험지가 어느 본시험지의 것인지: 문항 번호별 유형명이 맞는 시험지를 우선, 그다음 주차·범위. 확실하지 않으면 선생님께 물어봄.
+  // 같은 학년에 시험지 종류가 여러 개여도(예: M반·T반) 유형이 다르면 구별됨.
+  const info = await describeFile({ name: file.name, dataUrl: fr });
+  const cands = recentRealRounds(grade);
+  let real = null, forcePlaceholder = false;
+  if (cands.length) {
+    const ranked = info ? await scoreRounds(info, cands) : [];
+    const sure = info ? confidentBest(ranked) : null;
+    if (sure) real = sure.round;
+    else if (!info || ranked.every(c => c.n < 5)) {
+      // 유형을 견줄 수 없으면(사진 등) 이름·날짜의 주차로 하나로 정해질 때만 자동으로
+      const fileWeek = weekFromTitle(file.name);
+      real = pickReal(findRealRounds(grade, [fileWeek], null)) || pickReal(findRealRounds(grade, [dateToWeekLabel(date)], date));
+    }
+    if (!real) {
+      const list = ranked.length ? ranked : cands.map(r => ({ round: r, n: 0, hit: 0, ratio: 0, weekHit: false, rangeHit: false, score: 0 }));
+      const ans = await askRetestTarget(file.name, list, { allowPlaceholder: true, note: '자동으로 정하기 어려워요. 이 재시험지가 속한 본시험지를 골라 주세요.' });
+      if (!ans) return false;
+      if (ans.round) real = ans.round; else forcePlaceholder = true;
+    }
+  }
   const r = real || createRetestOnlyRound(grade, date, file.name);
-  if (!real && fileWeek) r.week = fileWeek;
+  if (!real) { const fw = weekFromTitle(file.name); if (fw) r.week = fw; }
+  window.__lastRetestInfo = info || null;
   toast('재시험지를 올리는 중…');
-  const ok = await window.KMMS.uploadAux(r, 'retest', { name: file.name, dataUrl: fr });
+  const ok = await window.KMMS.uploadAux(r, 'retest', { name: file.name, dataUrl: fr, __matched: true });
   if (!ok) { if (!real) { state.rounds = state.rounds.filter(x => x.id !== r.id); saveState(); renderRounds(); } return false; }
   toast(real ? `${grade} 재시험지를 올렸어요.` : `${grade} 재시험지를 올렸어요. 본시험지는 나중에 올리면 자동으로 합쳐져요.`);
   return true;
@@ -1661,6 +1839,7 @@ function printCanvases(canvases, opts) {
     return window.KMMS_DESKTOP.print(canvases.map(c => c.toDataURL('image/jpeg', 0.92)), '재시험지', opts || {})
       .then(r => {
         if (r && r.ok === false) toast('인쇄하지 못했어요: ' + (r.reason || '프린터를 확인해 주세요'));
+        else if (r && r.duplexRequested && r.duplexApplied === false) toast('양면 인쇄를 지정하지 못해서 프린터 기본값으로 인쇄했어요. 앱 위쪽 "인쇄 설정"에서 프린터를 확인해 보세요.');
         else if (r && r.stapleRequested && !r.stapleApplied) toast('스테이플을 지정하지 못해서 스테이플 없이 인쇄했어요. 앱 위쪽 "인쇄 설정 → 스테이플 설정 확인"을 눌러 보세요.');
         return true;
       })
@@ -1690,13 +1869,13 @@ async function printRetestSet(which) {
   const say = t => document.querySelectorAll('#rtPrintStatus, .rt-status').forEach(el => { el.textContent = t; });
   const prob = L.res.previews.slice(0, L.res.problemPages), ans = L.res.previews.slice(L.res.problemPages);
   if (which !== 'ans') {
-    say(window.KMMS_DESKTOP ? '문제를 인쇄하고 있어요 (A4 · 1부 · 왼쪽 위 스테이플)…' : '문제를 인쇄하고 있어요 (A4 · 1부)…');
-    await printCanvases(prob, { staple: true });   // 문제 쪽: 왼쪽 위 스테이플
+    say(window.KMMS_DESKTOP ? '문제를 인쇄하고 있어요 (A4 · 1부 · 양면 · 왼쪽 위 스테이플)…' : '문제를 인쇄하고 있어요 (A4 · 1부)…');
+    await printCanvases(prob, { staple: true, duplex: true });   // 문제 쪽: 양면 · 왼쪽 위 스테이플
   }
   if (ans.length) {
     if (which !== 'ans') await new Promise(r => setTimeout(r, 1000));
     say('빠른정답 1장을 인쇄하고 있어요…');
-    await printCanvases(ans, { staple: false });   // 빠른정답 1장: 스테이플 없음
+    await printCanvases(ans, { staple: false, duplex: false });   // 빠른정답 1장: 단면 · 스테이플 없음
   }
   say('인쇄를 보냈어요.');
 }
@@ -2022,7 +2201,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined };
       state.rounds.push(savedRound);
-      if (mergeRetestOnlyInto(savedRound)) toast('먼저 올려 둔 재시험지를 이 회차에 합쳤어요.');
+      const rtInfoless = state.rounds.some(x => x.retestOnly && x.grade === savedRound.grade && x.retestPath && !(x.retestInfo && x.retestInfo.types && Object.keys(x.retestInfo.types).length >= 5));
+      if (rtInfoless && mergeRetestOnlyInto(savedRound)) toast('먼저 올려 둔 재시험지를 이 회차에 합쳤어요.');
     }
     saveState();
     // 새로 고른 시험지 파일은 서버의 비공개 저장소에도 올림 (로그인한 선생님만 볼 수 있음)
@@ -2031,11 +2211,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (examToUpload && window.KMMS) {
       Promise.resolve(examToUpload.stagedPromise).then(rec => rec ? window.KMMS.attachStaged(savedRound, rec) : window.KMMS.uploadExam(savedRound, examToUpload));
     }
+    const editingRoundIdWas = editingRoundId;
+    const mainFileForInfo = pendingExamFile;
     pendingDifficulty = null;
     pendingCompetency = null;
     resetRoundForm();
     renderRounds(); populateSelects();
     toast('회차를 저장했어요.');
+    if (!editingRoundIdWas) (async () => {
+      try {
+        const info = mainFileForInfo ? await describeFile(mainFileForInfo) : null;
+        if (info && info.types && Object.keys(info.types).length >= 5) { savedRound.mainInfo = info; saveState(); }
+        await matchPlaceholdersFor(savedRound);
+      } catch (e) { console.warn('match failed', e); }
+    })();
     shareRoundToGitHub(savedRound);
   });
 });
@@ -4821,7 +5010,7 @@ async function syncSharedRounds() {
         // 예전에는 이걸 지워서, 올려 둔 재시험지가 앱을 열 때마다 없어졌음
         const old = state.rounds[idx];
         const merged = { ...sr, examFile: old.examFile, studentId: old.studentId };
-        ['examPath', 'examName', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName'].forEach(k => { if (old[k] !== undefined) merged[k] = old[k]; else delete merged[k]; });
+        ['examPath', 'examName', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'mainInfo'].forEach(k => { if (old[k] !== undefined) merged[k] = old[k]; else delete merged[k]; });
         if (old.week !== undefined) merged.week = old.week;
         state.rounds[idx] = merged;
       }

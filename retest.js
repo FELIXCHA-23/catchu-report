@@ -443,11 +443,53 @@
     return { blob: pdf.output('blob'), pageCount: pages.length, problemPages: totalProblemPages, answerPages: hasAns ? 1 : 0, found, missing, answersFound, previews: pages };
   }
 
+  // 재시험지(또는 본시험지) PDF에서 "어떤 시험인지" 알 수 있는 정보를 읽음: 제목 · 범위(부제) · 문항 번호별 유형명.
+  // 문제마다 번호표 위에 "| 유형명 | 정답률 64%" 줄이 있으므로, 그 유형명을 번호대로 모아 둠 (본시험지의 문항별 유형과 맞춰 볼 때 씀)
+  async function describePaper(paperBuf) {
+    const pdf = await openPdf(paperBuf);
+    const types = {};
+    let title = '', range = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale: 1 });
+      const tc = await page.getTextContent();
+      if (tc.items.some(it => it.str.trim() === '해설')) continue;
+      const half = vp.width / 2;
+      const items = tc.items.filter(it => it.str && it.str.trim()).map(it => {
+        const size = Math.hypot(it.transform[0], it.transform[1]);
+        const base = vp.height - it.transform[5];
+        return { str: it.str.trim(), x: it.transform[4], w: it.width || 0, size, base, top: base - size * 0.8 };
+      });
+      if (p === 1) {
+        // 맨 위 두 줄: 제목(큰 글씨)과 범위(부제)
+        const head = items.filter(it => it.top < 95).sort((a, b) => a.top - b.top || a.x - b.x);
+        const lines = [];
+        head.forEach(it => { const l = lines.find(l => Math.abs(l.top - it.top) < 4); if (l) l.items.push(it); else lines.push({ top: it.top, items: [it] }); });
+        lines.sort((a, b) => a.top - b.top);
+        const txt = l => l ? l.items.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').replace(/\s+/g, ' ').trim() : '';
+        title = txt(lines[0]); range = txt(lines[1]);
+      }
+      const nearColLeft = x => (x >= 14 && x <= 70) || (x >= half + 2 && x <= half + 50);
+      items.filter(it => /^(0\d|[1-9]\d)$/.test(it.str) && it.size >= 15 && nearColLeft(it.x)).forEach(m => {
+        const num = parseInt(m.str, 10);
+        if (types[num]) return;
+        const pipes = items.filter(it => it.str.startsWith('|') && Math.abs(it.x - m.x) < 14 && it.top < m.top - 4 && m.top - it.top < 70);
+        if (!pipes.length) return;
+        const first = pipes.sort((a, b) => a.top - b.top)[0];
+        const line = items.filter(it => Math.abs(it.top - first.top) < 4 && it.x >= first.x - 1 && (m.x < half ? it.x < half : true)).sort((a, b) => a.x - b.x).map(it => it.str).join(' ');
+        const mm = /^\|\s*(.*?)\s*(?:\||정답률|$)/.exec(line);
+        const name = (mm ? mm[1] : '').replace(/\s+/g, ' ').trim();
+        if (name) types[num] = name;
+      });
+    }
+    return { title, range, types };
+  }
+
   // 올려 둔 재시험지에서 찾을 수 있는 문제 번호 목록(검사용)
   async function listProblemNumbers(paperBuf) {
     const pdf = await openPdf(paperBuf);
     return Object.keys(await scanProblems(pdf)).map(Number).sort((a, b) => a - b);
   }
 
-  window.RETEST = { build, listProblemNumbers, loadPdfJs };
+  window.RETEST = { build, listProblemNumbers, describePaper, loadPdfJs };
 })();
