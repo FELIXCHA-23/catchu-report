@@ -1579,13 +1579,38 @@ document.addEventListener('click', e => {
   const b = e.target.closest ? e.target.closest('[data-autoprint-bat]') : null;
   if (!b) return;
   e.preventDefault();
+  downloadAutoPrintBat();
+  toast('내려받은 파일을 한 번 실행하면 바탕화면에 "KMMS Auto Print" 바로가기가 생겨요.');
+});
+// 로그인하면 이 컴퓨터에서 처음 한 번만 자동으로 내려받음 (파일을 실행하는 건 브라우저 보안상 자동으로 할 수 없어서, 내려받은 파일을 한 번 열어야 함).
+// 이미 자동 인쇄 창(앱 창)에서 열었거나 Windows가 아니면 하지 않음
+function downloadAutoPrintBat() {
   const blob = new Blob([autoPrintBatText()], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'KMMS_자동인쇄_바로가기_만들기.bat';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  toast('내려받은 파일을 한 번 실행하면 바탕화면에 "KMMS Auto Print" 바로가기가 생겨요.');
+}
+function maybeOfferAutoPrint() {
+  if (!(window.KMMS && window.KMMS.ready) || window.KMMS.demo) return false;
+  let seen = false;
+  try { seen = !!localStorage.getItem('kmms_autoprint_offered'); } catch (e) {}
+  if (seen) return true;
+  const inAppWindow = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+  const isWindows = /Windows/i.test(navigator.userAgent || '');
+  try { localStorage.setItem('kmms_autoprint_offered', '1'); } catch (e) {}
+  if (inAppWindow || !isWindows) return true;
+  downloadAutoPrintBat();
+  const bar = document.createElement('div');
+  bar.className = 'autoprint-banner no-print';
+  bar.innerHTML = `<div><b>인쇄 창 없이 바로 출력하는 설정 파일을 내려받았어요.</b><br>크롬 아래쪽(또는 오른쪽 위 다운로드)에서 <b>KMMS_자동인쇄_바로가기_만들기.bat</b>을 눌러 한 번만 실행하세요. 바탕화면에 "KMMS Auto Print"가 생기면, 앞으로 그걸로 KMMS를 여시면 돼요.</div><div class="autoprint-btns"><button type="button" class="btn ghost" data-autoprint-bat>다시 받기</button><button type="button" class="btn primary" data-autoprint-close>확인</button></div>`;
+  bar.addEventListener('click', e => { if (e.target.closest('[data-autoprint-close]')) bar.remove(); });
+  document.body.appendChild(bar);
+  return true;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const timer = setInterval(() => { if (maybeOfferAutoPrint()) clearInterval(timer); }, 3000);
 });
 const AUTOPRINT_HINT = '<div class="field-hint">인쇄 창 없이 바로 출력하려면 <a href="#" data-autoprint-bat>자동 인쇄 바로가기 받기</a> (컴퓨터마다 처음 한 번만)</div>';
 
