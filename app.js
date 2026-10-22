@@ -1552,6 +1552,43 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// 인쇄 창 없이 바로 출력하는 크롬 창(--kiosk-printing)의 바탕화면 바로가기를 만들어 주는 .bat 파일 — 컴퓨터마다 한 번만 실행하면 됨
+function autoPrintBatText() {
+  const url = /^https:/.test(location.href) ? location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '') : 'https://felixcha-23.github.io/catchu-report/';
+  const text = String.raw`@echo off
+setlocal
+rem KMMS auto print: creates a Desktop shortcut that opens KMMS in a Chrome window which prints without the print dialog.
+set "CHROME="
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME (
+  echo Google Chrome was not found. Please install Chrome first.
+  pause
+  exit /b 1
+)
+powershell -NoProfile -Command "$q=[char]34; $a='--kiosk-printing --user-data-dir='+$q+$env:LocalAppData+'\KMMS-print-profile'+$q+' --app=__URL__'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\KMMS Auto Print.lnk'); $s.TargetPath='%CHROME%'; $s.Arguments=$a; $s.IconLocation='%CHROME%,0'; $s.Save(); Start-Process $s.FullName"
+echo.
+echo Done. From now on, open KMMS with the "KMMS Auto Print" shortcut on your Desktop.
+echo Sign in once in that window. Then set your printer defaults in Windows: A4, staple top-left, 1 copy.
+pause
+`;
+  return text.replace('__URL__', url).replace(/\r?\n/g, '\r\n');
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest ? e.target.closest('[data-autoprint-bat]') : null;
+  if (!b) return;
+  e.preventDefault();
+  const blob = new Blob([autoPrintBatText()], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'KMMS_자동인쇄_바로가기_만들기.bat';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast('내려받은 파일을 한 번 실행하면 바탕화면에 "KMMS Auto Print" 바로가기가 생겨요.');
+});
+const AUTOPRINT_HINT = '<div class="field-hint">인쇄 창 없이 바로 출력하려면 <a href="#" data-autoprint-bat>자동 인쇄 바로가기 받기</a> (컴퓨터마다 처음 한 번만)</div>';
+
 // 만든 재시험지를 A4로 인쇄: 문제 쪽(1부)을 먼저 인쇄하고, 이어서 빠른정답 1장을 인쇄함. 인쇄 창을 거치므로 프린터 설정(스테이플·부수)은 프린터 기본값을 따름
 // (인쇄 창 없이 바로 나가게 하려면 크롬을 --kiosk-printing 으로 연 창에서 쓰면 됨 — "KMMS_자동인쇄_실행.bat")
 function printCanvases(canvases) {
@@ -1627,7 +1664,7 @@ function scheduleRetestGen(round, student, wrong) {
       const miss = res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '';
       const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
       retestGenLast = { res, student, round, key: cacheKey };
-      renderRetestGen(retestGenLast.html = `<div class="rt-print"><b>${escapeHtml(student.name)} 재시험지</b> <span class="field-hint">오답 ${wrong.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span><div class="rt-print-btns"><button type="button" class="btn primary" data-rt-print="all">출력</button>${res.answerPages ? '<button type="button" class="btn ghost" data-rt-print="ans">빠른정답만 출력</button>' : ''}<a class="btn ghost" href="${retestGenUrl}" target="_blank" rel="noopener">PDF 열기</a><a class="btn ghost" href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a></div><div class="field-hint" id="rtPrintStatus">A4 · 문제 1부를 먼저 출력하고, 이어서 빠른정답 1장을 출력해요. 왼쪽 위 스테이플은 프린터 기본 설정에서 켜 두세요.</div>${miss}${noAns}</div>`);
+      renderRetestGen(retestGenLast.html = `<div class="rt-print"><b>${escapeHtml(student.name)} 재시험지</b> <span class="field-hint">오답 ${wrong.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span><div class="rt-print-btns"><button type="button" class="btn primary" data-rt-print="all">출력</button>${res.answerPages ? '<button type="button" class="btn ghost" data-rt-print="ans">빠른정답만 출력</button>' : ''}<a class="btn ghost" href="${retestGenUrl}" target="_blank" rel="noopener">PDF 열기</a><a class="btn ghost" href="${retestGenUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a></div><div class="field-hint" id="rtPrintStatus">A4 · 문제 1부를 먼저 출력하고, 이어서 빠른정답 1장을 출력해요. 왼쪽 위 스테이플은 프린터 기본 설정에서 켜 두세요.</div>${AUTOPRINT_HINT}${miss}${noAns}</div>`);
     } catch (e) {
       console.warn('retest gen failed', e);
       if (seq === retestGenSeq) renderRetestGen(`<div class="field-hint">재시험지를 만들지 못했어요: ${escapeHtml(e.message || String(e))}</div>`);
@@ -2583,7 +2620,7 @@ function renderRetestTabPdf() {
       if (rtTabUrl) URL.revokeObjectURL(rtTabUrl);
       rtTabUrl = URL.createObjectURL(res.blob);
       const miss = res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '';
-      const html = `<button type="button" class="btn" data-rt-print="all">재시험지 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${rtTabUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a> <span class="field-hint rt-status">A4 · 문제 ${res.problemPages}쪽 먼저, 이어서 빠른정답 ${res.answerPages}장</span>${miss}`;
+      const html = `<button type="button" class="btn" data-rt-print="all">재시험지 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${rtTabUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a> <span class="field-hint rt-status">A4 · 문제 ${res.problemPages}쪽 먼저, 이어서 빠른정답 ${res.answerPages}장</span>${miss}<div style="flex-basis:100%">${AUTOPRINT_HINT}</div>`;
       retestGenLast = { res, student, round, key, tabHtml: html };
       wrap.innerHTML = html;
     } catch (e) {
