@@ -1755,6 +1755,13 @@ document.addEventListener('DOMContentLoaded', () => {
   ['rtGradeSel', 'rtRoundSel'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', renderRetestUpload); });
 });
 
+// 시험지·재시험지 파일이 올라가거나 지워진 뒤: 채점 입력 · 재시험 · 시험지 탭을 모두 다시 그려서 어디서 올렸든 바로 반영되게 함
+function refreshAfterFileChange() {
+  try { renderRounds(); } catch (e) { console.warn(e); }
+  try { renderScoreTab(); } catch (e) { console.warn(e); }
+  try { renderRetestTab(); } catch (e) { console.warn(e); }
+}
+
 function renderRounds() {
   renderWeeklyStatus();
   try { renderRetestUpload(); } catch (e) { console.warn(e); }

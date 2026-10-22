@@ -659,7 +659,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     const u = (state.examUploads || []).find(x => x.id === rec.id);
     if (u) u.roundId = round.id;
     saveState();
-    if (typeof renderRounds === 'function') renderRounds();
+    refreshAfterFile();
   }
 
   async function uploadExam(round, file) {
@@ -677,7 +677,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (old) sb.storage.from('exams').remove([old]).catch(() => {});
       saveState();
       toast('시험지를 서버에 안전하게 올렸어요.');
-      if (typeof renderRounds === 'function') renderRounds();
+      refreshAfterFile();
       return true;
     } catch (e) {
       console.warn('exam upload failed', e);
@@ -741,6 +741,13 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     viewingUrl = '';
   }
 
+  // 시험지·재시험지 파일이 올라가거나 지워지면, 어느 화면(채점 입력 · 재시험 · 시험지 탭)에서 했든 모든 화면을 다시 그림
+  function refreshAfterFile() {
+    if (typeof refreshAfterFileChange === 'function') { refreshAfterFileChange(); return; }
+    if (typeof renderRounds === 'function') renderRounds();
+    if (typeof renderScoreTab === 'function') renderScoreTab();
+  }
+
   // 이미 만든 회차에 시험지(PDF·이미지)를 올리거나 교체
   const MAX_EXAM_UPLOAD = 20 * 1024 * 1024;
   // 재시험지(retest) · 재시험 빠른정답(retestAns)도 같은 방식으로 회차에 붙임
@@ -759,8 +766,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (old) sb.storage.from('exams').remove([old]).catch(() => {});
       saveState();
       toast((kind === 'retest' ? '재시험지' : '재시험 빠른정답') + '를 서버에 올렸어요.');
-      if (typeof renderRounds === 'function') renderRounds();
-      if (typeof renderScoreTab === 'function') renderScoreTab();
+      refreshAfterFile();
       return true;
     } catch (e) {
       console.warn('aux upload failed', e);
@@ -785,8 +791,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (round.retestOnly && !round.retestPath) state.rounds = state.rounds.filter(x => x.id !== round.id);
     saveState();
     toast((kind === 'main' ? '본시험지' : '재시험지') + ' 파일을 삭제했어요.');
-    if (typeof renderRounds === 'function') renderRounds();
-    if (typeof renderScoreTab === 'function') renderScoreTab();
+    refreshAfterFile();
     return true;
   }
   // 저장소 파일을 받아서 ArrayBuffer로 돌려줌 (재시험지 생성용, 같은 파일은 다시 받지 않음)
