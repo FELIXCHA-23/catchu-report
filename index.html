@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=96">
+<link rel="stylesheet" href="style.css?v=97">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -388,6 +388,13 @@
 
   <!-- 재시험 -->
   <section class="tab-panel" id="panel-retest">
+    <div class="card" id="retestRankCard">
+      <h2>오답 순위</h2>
+      <p class="card-sub">시험지(학년)별로 가장 많이 틀린 문항을 오답 인원수 순으로 보여줘요.</p>
+      <div class="rk-ctrl"><select id="rkGrade"></select><select id="rkRound"></select></div>
+      <label class="rk-mine" id="rkMineWrap"><input type="checkbox" id="rkMine"> 내 학생만 보기</label>
+      <div id="rkBody"></div>
+    </div>
     <div class="card">
       <h2>재시험 채점</h2>
       <p class="card-sub">원 회차의 오답 문항만 쌍둥이문제로 재시험. 다시 틀린 문항만 클릭.</p>
@@ -496,7 +503,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=7"></script>
-<script src="app.js?v=205"></script>
+<script src="app.js?v=206"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

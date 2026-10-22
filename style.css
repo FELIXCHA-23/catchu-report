@@ -598,3 +598,26 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .landing-app { margin-top: 10px; padding: 10px 14px; border: 1px solid var(--border); background: var(--surface-page); font-size: 13px; display: flex; flex-direction: column; gap: 2px; text-align: center; }
 .landing-app a { font-weight: 700; color: var(--ink); }
 .landing-app span { color: var(--muted); font-size: 12px; }
+
+/* 재시험 탭 왼쪽: 오답 순위 (넓은 화면에서는 본문 왼쪽 여백에 띄움) */
+#panel-retest { position: relative; }
+#retestRankCard { padding: 12px; font-size: 12px; }
+#retestRankCard h2 { font-size: 14px; }
+.rk-ctrl { display: flex; gap: 6px; flex-wrap: wrap; }
+.rk-ctrl select { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
+.rk-mine { display: block; margin: 6px 0; font-size: 12px; color: var(--ink-soft); }
+.rk-sum { margin: 6px 0; }
+.rk-head, .rk-row { display: grid; grid-template-columns: 18px 38px 1fr 34px 34px; gap: 5px; align-items: center; }
+.rk-head { font-size: 11px; color: var(--muted); padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+.rk-head span:nth-child(4), .rk-head span:nth-child(5), .rk-row .rk-n, .rk-row .rk-pct { text-align: right; }
+.rk-row { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.rk-rank { font-size: 11px; color: var(--muted); }
+.rk-q { font-weight: 700; font-size: 13px; }
+.rk-bar { display: block; height: 12px; background: var(--line); }
+.rk-bar i { display: block; height: 100%; background: var(--ink); }
+.rk-n { font-size: 12px; }
+.rk-pct { font-size: 12px; font-weight: 700; }
+.rk-more { margin-top: 8px; }
+@media (min-width: 1340px) {
+  #retestRankCard { position: absolute; right: calc(100% + 14px); top: 0; width: 280px; }
+}

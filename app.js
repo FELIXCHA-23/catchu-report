@@ -2590,12 +2590,68 @@ function populateRetestRoundSelect() {
 function currentRetestRound() { return state.rounds.find(r => r.id === document.getElementById('retestRoundSel').value); }
 function currentRetestStudent() { return state.students.find(s => s.id === document.getElementById('retestStudentSel').value); }
 
+/* ===== 재시험 탭 왼쪽: 시험지(학년)별 오답 순위 — 가장 많이 틀린 문항 번호를 오답 인원수 순으로, 가로막대 + 오답률 ===== */
+let rkShowAll = false;
+function renderRetestRank() {
+  const card = document.getElementById('retestRankCard');
+  if (!card) return;
+  const gSel = document.getElementById('rkGrade'), rSel = document.getElementById('rkRound'), body = document.getElementById('rkBody');
+  const mineWrap = document.getElementById('rkMineWrap'), mineBox = document.getElementById('rkMine');
+  const order = ['초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'];
+  const rounds = scopedRounds().filter(r => !r.individual && r.grade);
+  const grades = [...new Set(rounds.map(r => r.grade))].sort((x, y) => order.indexOf(x) - order.indexOf(y));
+  if (!grades.length) { body.innerHTML = '<div class="empty-state">등록된 시험지가 없어요.</div>'; gSel.innerHTML = ''; rSel.innerHTML = ''; return; }
+  // 처음에는 지금 재시험 채점 중인 회차의 학년을, 그 뒤에는 고른 값을 유지
+  const prevG = gSel.value, prevR = rSel.value;
+  const cur = typeof currentRetestRound === 'function' ? currentRetestRound() : null;
+  gSel.innerHTML = grades.map(g => `<option value="${g}">${g}</option>`).join('');
+  gSel.value = grades.includes(prevG) ? prevG : (cur && grades.includes(cur.grade) ? cur.grade : grades[grades.length - 1]);
+  const list = rounds.filter(r => r.grade === gSel.value).sort((x, y) => y.date.localeCompare(x.date));
+  rSel.innerHTML = list.map(r => `<option value="${r.id}">${escapeHtml(roundLabel(r))} · ${shortDate(r.date)}${r.title ? ' · ' + escapeHtml(r.title.length > 18 ? r.title.slice(0, 18) + '…' : r.title) : ''}</option>`).join('');
+  rSel.value = list.some(r => r.id === prevR) ? prevR : (cur && list.some(r => r.id === cur.id) ? cur.id : (list[0] ? list[0].id : ''));
+  const round = list.find(r => r.id === rSel.value);
+  const teacher = getCurrentTeacher();
+  mineWrap.style.display = teacher ? '' : 'none';
+  const onlyMine = !!teacher && mineBox.checked;
+  if (!round) { body.innerHTML = '<div class="empty-state">이 학년에는 시험지가 없어요.</div>'; return; }
+  const pool = new Set((onlyMine ? filterByCurrentTeacher(state.students) : state.students.filter(inStudentScope)).map(s => s.id));
+  const results = state.results.filter(r => r.roundId === round.id && pool.has(r.studentId));
+  const N = results.length;
+  if (!N) { body.innerHTML = '<div class="empty-state">이 시험지는 아직 채점 기록이 없어요.</div>'; return; }
+  const counts = {};
+  results.forEach(r => new Set(r.wrong).forEach(q => { counts[q] = (counts[q] || 0) + 1; }));
+  const rows = Object.entries(counts).map(([q, n]) => ({ q: Number(q), n })).sort((x, y) => y.n - x.n || x.q - y.q);
+  if (!rows.length) { body.innerHTML = `<div class="field-hint">채점 ${N}명 · 틀린 문항이 없어요.</div>`; return; }
+  const max = rows[0].n, TOP = 10;
+  const shown = rkShowAll ? rows : rows.slice(0, TOP);
+  const html = shown.map((row, i) => {
+    const t = typeForQuestion(round, row.q);
+    const pct = Math.round(row.n / N * 100);
+    return `<div class="rk-row" title="${t ? escapeHtml(t.name) : ''}">
+      <span class="rk-rank">${i + 1}</span><span class="rk-q">${row.q}번</span>
+      <span class="rk-bar"><i style="width:${Math.max(6, Math.round(row.n / max * 100))}%;${t ? `background:${t.color || TYPE_COLORS[t.idx % TYPE_COLORS.length]};` : ''}"></i></span>
+      <span class="rk-n">${row.n}명</span><span class="rk-pct">${pct}%</span></div>`;
+  }).join('');
+  body.innerHTML = `<div class="field-hint rk-sum">채점 ${N}명 · 오답이 나온 문항 ${rows.length}개 · 오답 인원수 순</div>
+    <div class="rk-head"><span></span><span>번호</span><span>오답 인원</span><span>인원</span><span>오답률</span></div>${html}
+    ${rows.length > TOP ? `<button type="button" class="icon-btn rk-more" id="rkMore">${rkShowAll ? '상위 ' + TOP + '개만 보기' : '전체 ' + rows.length + '개 보기'}</button>` : ''}`;
+  const more = document.getElementById('rkMore');
+  if (more) more.addEventListener('click', () => { rkShowAll = !rkShowAll; renderRetestRank(); });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const g = document.getElementById('rkGrade'), r = document.getElementById('rkRound'), m = document.getElementById('rkMine');
+  if (g) g.addEventListener('change', () => { document.getElementById('rkRound').value = ''; rkShowAll = false; renderRetestRank(); });
+  if (r) r.addEventListener('change', () => { rkShowAll = false; renderRetestRank(); });
+  if (m) m.addEventListener('change', renderRetestRank);
+});
+
 function renderRetestTab() {
   populateRetestRangeSel();
   populateRetestStudentSelect();
   populateRetestRoundSelect();
   renderRetestGrid();
   renderRetestList();
+  try { renderRetestRank(); } catch (e) { console.warn(e); }
 }
 
 // 재시험 탭: "재시험 결과 저장" 바로 옆에 — 이 학생이 본시험지에서 틀린 문제만 재시험지에서 뽑아 만든 PDF를 바로 출력/저장
