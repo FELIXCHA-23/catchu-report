@@ -1617,11 +1617,15 @@ const AUTOPRINT_HINT = window.KMMS_DESKTOP ? '' : '<div class="field-hint">인�
 
 // 만든 재시험지를 A4로 인쇄: 문제 쪽(1부)을 먼저 인쇄하고, 이어서 빠른정답 1장을 인쇄함. 인쇄 창을 거치므로 프린터 설정(스테이플·부수)은 프린터 기본값을 따름
 // (인쇄 창 없이 바로 나가게 하려면 크롬을 --kiosk-printing 으로 연 창에서 쓰면 됨 — "KMMS_자동인쇄_실행.bat")
-function printCanvases(canvases) {
-  // KMMS 데스크톱 앱에서 열었으면 인쇄 창 없이 바로 프린터로 보냄 (A4 · 1부)
+function printCanvases(canvases, opts) {
+  // KMMS 데스크톱 앱에서 열었으면 인쇄 창 없이 바로 프린터로 보냄 (A4 · 1부, opts.staple 이면 왼쪽 위 스테이플)
   if (window.KMMS_DESKTOP && window.KMMS_DESKTOP.print) {
-    return window.KMMS_DESKTOP.print(canvases.map(c => c.toDataURL('image/jpeg', 0.92)), '재시험지')
-      .then(r => { if (r && r.ok === false) toast('인쇄하지 못했어요: ' + (r.reason || '프린터를 확인해 주세요')); return true; })
+    return window.KMMS_DESKTOP.print(canvases.map(c => c.toDataURL('image/jpeg', 0.92)), '재시험지', opts || {})
+      .then(r => {
+        if (r && r.ok === false) toast('인쇄하지 못했어요: ' + (r.reason || '프린터를 확인해 주세요'));
+        else if (r && r.stapleRequested && !r.stapleApplied) toast('스테이플을 지정하지 못해서 스테이플 없이 인쇄했어요. 앱 위쪽 "인쇄 설정 → 스테이플 설정 확인"을 눌러 보세요.');
+        return true;
+      })
       .catch(() => true);
   }
   return new Promise(async resolve => {
@@ -1648,13 +1652,13 @@ async function printRetestSet(which) {
   const say = t => document.querySelectorAll('#rtPrintStatus, .rt-status').forEach(el => { el.textContent = t; });
   const prob = L.res.previews.slice(0, L.res.problemPages), ans = L.res.previews.slice(L.res.problemPages);
   if (which !== 'ans') {
-    say('문제를 인쇄하고 있어요 (A4 · 1부)…');
-    await printCanvases(prob);
+    say(window.KMMS_DESKTOP ? '문제를 인쇄하고 있어요 (A4 · 1부 · 왼쪽 위 스테이플)…' : '문제를 인쇄하고 있어요 (A4 · 1부)…');
+    await printCanvases(prob, { staple: true });   // 문제 쪽: 왼쪽 위 스테이플
   }
   if (ans.length) {
     if (which !== 'ans') await new Promise(r => setTimeout(r, 1000));
     say('빠른정답 1장을 인쇄하고 있어요…');
-    await printCanvases(ans);
+    await printCanvases(ans, { staple: false });   // 빠른정답 1장: 스테이플 없음
   }
   say('인쇄를 보냈어요.');
 }

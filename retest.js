@@ -127,6 +127,41 @@
     return found;
   }
 
+  // 해설 쪽에서 정답만 따오기: 재시험지 끝에 빠른정답 표가 없고 "정답 ⑤ + 해설"만 붙어 있을 때,
+  // 각 문제의 첫 줄(번호표 + "정답 ⑤")만 잘라서 빠른정답으로 씀
+  async function scanExplanations(pdf) {
+    const found = {};
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale: 1 });
+      const tc = await page.getTextContent();
+      if (!tc.items.some(it => it.str.trim() === '해설')) continue;
+      const half = vp.width / 2;
+      const items = tc.items.filter(it => it.str && it.str.trim()).map(it => {
+        const size = Math.hypot(it.transform[0], it.transform[1]);
+        const base = vp.height - it.transform[5];
+        return { str: it.str.trim(), x: it.transform[4], w: it.width || 0, size, base, top: base - size * 0.8 };
+      });
+      items.filter(it => /^\d{1,2}$/.test(it.str) && it.size >= 15).forEach(m => {
+        const num = parseInt(m.str, 10);
+        if (found[num]) return;
+        const col = m.x < half ? 0 : 1;
+        // 번호표와 같은 줄(번호표보다 작은 글자)
+        const row = items.filter(it => it !== m && it.x > m.x + m.w - 1 && (col === 1 || it.x < half) && it.top < m.base - 1 && it.base > m.top + 2 && it.size < m.size);
+        if (!row.some(it => /정답/.test(it.str))) return;
+        // 보기 번호(①~⑤)는 글자가 아니라 그림이라서 글자 위치로는 안 잡힘 — "정답" 글자 끝에서 오른쪽으로 넉넉히 잡음
+        const right = Math.max(...row.map(it => it.x + it.w)) + 90;
+        found[num] = {
+          // 아래 가로줄은 빼고 번호줄까지만 자름
+          page: p, top: Math.max(0, m.top - 3), bottom: m.base + 1,
+          left: m.x - 4, right: Math.min(right, col === 0 ? half - 4 : vp.width - 24),
+          mark: { left: m.x - 1.5, right: m.x + m.w + 2, top: m.top - 1, bottom: m.base + 2, base: m.base, size: m.size },
+        };
+      });
+    }
+    return found;
+  }
+
   // 재시험지 PDF 맨 뒤에 빠른정답 표가 붙어 있음 — 뒤쪽 쪽부터 거슬러 올라가며 "정답"이라는 글자가 있고
   // 번호표가 여러 개 늘어선 쪽을 찾음 (못 찾으면 null)
   async function findAnswerPage(pdf) {
@@ -182,6 +217,7 @@
       const src = cache[spec.page], S = RENDER_SCALE;
       const x = Math.max(0, Math.floor(spec.left * S)), y = Math.max(0, Math.floor(spec.top * S));
       const w = Math.min(src.width - x, Math.ceil((spec.right - spec.left) * S)), h = Math.min(src.height - y, Math.ceil((spec.bottom - spec.top) * S));
+      if (!(w > 0 && h > 0)) console.warn('crop 영역이 이상해요', JSON.stringify({ spec: { ...spec, mark: undefined }, x, y, w, h, sw: src.width, sh: src.height }));
       const out = document.createElement('canvas');
       out.width = Math.max(1, w); out.height = Math.max(1, h);
       const octx = out.getContext('2d');
@@ -295,11 +331,15 @@
       const ans = opts.ansBuf ? await openPdf(opts.ansBuf) : paper;
       let aspots;
       if (opts.ansBuf) aspots = await scanAnswers(ans, 1);
-      else { const f = await findAnswerPage(ans); aspots = f ? f.spots : {}; }
+      else {
+        const f = await findAnswerPage(ans);
+        aspots = f ? f.spots : {};
+        if (!Object.keys(aspots).length) aspots = await scanExplanations(paper);   // 빠른정답 표가 없으면 해설 쪽의 "정답"에서 따옴
+      }
       const acrop = makeCropper(ans);
       for (let k = 0; k < found.length; k++) { const n = found[k]; if (aspots[n]) acs.push({ n, img: await acrop({ ...aspots[n], label: String(k + 1) }) }); }
       answersFound = acs.map(a => a.n);
-    } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e); }
+    } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e && (e.stack || e.message || String(e)), e && e.name); }
 
     // 문제 쪽: 한 쪽에 4문제, 왼쪽 열 위→아래, 오른쪽 열 위→아래 순서 (시험지와 같은 배치)
     const pages = [];
