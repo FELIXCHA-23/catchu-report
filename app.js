@@ -887,6 +887,7 @@ function switchTab(name) {
   if (name === 'score') renderScoreTab();
   if (name === 'retest') renderRetestTab();
   if (name === 'report') renderReportTab();
+  if (name === 'collect') { try { populateCollectCard(); } catch (e) { console.warn(e); } }
   if (name === 'example') openExampleReport();
 }
 
@@ -3070,35 +3071,58 @@ function renderRetestRank() {
   gSel.innerHTML = grades.map(g => `<option value="${g}">${g}</option>`).join('');
   gSel.value = grades.includes(prevG) ? prevG : (cur && grades.includes(cur.grade) ? cur.grade : grades[grades.length - 1]);
   const list = rounds.filter(r => r.grade === gSel.value).sort((x, y) => y.date.localeCompare(x.date));
-  rSel.innerHTML = list.map(r => `<option value="${r.id}">${escapeHtml(roundLabel(r))} · ${shortDate(r.date)}${r.title ? ' · ' + escapeHtml(r.title.length > 18 ? r.title.slice(0, 18) + '…' : r.title) : ''}</option>`).join('');
-  rSel.value = list.some(r => r.id === prevR) ? prevR : (cur && list.some(r => r.id === cur.id) ? cur.id : (list[0] ? list[0].id : ''));
-  const round = list.find(r => r.id === rSel.value);
+  rSel.innerHTML = '<option value="__range">주차 범위로 전체 보기</option>' + list.map(r => `<option value="${r.id}">${escapeHtml(roundLabel(r))} · ${shortDate(r.date)}${r.title ? ' · ' + escapeHtml(r.title.length > 18 ? r.title.slice(0, 18) + '…' : r.title) : ''}</option>`).join('');
+  rSel.value = prevR === '__range' ? '__range' : list.some(r => r.id === prevR) ? prevR : (cur && list.some(r => r.id === cur.id) ? cur.id : (list[0] ? list[0].id : ''));
+  const isRange = rSel.value === '__range';
+  const round = isRange ? list[0] : list.find(r => r.id === rSel.value);
+  // 주차 범위 선택칸: 이 학년 시험지가 있는 주차들
+  const fSel = document.getElementById('rkFrom'), tSel = document.getElementById('rkTo'), rangeWrap = document.getElementById('rkRangeWrap');
+  rangeWrap.style.display = isRange ? '' : 'none';
+  const wmap = weekStartMap();
+  const weeks = [...new Map(list.map(r => [roundWeekKey(r), { d: roundWeekDate(r, wmap), label: roundWeekLabel(r) }])).values()].sort((x, y) => x.d.localeCompare(y.d));
+  const prevF = fSel.value, prevT = tSel.value;
+  const wopts = weeks.map(w => `<option value="${w.d}">${escapeHtml(w.label)} (${shortDate(w.d)})</option>`).join('');
+  fSel.innerHTML = wopts; tSel.innerHTML = wopts;
+  fSel.value = weeks.some(w => w.d === prevF) ? prevF : (weeks[0] ? weeks[0].d : '');
+  tSel.value = weeks.some(w => w.d === prevT) ? prevT : (weeks.length ? weeks[weeks.length - 1].d : '');
   const teacher = getCurrentTeacher();
   mineWrap.style.display = teacher ? '' : 'none';
   const onlyMine = !!teacher && mineBox.checked;
   if (!round) { body.innerHTML = '<div class="empty-state">이 학년에는 시험지가 없어요.</div>'; return; }
   const pool = new Set((onlyMine ? filterByCurrentTeacher(state.students) : state.students.filter(inStudentScope)).map(s => s.id));
-  const results = state.results.filter(r => r.roundId === round.id && pool.has(r.studentId));
-  const N = results.length;
-  if (!N) { body.innerHTML = '<div class="empty-state">이 시험지는 아직 채점 기록이 없어요.</div>'; return; }
-  const counts = {};
-  results.forEach(r => new Set(r.wrong).forEach(q => { counts[q] = (counts[q] || 0) + 1; }));
-  const rows = Object.entries(counts).map(([q, n]) => ({ q: Number(q), n })).sort((x, y) => y.n - x.n || x.q - y.q);
+  // 보는 회차들: 한 시험지, 또는 고른 주차 범위 안의 모든 시험지
+  let from = fSel.value, to = tSel.value;
+  if (from > to) [from, to] = [to, from];
+  const targets = isRange ? list.filter(r => { const d = roundWeekDate(r, wmap); return d >= from && d <= to; }) : [round];
+  const multi = isRange;
+  const rows = [];
+  let N = 0, nRounds = 0;
+  targets.forEach(rd => {
+    const rs = state.results.filter(r => r.roundId === rd.id && pool.has(r.studentId));
+    if (!rs.length) return;
+    nRounds++; N += rs.length;
+    const counts = {};
+    rs.forEach(r => new Set(r.wrong).forEach(q => { counts[q] = (counts[q] || 0) + 1; }));
+    Object.entries(counts).forEach(([q, n]) => rows.push({ q: Number(q), n, round: rd, N: rs.length }));
+  });
+  if (!nRounds) { body.innerHTML = `<div class="empty-state">${multi ? '이 범위에는' : '이 시험지는 아직'} 채점 기록이 없어요.</div>`; return; }
+  // 오답 인원수 순 (같으면 오답률, 그다음 최근 시험지, 번호 순)
+  rows.sort((x, y) => y.n - x.n || (y.n / y.N) - (x.n / x.N) || y.round.date.localeCompare(x.round.date) || x.q - y.q);
   if (!rows.length) { body.innerHTML = `<div class="field-hint">채점 ${N}명 · 틀린 문항이 없어요.</div>`; return; }
   const max = rows[0].n, TOP = 10;
   const shown = rkShowAll ? rows : rows.slice(0, TOP);
   const html = shown.map((row, i) => {
-    const t = typeForQuestion(round, row.q);
-    const pct = Math.round(row.n / N * 100);
-    return `<div class="rk-row" data-rk-q="${row.q}" data-rk-n="${row.n}" data-rk-pct="${pct}" title="${t ? escapeHtml(t.name) + ' — ' : ''}눌러서 문제 보기">
-      <span class="rk-rank">${i + 1}</span><span class="rk-q">${row.q}번</span>
+    const t = typeForQuestion(row.round, row.q);
+    const pct = Math.round(row.n / row.N * 100);
+    return `<div class="rk-row${multi ? ' rk-multi' : ''}" data-rk-i="${i}" data-rk-q="${row.q}" data-rk-n="${row.n}" data-rk-pct="${pct}" title="${multi && row.round.title ? escapeHtml(row.round.title) + ' · ' : ''}${t ? escapeHtml(t.name) + ' — ' : ''}눌러서 문제 보기">
+      <span class="rk-rank">${i + 1}</span><span class="rk-q">${multi ? `<small>${escapeHtml(roundLabel(row.round))}</small>` : ''}${row.q}번</span>
       <span class="rk-bar"><i style="width:${Math.max(6, Math.round(row.n / max * 100))}%;${t ? `background:${t.color || TYPE_COLORS[t.idx % TYPE_COLORS.length]};` : ''}"></i></span>
       <span class="rk-n">${row.n}명</span><span class="rk-pct">${pct}%</span></div>`;
   }).join('');
-  body.innerHTML = `<div class="field-hint rk-sum">채점 ${N}명 · 오답이 나온 문항 ${rows.length}개 · 오답 인원수 순</div>
-    <div class="rk-head"><span></span><span>번호</span><span>오답 인원</span><span>인원</span><span>오답률</span></div>${html}
+  body.innerHTML = `<div class="field-hint rk-sum">${multi ? `시험지 ${nRounds}개 · ` : ''}채점 ${multi ? '연인원 ' : ''}${N}명 · 오답이 나온 문항 ${rows.length}개 · 오답 인원수 순</div>
+    <div class="rk-head${multi ? ' rk-multi' : ''}"><span></span><span>번호</span><span>오답 인원</span><span>인원</span><span>오답률</span></div>${html}
     ${rows.length > TOP ? `<button type="button" class="icon-btn rk-more" id="rkMore">${rkShowAll ? '상위 ' + TOP + '개만 보기' : '전체 ' + rows.length + '개 보기'}</button>` : ''}`;
-  body.querySelectorAll('.rk-row').forEach(el => el.addEventListener('click', () => showRankProblem(round, +el.dataset.rkQ, +el.dataset.rkN, +el.dataset.rkPct, N)));
+  body.querySelectorAll('.rk-row').forEach(el => el.addEventListener('click', () => showRankProblem(rows[+el.dataset.rkI].round, +el.dataset.rkQ, +el.dataset.rkN, +el.dataset.rkPct, rows[+el.dataset.rkI].N)));
   const more = document.getElementById('rkMore');
   if (more) more.addEventListener('click', () => { rkShowAll = !rkShowAll; renderRetestRank(); });
 }
@@ -3106,6 +3130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const g = document.getElementById('rkGrade'), r = document.getElementById('rkRound'), m = document.getElementById('rkMine');
   if (g) g.addEventListener('change', () => { document.getElementById('rkRound').value = ''; rkShowAll = false; renderRetestRank(); });
   if (r) r.addEventListener('change', () => { rkShowAll = false; renderRetestRank(); });
+  ['rkFrom', 'rkTo'].forEach(id => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { rkShowAll = false; renderRetestRank(); }); });
   if (m) m.addEventListener('change', renderRetestRank);
 });
 

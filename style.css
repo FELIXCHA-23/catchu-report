@@ -626,3 +626,6 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .rk-row:hover { background: var(--accent-fill); }
 .ws-modal-box.rk-modal { max-width: 760px; max-height: 90vh; overflow-y: auto; }
 .rk-problem { min-height: 60px; }
+
+.rk-q small { display: block; font-size: 10px; font-weight: 400; color: var(--muted, #888); white-space: nowrap; }
+.rk-head.rk-multi, .rk-row.rk-multi { grid-template-columns: 18px 64px 1fr 34px 34px; }
