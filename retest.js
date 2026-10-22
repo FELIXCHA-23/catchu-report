@@ -368,13 +368,15 @@
     if (hasAns) {
       const { cv, ctx } = newPage();
       drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
-      const cols = 3, cw = (R - L - (cols - 1) * 30) / cols, rowH = 150;
+      // 빠른정답은 작게, 번호 순서가 위→아래로 이어지는 세로 정렬(왼쪽 열을 먼저 채우고 다음 열로)
+      const N = acs.length, cols = N > 12 ? 4 : 3, rows = Math.ceil(N / cols);
+      const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols, rowH = 92;
       acs.forEach((a, i) => {
-        const c = i % cols, r = Math.floor(i / cols);
-        const x = L + c * (cw + 30), y = TOP + 10 + r * rowH;
+        const c = Math.floor(i / rows), r = i % rows;
+        const x = L + c * (cw + gapX), y = TOP + 10 + r * rowH;
         if (y + rowH > BOT) return;
         ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
-        fitImage(ctx, a.img, x, y, cw, rowH - 30, 2.2);
+        fitImage(ctx, a.img, x, y + 2, cw, rowH - 34, 1.0);
       });
       drawFooter(ctx, `빠른 정답 ${opts.studentName || ''} · ${pages.length + 1}/${totalPages}`);
       pages.push(cv);
