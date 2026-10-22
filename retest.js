@@ -55,8 +55,10 @@
         return { str: it.str.trim(), x: it.transform[4], w: it.width || 0, size, base, top: base - size * 0.8 };
       });
       const marks = [];
+      // 번호표 자리: 왼쪽 열은 왼쪽 가장자리, 오른쪽 열은 가운데선 바로 오른쪽 (제목·머리말에 들어 있는 큰 숫자를 번호로 잘못 읽지 않게)
+      const nearColLeft = x => (x >= 14 && x <= 70) || (x >= half + 2 && x <= half + 50);
       items.forEach(it => {
-        if (!/^\d{1,2}$/.test(it.str) || it.size < 15) return;      // 큰 번호표만 (쪽 번호·본문 숫자는 작음)
+        if (!/^(0\d|[1-9]\d)$/.test(it.str) || it.size < 15 || !nearColLeft(it.x)) return;      // 큰 번호표만 (쪽 번호·본문 숫자는 작음)
         marks.push({ num: parseInt(it.str, 10), x: it.x, w: it.w, size: it.size, base: it.base, y: it.top });
       });
       // 각 문제의 머리글: 번호표 위쪽 가까이에서 "|" 로 시작하는 줄부터 번호표 위까지
@@ -78,6 +80,7 @@
           page: p, top, bottom,
           left: col === 0 ? 24 : half + 4, right: col === 0 ? half - 4 : vp.width - 24,
           mark: { left: m.x - 1.5, right: m.x + m.w + 2, top: m.y - 1, bottom: m.base + 2, base: m.base, size: m.size },
+          align: true,   // 번호 높이를 맞춰 붙이기 위해 위·옆 여백을 자르지 않음
         };
       });
     }
@@ -142,7 +145,7 @@
         const base = vp.height - it.transform[5];
         return { str: it.str.trim(), x: it.transform[4], w: it.width || 0, size, base, top: base - size * 0.8 };
       });
-      items.filter(it => /^\d{1,2}$/.test(it.str) && it.size >= 15).forEach(m => {
+      items.filter(it => /^(0\d|[1-9]\d)$/.test(it.str) && it.size >= 15 && ((it.x >= 14 && it.x <= 70) || (it.x >= half + 2 && it.x <= half + 50))).forEach(m => {
         const num = parseInt(m.str, 10);
         if (found[num]) return;
         const col = m.x < half ? 0 : 1;
@@ -200,6 +203,28 @@
     return out;
   }
 
+  // 아래쪽의 흰 여백만 줄임 (위·옆은 그대로 둠)
+  function trimBottom(cv, pad) {
+    const ctx = cv.getContext('2d');
+    const { width: w, height: h } = cv;
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let y1 = -1;
+    for (let y = h - 1; y >= 0 && y1 < 0; y--) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (d[i + 3] > 10 && (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235)) { y1 = y; break; }
+      }
+    }
+    if (y1 < 0) return cv;
+    const nh = Math.min(h, y1 + 1 + pad);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = nh;
+    const octx = out.getContext('2d');
+    octx.fillStyle = '#fff'; octx.fillRect(0, 0, w, nh);
+    octx.drawImage(cv, 0, 0, w, nh, 0, 0, w, nh);
+    return out;
+  }
+
   // PDF 쪽을 한 번만 그려서 재사용하며 영역을 잘라냄
   function makeCropper(pdf) {
     const cache = {};
@@ -238,6 +263,12 @@
         octx.font = `900 ${Math.round(mk.size * S * 0.98)}px ${FONT}`;
         octx.textBaseline = 'alphabetic'; octx.textAlign = 'left';
         octx.fillText(spec.label, ox, Math.round(mk.base * S) - y);
+      }
+      if (spec.align) {
+        // 문제 칸: 아래 빈 곳만 줄이고, 번호 윗선이 칸 위에서 몇 px 떨어져 있는지 기록 (붙일 때 번호 높이를 똑같이 맞추는 데 씀)
+        const o = trimBottom(out, 10);
+        o.markTopPx = spec.mark ? Math.max(0, spec.mark.top * S - y) : 0;
+        return o;
       }
       return trim(out, 6);
     };
@@ -307,64 +338,88 @@
     ctx.fillText(text, PAGE_W / 2, PAGE_H - 50); ctx.textAlign = 'left';
   }
 
-  /**
-   * opts: { paperBuf: ArrayBuffer(재시험지 PDF), ansBuf?: ArrayBuffer(빠른정답 PDF), nums: [틀린 번호], title, studentName, dateText }
-   * 돌려주는 값: { blob, pageCount, found: [번호], missing: [번호], answersFound: [번호], previews: [canvas] }
-   */
-  async function build(opts) {
-    const nums = Array.from(new Set((opts.nums || []).map(Number))).filter(n => n > 0).sort((a, b) => a - b);
-    if (!nums.length) throw new Error('틀린 번호가 없어요.');
-    await ensureFont();
-    const logo = await loadLogo();
-    const paper = await openPdf(opts.paperBuf);
+  // 재시험지 PDF 하나에서 틀린 번호의 문제(와 정답)를 잘라 옴. startNo: 앞에서 이미 쓴 문항 수 — 번호를 이어서 1, 2, 3… 으로 다시 씀
+  async function collectSource(src, startNo) {
+    const nums = Array.from(new Set((src.nums || []).map(Number))).filter(n => n > 0).sort((a, b) => a - b);
+    const paper = await openPdf(src.paperBuf);
     const spots = await scanProblems(paper);
     const crop = makeCropper(paper);
     const found = nums.filter(n => spots[n]), missing = nums.filter(n => !spots[n]);
-    if (!found.length) throw new Error('재시험지에서 해당 번호의 문제를 찾지 못했어요. 재시험지 PDF가 맞는지 확인해주세요.');
     const crops = [];
-    for (let k = 0; k < found.length; k++) crops.push({ n: found[k], img: await crop({ ...spots[found[k]], label: String(k + 1) }) });
+    for (let k = 0; k < found.length; k++) crops.push({ n: found[k], img: await crop({ ...spots[found[k]], label: String(startNo + k + 1) }) });
 
     // 빠른정답: 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 재시험지 PDF 맨 뒤의 정답 쪽에서 같은 번호의 정답 칸만 잘라 둠
-    let answersFound = [];
     const acs = [];
     try {
-      const ans = opts.ansBuf ? await openPdf(opts.ansBuf) : paper;
+      const ans = src.ansBuf ? await openPdf(src.ansBuf) : paper;
       let aspots;
-      if (opts.ansBuf) aspots = await scanAnswers(ans, 1);
+      if (src.ansBuf) aspots = await scanAnswers(ans, 1);
       else {
         const f = await findAnswerPage(ans);
         aspots = f ? f.spots : {};
         if (!Object.keys(aspots).length) aspots = await scanExplanations(paper);   // 빠른정답 표가 없으면 해설 쪽의 "정답"에서 따옴
       }
       const acrop = makeCropper(ans);
-      for (let k = 0; k < found.length; k++) { const n = found[k]; if (aspots[n]) acs.push({ n, img: await acrop({ ...aspots[n], label: String(k + 1) }) }); }
-      answersFound = acs.map(a => a.n);
+      for (let k = 0; k < found.length; k++) { const n = found[k]; if (aspots[n]) acs.push({ n, img: await acrop({ ...aspots[n], label: String(startNo + k + 1) }) }); }
     } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e && (e.stack || e.message || String(e)), e && e.name); }
+    return { crops, acs, found, missing };
+  }
+
+  /**
+   * 한 회차: opts = { paperBuf: ArrayBuffer(재시험지 PDF), ansBuf?: ArrayBuffer(빠른정답 PDF), nums: [틀린 번호], title, studentName, dateText }
+   * 여러 회차를 한 장으로 모을 때(오답 모음): opts.sources = [{ paperBuf, ansBuf?, nums, label }] 를 순서대로 이어 붙임 (opts.onProgress(i, total) 가능)
+   * 돌려주는 값: { blob, pageCount, problemPages, answerPages, found: [번호], missing: [번호 또는 "라벨 번호"], answersFound: [번호], previews: [canvas] }
+   */
+  async function build(opts) {
+    const sources = opts.sources && opts.sources.length ? opts.sources : [{ paperBuf: opts.paperBuf, ansBuf: opts.ansBuf, nums: opts.nums }];
+    if (!sources.some(s => (s.nums || []).length)) throw new Error('틀린 번호가 없어요.');
+    await ensureFont();
+    const logo = await loadLogo();
+    const crops = [], acs = [], found = [], missing = [];
+    for (let si = 0; si < sources.length; si++) {
+      const src = sources[si];
+      if (!(src.nums || []).length) continue;
+      if (opts.onProgress) opts.onProgress(si, sources.length);
+      let r;
+      try { r = await collectSource(src, crops.length); }
+      catch (e) { if (sources.length === 1) throw e; missing.push(...(src.nums || []).map(n => `${src.label || ''} ${n}번`.trim())); continue; }
+      crops.push(...r.crops); acs.push(...r.acs); found.push(...r.found);
+      missing.push(...r.missing.map(n => (src.label ? `${src.label} ${n}번` : n)));
+    }
+    if (!crops.length) throw new Error('재시험지에서 해당 번호의 문제를 찾지 못했어요. 재시험지 PDF가 맞는지 확인해주세요.');
+    const answersFound = acs.map(a => a.n);
 
     // 문제 쪽: 한 쪽에 4문제, 왼쪽 열 위→아래, 오른쪽 열 위→아래 순서 (시험지와 같은 배치)
+    // 첫 쪽에만 머릿말(로고·제목·이름·날짜)을 두고, 2쪽부터는 머릿말을 빼고 그만큼 위로 당겨서 문제를 배치함
     const pages = [];
-    const L = 90, R = PAGE_W - 90, TOP = 420, BOT = PAGE_H - 110, GAP = 34;
-    const colW = (R - L - 2 * GAP) / 2, cellH = (BOT - TOP - GAP) / 2;
+    const L = 90, R = PAGE_W - 90, TOP = 420, TOP_NEXT = 150, BOT = PAGE_H - 110, GAP = 34;
+    const colW = (R - L - 2 * GAP) / 2;
     const totalProblemPages = Math.ceil(crops.length / 4);
     const hasAns = acs.length > 0;
     const blankPages = 0;   // 정답은 문제 쪽 바로 뒤에 붙임
     const totalPages = totalProblemPages + blankPages + (hasAns ? 1 : 0);
     const metaTitle = opts.title || '';
+    // 모든 문제를 같은 배율로 붙여서 글자·번호 크기가 문제마다 달라지지 않게 함 (칸보다 긴 문제만 그 칸에 맞게 줄임)
+    const baseScale = Math.min(1.6, ...crops.map(c => colW / c.img.width));
     for (let pi = 0; pi < totalProblemPages; pi++) {
       const { cv, ctx } = newPage();
-      drawHeader(ctx, { kind: '캐치유 재시험', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
-      ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(PAGE_W / 2, TOP - 10); ctx.lineTo(PAGE_W / 2, BOT); ctx.stroke();
+      const top = pi === 0 ? TOP : TOP_NEXT;
+      const cellH = (BOT - top - GAP) / 2;
+      if (pi === 0) drawHeader(ctx, { kind: '캐치유 재시험', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
+      ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(PAGE_W / 2, top - 10); ctx.lineTo(PAGE_W / 2, BOT); ctx.stroke();
       crops.slice(pi * 4, pi * 4 + 4).forEach((c, k) => {
         const col = k < 2 ? 0 : 1, row = k % 2;
-        const x = col === 0 ? L : PAGE_W / 2 + GAP / 2, y = TOP + row * (cellH + GAP);
-        fitImage(ctx, c.img, x, y, colW, cellH, 1.5);
+        const x = col === 0 ? L : PAGE_W / 2 + GAP / 2;
+        const sc = Math.min(baseScale, (cellH + (c.img.markTopPx || 0) * baseScale) / c.img.height);
+        const y = top + row * (cellH + GAP) - (c.img.markTopPx || 0) * sc;   // 번호 윗선이 칸 맨 위에 오도록
+        ctx.drawImage(c.img, x, y, c.img.width * sc, c.img.height * sc);
       });
       drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${pi + 1}/${totalPages}`);
       pages.push(cv);
     }
     if (blankPages) pages.push(newPage().cv);   // 양면 인쇄용 빈 쪽 (아무것도 그리지 않음)
 
-    // 빠른정답 쪽: 같은 번호의 정답 칸만 모아 붙임
+    // 빠른정답 쪽: 같은 번호의 정답 칸만 모아 붙임 (정답은 따로 한 장으로 나가므로 머릿말을 둠)
     if (hasAns) {
       const { cv, ctx } = newPage();
       drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
