@@ -1351,14 +1351,14 @@ function renderWeeklyStatus() {
   const can = window.KMMS && !window.KMMS.demo;
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
   const all = scopedRounds().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
-  const chip = (r, name, path, upAttrs, viewAttrs) => `<div class="ws-row"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}</div>`;
+  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
-    const body = rs.length ? rs.map(r => `<div class="ws-round"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
-      ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`, `data-exam-open="${r.id}"`)}
-      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`, `data-aux-open="${r.id}" data-kind="retest"`)}</div>`).join('')
+    const body = rs.length ? rs.map(r => `<div class="ws-round" data-round="${r.id}"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
+      ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`, `data-exam-open="${r.id}"`, 'main')}
+      ${chip(r, '재시험지', r.retestPath, `data-exam-upload="${r.id}" data-kind="retest"`, `data-aux-open="${r.id}" data-kind="retest"`, 'retest')}</div>`).join('')
       : '<div class="ws-round field-hint">이 주 시험지 회차가 없어요</div>';
-    return `<div class="ws-grade"><b>${g}</b>${body}</div>`;
+    return `<div class="ws-grade" data-grade="${g}"><b>${g}</b>${body}</div>`;
   }).join('');
 }
 document.addEventListener('DOMContentLoaded', () => {
@@ -1366,6 +1366,98 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('wsPrev').addEventListener('click', () => go(wsWeekOffset - 1));
   document.getElementById('wsNext').addEventListener('click', () => go(wsWeekOffset + 1));
   document.getElementById('wsToday').addEventListener('click', () => go(0));
+});
+
+/* ===== 채점 입력 · 시험지 업로드 현황: 바로 올리기 / 끌어다 놓기(본시험지·재시험지 고르는 팝업) / 삭제 ===== */
+function wsRounds() {
+  const label = dateToWeekLabel(wsDateOf(wsWeekOffset));
+  return scopedRounds().filter(r => !r.individual && r.total === 30 && WS_GRADES.includes(r.grade) && roundWeekLabel(r) === label)
+    .sort((x, y) => WS_GRADES.indexOf(x.grade) - WS_GRADES.indexOf(y.grade) || x.date.localeCompare(y.date));
+}
+function closeWsModal() { const m = document.getElementById('wsModal'); if (m) m.remove(); }
+// file: 고른/끌어다 놓은 파일. opt: { kind('main'|'retest') 미리 골라둘 종류, roundId, grade }
+function openWsUpload(file, opt) {
+  opt = opt || {};
+  if (!window.KMMS) { toast('로그인한 뒤에 올릴 수 있어요.'); return; }
+  if (!/^(application\/pdf|image\/)/.test(file.type)) { toast('PDF나 사진 파일만 올릴 수 있어요.'); return; }
+  if (file.size > 20 * 1024 * 1024) { toast(`파일이 너무 커요 (${(file.size / 1024 / 1024).toFixed(1)}MB). 20MB 이하로 올려주세요.`); return; }
+  const rounds = wsRounds();
+  if (!rounds.length) { toast('이 주차에는 시험지 회차가 없어요. 시험지 탭에서 본시험지를 먼저 등록하세요.'); return; }
+  closeWsModal();
+  const pick = (opt.roundId && rounds.find(r => r.id === opt.roundId)) || (opt.grade && rounds.find(r => r.grade === opt.grade)) || rounds[0];
+  const ov = document.createElement('div');
+  ov.id = 'wsModal'; ov.className = 'ws-modal';
+  ov.innerHTML = `<div class="ws-modal-box" role="dialog" aria-label="시험지 올리기">
+    <h3>시험지 올리기</h3>
+    <div class="ws-modal-file">${escapeHtml(file.name)}</div>
+    <div class="ws-modal-sec"><b>어떤 시험지인가요?</b>
+      <div class="ws-kind"><label><input type="radio" name="wsKind" value="main"${opt.kind === 'main' ? ' checked' : ''}> 본시험지</label>
+      <label><input type="radio" name="wsKind" value="retest"${opt.kind === 'retest' ? ' checked' : ''}> 재시험지</label></div></div>
+    <div class="ws-modal-sec"><b>회차 (${escapeHtml(document.getElementById('wsLabel').textContent)})</b>
+      <select id="wsModalRound">${rounds.map(r => `<option value="${r.id}"${r.id === pick.id ? ' selected' : ''}>${escapeHtml(r.grade)} · ${escapeHtml(r.title || shortDate(r.date))}</option>`).join('')}</select>
+      <div id="wsModalNote" class="field-hint"></div></div>
+    <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button><button type="button" class="btn primary" id="wsModalOk" disabled>올리기</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const kindOf = () => { const c = ov.querySelector('input[name=wsKind]:checked'); return c ? c.value : ''; };
+  const roundOf = () => state.rounds.find(r => r.id === ov.querySelector('#wsModalRound').value);
+  const refresh = () => {
+    const k = kindOf(), r = roundOf();
+    ov.querySelector('#wsModalOk').disabled = !k || !r;
+    const has = r && (k === 'main' ? r.examPath : k === 'retest' ? r.retestPath : '');
+    ov.querySelector('#wsModalNote').textContent = !k ? '본시험지인지 재시험지인지 골라 주세요.' : has ? `이 회차에는 이미 ${k === 'main' ? '본시험지' : '재시험지'}가 있어요. 올리면 교체돼요.` : '';
+  };
+  ov.addEventListener('change', refresh);
+  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('#wsModalCancel')) closeWsModal(); });
+  ov.querySelector('#wsModalOk').addEventListener('click', () => {
+    const k = kindOf(), r = roundOf();
+    if (!k || !r) return;
+    closeWsModal();
+    const fr = new FileReader();
+    fr.onload = async () => {
+      toast('올리는 중…');
+      const f = { name: file.name, dataUrl: fr.result };
+      if (k === 'main') await window.KMMS.uploadExam(r, f); else await window.KMMS.uploadAux(r, 'retest', f);
+    };
+    fr.readAsDataURL(file);
+  });
+  refresh();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeWsModal(); });
+document.addEventListener('DOMContentLoaded', () => {
+  const card = document.getElementById('weeklyStatusCard');
+  if (!card) return;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  card.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); card.classList.add('drop-hot'); } });
+  card.addEventListener('dragleave', e => { if (!card.contains(e.relatedTarget)) card.classList.remove('drop-hot'); });
+  card.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); card.classList.remove('drop-hot');
+    const files = e.dataTransfer.files;
+    if (files.length > 1) toast('한 번에 한 파일씩 올려 주세요. 첫 번째 파일만 올려요.');
+    const row = e.target.closest('.ws-row'), rnd = e.target.closest('.ws-round'), gr = e.target.closest('.ws-grade');
+    openWsUpload(files[0], { kind: row ? row.dataset.wskind : '', roundId: rnd ? rnd.dataset.round : '', grade: gr ? gr.dataset.grade : '' });
+  });
+  card.addEventListener('click', async e => {
+    const pickBtn = e.target.closest('[data-ws-pick]');
+    if (pickBtn) {
+      e.preventDefault();
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'application/pdf,image/*';
+      input.onchange = () => { if (input.files[0]) openWsUpload(input.files[0], { kind: pickBtn.dataset.wsPick }); };
+      input.click();
+      return;
+    }
+    const del = e.target.closest('[data-exam-del]');
+    if (del) {
+      e.preventDefault();
+      const r = state.rounds.find(x => x.id === del.dataset.examDel);
+      if (!r || !window.KMMS) return;
+      const nm = del.dataset.kind === 'main' ? '본시험지' : '재시험지';
+      if (!confirm(`${r.grade || ''} ${r.title || shortDate(r.date)}의 ${nm} 파일을 삭제할까요?\n(잘못 올렸을 때 지우는 용도예요. 삭제 후 다시 올릴 수 있어요.)`)) return;
+      await window.KMMS.deleteFile(r, del.dataset.kind);
+    }
+  });
 });
 
 /* ===== 채점 후 학생별 재시험지 자동 생성 ===== */

@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=88">
+<link rel="stylesheet" href="style.css?v=89">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -339,6 +339,10 @@
         <button type="button" class="icon-btn" id="wsNext">▶</button>
         <button type="button" class="icon-btn" id="wsToday">이번 주</button>
       </div>
+      <div class="ws-drop" id="wsDrop">
+        <div>시험지 파일을 이 박스 안으로 끌어다 놓으면 바로 올라가요</div>
+        <div class="ws-drop-btns"><button type="button" class="btn ghost" data-ws-pick="main">본시험지 올리기</button><button type="button" class="btn ghost" data-ws-pick="retest">재시험지 올리기</button></div>
+      </div>
       <div id="weeklyStatusBody"></div>
     </div>
     <div class="card" id="scoreMainCard">
@@ -489,10 +493,10 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=2"></script>
-<script src="app.js?v=184"></script>
+<script src="app.js?v=185"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="cloud.js?v=16"></script>
+<script src="cloud.js?v=17"></script>
 </body>
 </html>

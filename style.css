@@ -547,3 +547,20 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .week-chip.on small { color: #ddd; }
 .week-fix { display: inline-flex; align-items: center; gap: 6px; }
 .week-fix select { min-width: 250px; }
+
+/* 채점 입력 · 시험지 업로드 현황: 업로드 칸 / 팝업 */
+.ws-drop { margin: 6px 0 10px; padding: 10px; border: 1px dashed var(--border); background: var(--surface-page); font-size: 12px; color: var(--ink-soft); display: flex; flex-direction: column; gap: 8px; }
+.ws-drop-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.ws-drop-btns .btn { padding: 4px 10px; font-size: 12px; }
+#weeklyStatusCard.drop-hot { outline-offset: -2px; }
+.ws-del { color: #b42318; }
+.ws-modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+.ws-modal-box { background: #fff; width: 100%; max-width: 400px; padding: 20px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 14px; font-size: 14px; }
+.ws-modal-box h3 { margin: 0; font-size: 16px; }
+.ws-modal-file { font-size: 13px; color: var(--ink-soft); word-break: break-all; padding: 6px 8px; background: var(--surface-page); }
+.ws-modal-sec { display: flex; flex-direction: column; gap: 6px; }
+.ws-kind { display: flex; gap: 8px; }
+.ws-kind label { flex: 1; display: flex; align-items: center; gap: 6px; padding: 10px; border: 1px solid var(--border); cursor: pointer; font-weight: 700; }
+.ws-kind label:has(input:checked) { border-color: var(--ink); background: var(--accent-fill); }
+.ws-modal-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.ws-modal-btns .btn:disabled { opacity: .4; cursor: not-allowed; }

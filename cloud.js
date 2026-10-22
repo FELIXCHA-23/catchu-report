@@ -768,6 +768,24 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       return false;
     }
   }
+  // 잘못 올린 본시험지(main) · 재시험지(retest) 파일을 지움 — 저장소 파일을 지우고 회차에서 연결을 끊음 (다시 올릴 수 있음)
+  async function deleteFile(round, kind) {
+    if (demoMode) { toast('체험(guest) 모드에서는 지울 수 없어요.'); return false; }
+    const f = kind === 'main' ? ['examPath', 'examName'] : AUX_FIELDS[kind];
+    if (!ready || !round || !f || !round[f[0]]) return false;
+    const path = round[f[0]];
+    try {
+      const { error } = await sb.storage.from('exams').remove([path]);
+      if (error) console.warn('exam remove failed', error);
+    } catch (e) { console.warn('exam remove failed', e); }
+    delete bufCache[path];
+    delete round[f[0]]; delete round[f[1]];
+    saveState();
+    toast((kind === 'main' ? '본시험지' : '재시험지') + ' 파일을 삭제했어요.');
+    if (typeof renderRounds === 'function') renderRounds();
+    if (typeof renderScoreTab === 'function') renderScoreTab();
+    return true;
+  }
   // 저장소 파일을 받아서 ArrayBuffer로 돌려줌 (재시험지 생성용, 같은 파일은 다시 받지 않음)
   const bufCache = {};
   async function fetchBuf(path) {
@@ -779,6 +797,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   }
   // 파일을 끌어다 놓아도 바로 올라가게: 올리기 버튼이 들어 있는 칸(.ws-row, .drop-part)이 놓는 자리
   const dropTarget = e => {
+    if (e.target.closest && e.target.closest('#weeklyStatusCard')) return null;   // 채점 입력 현황판은 app.js가 팝업으로 처리
     const el = e.target.closest ? e.target.closest('.ws-row, .drop-part') : null;
     return el && el.querySelector('[data-exam-upload]') ? el : null;
   };
@@ -973,7 +992,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   }
 
   window.KMMS = {
-    uploadExam, uploadAux, fetchBuf, stageExam, attachStaged, viewExam, push, poll,
+    uploadExam, uploadAux, deleteFile, fetchBuf, stageExam, attachStaged, viewExam, push, poll,
     get ready() { return ready; }, get staff() { return staff; },
     // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
     get teacherName() { return !demoMode && staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },
