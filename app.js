@@ -4203,6 +4203,51 @@ function seedDemoData() {
   saveState();
 }
 
+/* ================= 예시(가짜) 학생 정리 =================
+ * "예시 데이터 불러오기"(seedDemoData)로 들어온 A반 가짜 학생(김민준·이서연·박도윤 등)을 찾아서,
+ * 확인창에 이름을 보여주고 승인하면 채점·재시험·메모 기록과 함께 지움. 로그인한 상태에서만 확인하고,
+ * "취소"를 누르면 이번 접속에서는 다시 묻지 않음 */
+function isDemoSeedRound(r) {
+  const t = r.types && r.types[0];
+  return r.grade === '초4' && r.total === 30 && !r.title && !r.examPath && !!t && t.name === '수와 연산' && t.unit === '자연수의 혼합계산';
+}
+function deleteStudentsCompletely(ids, roundIds) {
+  const has = x => ids.has(x);
+  state.students = state.students.filter(s => !has(s.id));
+  state.results = state.results.filter(r => !has(r.studentId));
+  state.retests = (state.retests || []).filter(r => !has(r.studentId));
+  [state.teacherNotes, state.studentMemo, state.studentMemoRetest, state.studentDone].forEach(o => {
+    if (o) Object.keys(o).forEach(k => { if (has(k) || [...ids].some(id => k.startsWith(id + '|'))) delete o[k]; });
+  });
+  if (state.textbook && Array.isArray(state.textbook.results)) state.textbook.results = state.textbook.results.filter(r => !has(r.studentId));
+  if (roundIds && roundIds.size) {
+    state.rounds = state.rounds.filter(r => !roundIds.has(r.id));
+    state.results = state.results.filter(r => !roundIds.has(r.roundId));
+    state.retests = state.retests.filter(r => !roundIds.has(r.roundId));
+  }
+}
+let demoCleanAsked = false, demoCleanMisses = 0;
+function maybeCleanDemoStudents() {
+  if (demoCleanAsked) return true;
+  if (!(window.KMMS && window.KMMS.ready) || window.KMMS.demo || !window.__appReady) return false;
+  const fake = state.students.filter(s => s.class === 'A반');
+  if (!fake.length) { demoCleanMisses++; return demoCleanMisses >= 6; }
+  demoCleanAsked = true;
+  try { if (sessionStorage.getItem('catchu_demo_clean_skip')) return true; } catch (e) {}
+  const ids = new Set(fake.map(s => s.id));
+  const demoRounds = new Set(state.rounds.filter(r => isDemoSeedRound(r) && !state.results.some(x => x.roundId === r.id && !ids.has(x.studentId))).map(r => r.id));
+  const msg = `예시(가짜) 데이터로 보이는 A반 학생 ${fake.length}명을 삭제할까요?\n\n${fake.map(s => `· ${s.name}${s.grade ? ' (' + s.grade + ')' : ''}`).join('\n')}\n\n이 학생들의 채점·재시험·메모 기록${demoRounds.size ? `과 예시 시험지 ${demoRounds.size}개` : ''}도 함께 지워져요.`;
+  if (!confirm(msg)) { try { sessionStorage.setItem('catchu_demo_clean_skip', '1'); } catch (e) {} return true; }
+  deleteStudentsCompletely(ids, demoRounds);
+  saveState();
+  renderAll();
+  toast(`예시 학생 ${fake.length}명을 삭제했어요.`);
+  return true;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const timer = setInterval(() => { if (maybeCleanDemoStudents()) clearInterval(timer); }, 3000);
+});
+
 /* ================= init ================= */
 
 function renderAll() {
