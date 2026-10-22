@@ -1231,22 +1231,14 @@ function resetRoundForm() {
 }
 
 // "1회차, 2회차..." 순번 대신, 시험지에 인쇄된 것과 같은 "월-주차"로 표기 (그 달의 몇 번째 금요일인지로 계산)
-const WEEK_RULE_FROM = '2026-10-19';
 function dateToWeekLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   // 입학테스트는 주차 없이 당일 날짜만 씀
   if (typeof appScope === 'function' && appScope() === 'entrance') return `${d.getMonth() + 1}/${d.getDate()}`;
-  // 월~일을 한 주로 보고 그 주 수요일이 속한 달·주차로 표기 — 10월 첫 금요일(10/2)이 "10-1"이 아니라 "9-5주차"로 이어지게 함
+  // 월~일을 한 주로 보고, 그 주 금요일이 그 달의 몇 번째 금요일인지로 셈 — 10/2=10-1, 10/9=10-2, 10/16=10-3, 10/23=10-4
   const mondayIdx = (d.getDay() + 6) % 7;
-  // 2026-10-19(월) 주부터는 그 주 금요일이 그 달의 몇 번째 금요일인지로 셈 — 이번 주(10/23 금)가 10-4주차, 다음 주 10-5, 그 다음 11-1
-  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayIdx);
-  const mondayIso = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
-  if (mondayIso >= WEEK_RULE_FROM) {
-    const fri = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4);
-    return `${fri.getMonth() + 1}-${Math.ceil(fri.getDate() / 7)}주차`;
-  }
-  const wed = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayIdx + 2);
-  return `${wed.getMonth() + 1}-${Math.ceil(wed.getDate() / 7)}주차`;
+  const fri = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayIdx + 4);
+  return `${fri.getMonth() + 1}-${Math.ceil(fri.getDate() / 7)}주차`;
 }
 
 // 시험지 이름에 "9월3주차" / "9-3주차"처럼 적힌 주차를 읽음 (없으면 빈 문자열)
