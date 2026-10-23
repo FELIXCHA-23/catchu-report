@@ -85,11 +85,6 @@ button { font-family: inherit; }
 #weeklyStatusCard { padding: 12px; font-size: 12px; position: relative; }
 #weeklyStatusCard h2 { font-size: 14px; }
 #weeklyStatusCard .card-sub { display: none; }
-@media (min-width: 1340px) {
-  #weeklyStatusCard { position: absolute; right: calc(100% + 14px); top: 0; width: 210px; }
-  #weeklyStatusCard .ws-badge { min-width: 0; padding: 2px 7px; font-size: 11px; }
-  #weeklyStatusCard .ws-name { width: auto; white-space: nowrap; }
-  #weeklyStatusCard .ws-row { flex-wrap: wrap; gap: 4px; }
 }
 .ws-grade { margin-bottom: 10px; }
 .ws-round { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
@@ -671,7 +666,23 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .ws-who { flex-basis: 100%; font-size: 11px; color: var(--muted); }
 .drop-part .ws-who { margin-left: 8px; font-size: 11px; color: var(--muted); }
 
-@media (min-width: 1520px) { #weeklyStatusCard { width: 250px; } }
 /* 현황판: 올린 사람은 "보기" 옆에 이어 붙이고, 자리가 모자랄 때만 다음 줄로 */
 #weeklyStatusCard .ws-who { flex-basis: auto; white-space: nowrap; }
-@media (min-width: 1700px) { #weeklyStatusCard { width: 320px; } }
+
+/* 이번 주 시험지 업로드 현황 카드: 채점 입력 탭에서 본문 왼쪽에 카드 폭만큼 자리를 만들고(본문을 오른쪽으로 밀어 줌), 카드 폭은 창 크기에 맞춰 줄어듦.
+   창이 아주 좁으면(900px 미만) 제목 한 줄로 접힘 (누르면 펼침) */
+:root { --ws-w: clamp(220px, 22vw, 320px); }
+@media (min-width: 900px) {
+  body:has(#panel-score.active #weeklyStatusCard:not([style*="none"])) #app { margin-left: max(calc((100vw - 900px) / 2), calc(var(--ws-w) + 24px)); margin-right: 0; }
+  #weeklyStatusCard { position: absolute; right: calc(100% + 10px); top: 0; width: var(--ws-w); }
+  #weeklyStatusCard .ws-badge { min-width: 0; padding: 2px 7px; font-size: 11px; }
+  #weeklyStatusCard .ws-name { width: auto; white-space: nowrap; }
+  #weeklyStatusCard .ws-row { flex-wrap: wrap; gap: 4px; }
+}
+@media (max-width: 899px) {
+  #weeklyStatusCard h2 { margin: 0; cursor: pointer; }
+  #weeklyStatusCard h2::before { content: '▸ '; }
+  #weeklyStatusCard.ws-open h2::before { content: '▾ '; }
+  #weeklyStatusCard:not(.ws-open) > *:not(h2) { display: none; }
+  #weeklyStatusCard.ws-open #weeklyStatusBody { max-height: 360px; overflow-y: auto; }
+}

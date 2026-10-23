@@ -1803,6 +1803,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeWsModal
 document.addEventListener('DOMContentLoaded', () => {
   const card = document.getElementById('weeklyStatusCard');
   if (!card) return;
+  const wsTitle = card.querySelector('h2');
+  if (wsTitle) wsTitle.addEventListener('click', () => card.classList.toggle('ws-open'));
   const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
   // 채점 입력 화면(업로드 현황 카드 안팎, 고2 아래 빈 곳까지)의 어디에 놓아도 받음. 다른 탭에서는 동작하지 않음
   const inZone = e => {
