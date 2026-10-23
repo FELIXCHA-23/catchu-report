@@ -1019,17 +1019,30 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   const HOST_ALIVE_MS = 3 * 60 * 1000;
   const HOST_BEAT_MS = 60 * 1000;
   let hostBusy = false, lastBeat = 0;
+  const myDevice = (() => { try { let d = localStorage.getItem('kmms_device_id'); if (!d) { d = 'dv_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('kmms_device_id', d); } return d; } catch (e) { return 'dv_unknown'; } })();
   const hostAppReady = () => !!(window.KMMS_DESKTOP && window.KMMS_DESKTOP.print);
   const isPrintHost = () => { try { return hostAppReady() && localStorage.getItem(LS_HOST) === '1'; } catch (e) { return false; } };
-  function setPrintHost(on) {
-    try { localStorage.setItem(LS_HOST, on ? '1' : '0'); } catch (e) {}
+  // 켜기/끄기. 다른 PC가 이미 출력 담당으로 쓰는 중이면 켜지 않고 { ok: false, by: 그 PC의 선생님 이름 } 을 돌려줌 (출력 담당은 한 대만)
+  async function setPrintHost(on) {
+    if (!on) {
+      try { localStorage.setItem(LS_HOST, '0'); } catch (e) {}
+      const h = state.printHost && state.printHost.main;
+      if (h && h.dev === myDevice) { delete state.printHost.main; saveState(); }   // 내가 쓰던 자리를 비워서 다른 PC가 바로 쓸 수 있게
+      return { ok: true };
+    }
+    try { await poll(); } catch (e) {}
+    const h = state.printHost && state.printHost.main;
+    if (h && h.dev !== myDevice && Date.now() - h.at < HOST_ALIVE_MS) return { ok: false, by: h.name || '다른 선생님' };
+    try { localStorage.setItem(LS_HOST, '1'); } catch (e) {}
     lastBeat = 0;
-    if (on) printHostTick();
+    printHostTick();
+    return { ok: true };
   }
   function printHostAlive() {
     const h = state.printHost && state.printHost.main;
     return !!(h && Date.now() - h.at < HOST_ALIVE_MS);
   }
+  const printHostIsMine = () => { const h = state.printHost && state.printHost.main; return !!(h && h.dev === myDevice); };
   function printJob(id) { return (state.printJobs || []).find(x => String(x.id) === String(id)); }
   function patchJob(id, patch) { const j = printJob(id); if (j) { Object.assign(j, patch); saveState(); } return j; }
   const blobToDataUrl = blob => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
@@ -1078,14 +1091,20 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (!ready || demoMode || hostBusy || !isPrintHost()) return;
     hostBusy = true;
     try {
+      await poll();
+      const cur = state.printHost && state.printHost.main;
+      if (cur && cur.dev !== myDevice && Date.now() - cur.at < HOST_ALIVE_MS) {
+        try { localStorage.setItem(LS_HOST, '0'); } catch (e) {}
+        toast(`${cur.name || '다른 선생님'} 선생님 PC가 이미 출력 담당으로 쓰는 중이라, 이 PC는 출력 담당을 끌게요.`);
+        return;
+      }
       const now = Date.now();
       if (now - lastBeat > HOST_BEAT_MS) {
         lastBeat = now;
         if (!state.printHost || typeof state.printHost !== 'object') state.printHost = {};
-        state.printHost.main = { at: now, name: (staff && (staff.name || shownId(staff.email))) || '' };
+        state.printHost.main = { at: now, name: (staff && (staff.name || shownId(staff.email))) || '', dev: myDevice };
         saveState();
       }
-      await poll();
       const jobs = (state.printJobs || []).filter(j => j.status === 'pending').sort((a, b) => a.at - b.at);
       for (const j of jobs) {
         const id = j.id;
@@ -1157,7 +1176,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
 
   window.KMMS = {
     uploadExam, uploadAux, deleteFile, fetchBuf, stageExam, attachStaged, viewExam, push, poll,
-    sendPrint, waitPrint, setPrintHost, printHostAlive, get isPrintHost() { return isPrintHost(); }, get printHostInfo() { return (state.printHost && state.printHost.main) || null; },
+    sendPrint, waitPrint, setPrintHost, printHostAlive, get printHostIsMine() { return printHostIsMine(); }, get isPrintHost() { return isPrintHost(); }, get printHostInfo() { return (state.printHost && state.printHost.main) || null; },
     get ready() { return ready; }, get staff() { return staff; },
     // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
     get teacherName() { return !demoMode && staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },

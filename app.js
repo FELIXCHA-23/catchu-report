@@ -5342,17 +5342,31 @@ function renderPrintHostCard() {
   if (!(window.KMMS_DESKTOP && window.KMMS_DESKTOP.print && K && K.ready && !K.demo)) { card.style.display = 'none'; return; }
   card.style.display = '';
   const box = document.getElementById('printHostBox');
-  if (document.activeElement !== box) box.checked = K.isPrintHost;
+  if (document.activeElement !== box && !box.disabled) box.checked = K.isPrintHost;
   const info = document.getElementById('printHostInfo');
   const h = K.printHostInfo;
   const jobs = (state.printJobs || []).slice().sort((x, y) => y.at - x.at).slice(0, 5);
   const lab = { pending: '대기', printing: '출력 중', done: '출력됨', failed: '실패', expired: '건너뜀' };
   const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  info.innerHTML = (K.isPrintHost ? '<b>이 PC가 출력 담당이에요.</b> 이 앱을 켜 두세요.' : (K.printHostAlive() && h ? `지금 출력 담당은 <b>${escapeHtml(h.name || '다른 PC')}</b> 쪽 PC예요.` : '출력 담당 PC가 아직 없어요.'))
+  info.innerHTML = (K.isPrintHost ? '<b>이 PC가 출력 담당이에요.</b> 이 앱을 켜 두세요.' : (K.printHostAlive() && h && !K.printHostIsMine ? `지금 <b>${escapeHtml(h.name || '다른')} 선생님</b>의 다른 PC가 출력 담당으로 사용 중이라, 여기서는 켤 수 없어요.` : '출력 담당 PC가 아직 없어요.'))
     + (jobs.length ? '<br>최근 요청: ' + jobs.map(j => `${fmt(j.at)} ${escapeHtml(j.title || '')} (${lab[j.status] || j.status}${j.note ? ' · ' + escapeHtml(j.note) : ''})`).join(' / ') : '');
 }
 document.addEventListener('DOMContentLoaded', () => {
   const box = document.getElementById('printHostBox');
-  if (box) box.addEventListener('change', () => { if (window.KMMS && window.KMMS.setPrintHost) window.KMMS.setPrintHost(box.checked); setTimeout(renderPrintHostCard, 300); });
+  if (box) box.addEventListener('change', async () => {
+    const K = window.KMMS;
+    if (!(K && K.setPrintHost)) return;
+    const want = box.checked;
+    box.disabled = true;
+    const r = await K.setPrintHost(want);
+    box.disabled = false;
+    if (want && r && r.ok === false) {
+      box.checked = false;
+      const m = `${r.by} 선생님이 이미 다른 PC에서 출력 담당으로 사용 중이라서 이 PC에서는 사용할 수 없어요. 출력 담당은 한 대만 쓸 수 있어요.`;
+      toast(m);
+      alert(m);
+    }
+    renderPrintHostCard();
+  });
   setInterval(() => { try { renderPrintHostCard(); } catch (e) {} }, 5000);
 });
