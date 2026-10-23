@@ -3022,7 +3022,7 @@ function currentRetestStudent() { return state.students.find(s => s.id === docum
 
 /* ===== 재시험 탭: 학생별 오답 모음 — 한 학생이 고른 기간(몇 주차~몇 주차)에 틀린 문항만 여러 회차에서 모아 재시험지 한 부(1번부터)로 만듦 ===== */
 let colSeq = 0;
-// 오답 모음에 넣을 문제: 'retest' 재시험지(유사 문제) · 'main' 본시험지(원래 문제) · 'mix' 문항마다 원래 문제 → 유사 문제
+// 오답 모음에 넣을 문제: 'retest' 재시험지(유사 문제) · 'main' 본시험지(원래 문제) · 'mix' 문항마다 둘 중 하나를 무작위로
 let colMode = (() => { try { const m = localStorage.getItem('kmms_col_mode'); return ['retest', 'main', 'mix'].includes(m) ? m : 'retest'; } catch (e) { return 'retest'; } })();
 const COL_MODE_TEXT = { retest: '재시험지', main: '본시험지', mix: '본시험지+재시험지' };
 // 이 회차에서 현재 방식으로 쓸 수 있는 파일이 있는지
@@ -3073,7 +3073,7 @@ function updateCollectInfo() {
   const total = ok.reduce((n, x) => n + x.result.wrong.length, 0);
   btn.disabled = !ok.length;
   info.innerHTML = !sid ? '' : !items.length ? '이 기간에는 틀린 문항이 없어요.'
-    : `${COL_MODE_TEXT[colMode]}가 있는 ${ok.length}개 회차에서 오답 <b>${total}문항</b>${colMode === 'mix' ? '(문제는 문항마다 원래 → 유사로 최대 두 배)' : ''}을 모아요: ${ok.map(x => `${escapeHtml(roundLabel(x.round))}(${x.result.wrong.length})${colMode === 'mix' && !(x.round.examPath && x.round.retestPath) ? '<span style="color:#c0392b;">' + (x.round.examPath ? '·재시험지 없음' : '·본시험지 없음') + '</span>' : ''}`).join(' · ') || '-'}`
+    : `${COL_MODE_TEXT[colMode]}가 있는 ${ok.length}개 회차에서 오답 <b>${total}문항</b>${colMode === 'mix' ? '(문항마다 본시험지·재시험지 중 무작위로 하나)' : ''}을 모아요: ${ok.map(x => `${escapeHtml(roundLabel(x.round))}(${x.result.wrong.length})${colMode === 'mix' && !(x.round.examPath && x.round.retestPath) ? '<span style="color:#c0392b;">' + (x.round.examPath ? '·재시험지 없음' : '·본시험지 없음') + '</span>' : ''}`).join(' · ') || '-'}`
       + (no.length ? `<br><span style="color:#c0392b;">${colMissingText(no[0].round) || '파일이 없어서'} 빠지는 회차: ${no.map(x => escapeHtml(roundLabel(x.round))).join(', ')}</span>` : '');
 }
 async function buildCollect() {
@@ -3100,7 +3100,7 @@ async function buildCollect() {
     const first = roundLabel(items[0].round), last = roundLabel(items[items.length - 1].round);
     const res = await window.RETEST.build({
       sources, studentName: student.name, dateText: todayText(),
-      title: `${student.grade || items[0].round.grade || ''} 오답 모음${colMode === 'retest' ? '' : colMode === 'main' ? '(원래 문제)' : '(원래+유사)'} · ${first === last ? first : first + ' ~ ' + last}`.trim(),
+      title: `${student.grade || items[0].round.grade || ''} 오답 모음${colMode === 'retest' ? '' : colMode === 'main' ? '(원래 문제)' : '(원래·유사 섞음)'} · ${first === last ? first : first + ' ~ ' + last}`.trim(),
       onProgress: (i, n) => { wrap.innerHTML = `<span class="field-hint">문제를 뽑는 중… (${i + 1}/${n})</span>`; },
     });
     if (seq !== colSeq) return;

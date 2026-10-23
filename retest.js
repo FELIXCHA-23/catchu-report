@@ -340,7 +340,7 @@
   }
 
   // 시험지 PDF에서 틀린 번호의 문제(와 정답)를 잘라 옴. startNo: 앞에서 이미 쓴 문항 수 — 번호를 이어서 1, 2, 3… 으로 다시 씀
-  // src.paperBuf = 재시험지 PDF, src.mainBuf = 본시험지 PDF. 둘 다 있으면 문항마다 본시험지 문제 → 재시험지 문제 순으로 섞어서 이어 붙임
+  // src.paperBuf = 재시험지 PDF, src.mainBuf = 본시험지 PDF. 둘 다 있으면 문항마다 둘 중 하나를 무작위로 골라 씀
   async function collectSource(src, startNo) {
     const nums = Array.from(new Set((src.nums || []).map(Number))).filter(n => n > 0).sort((a, b) => a - b);
     const streams = [];
@@ -362,7 +362,11 @@
     if (src.mainBuf) await mk(src.mainBuf, null);
     if (src.paperBuf) await mk(src.paperBuf, src.ansBuf);
     const seq = [];
-    nums.forEach(n => streams.forEach(st => { if (st.spots[n]) seq.push({ n, st }); }));
+    // 본시험지·재시험지가 둘 다 있으면(섞기) 문항마다 둘 중 하나를 무작위로 골라 한 문제씩만 넣음
+    nums.forEach(n => {
+      const has = streams.filter(st => st.spots[n]);
+      if (has.length) seq.push({ n, st: has[Math.floor(Math.random() * has.length)] });
+    });
     const crops = [], acs = [];
     for (let k = 0; k < seq.length; k++) {
       const { n, st } = seq[k];
