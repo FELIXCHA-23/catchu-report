@@ -4840,14 +4840,6 @@ document.addEventListener('DOMContentLoaded', () => {
     renderReportTab();
     toast('예시 데이터를 불러왔어요.');
   });
-
-  document.getElementById('resetBtn').addEventListener('click', () => {
-    if (!confirm('모든 데이터를 삭제합니다. 정말 초기화할까요?')) return;
-    state = { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, textbook: { books: [], results: [] }, studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
-    saveState();
-    renderAll();
-    toast('초기화했어요.');
-  });
 });
 
 function seedDemoData() {
