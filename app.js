@@ -494,25 +494,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (analyzeBtn) analyzeBtn.addEventListener('click', analyzeExamWithAI);
 });
 
-/* ---------- 시험지 자동 공유 (저장하면 GitHub 공용 파일에 바로 올림) ---------- */
-
-const SHARE_REPO = 'FELIXCHA-23/catchu-report';
-const SHARE_PATH = 'rounds-shared.json';
-const SHARE_BRANCH = 'main';
-const GH_TOKEN_STORAGE = 'catchu_gh_token'; // 백업 파일(state)에는 절대 포함하지 않음
-function getGhToken() { try { return localStorage.getItem(GH_TOKEN_STORAGE) || ''; } catch (e) { return ''; } }
-function setGhToken(t) { try { if (t) localStorage.setItem(GH_TOKEN_STORAGE, t); else localStorage.removeItem(GH_TOKEN_STORAGE); } catch (e) {} }
-
-function b64ToUtf8(b64) {
-  const bin = atob(b64.replace(/\s/g, ''));
-  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
-}
-function utf8ToB64(str) {
-  const bytes = new TextEncoder().encode(str);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-}
+/* ---------- 공용 회차 내보내기용 (GitHub 자동 공유·토큰 기능은 없앰 — 회차는 서버가 모든 선생님에게 동기화함) ---------- */
+// 예전에 이 컴퓨터에 저장해 둔 GitHub 토큰은 지움
+try { localStorage.removeItem('catchu_gh_token'); } catch (e) {}
 
 // 공용 파일에 올릴 회차 내용 — 시험지 원본(examFile)과 이 컴퓨터 학생 연결(studentId)은 빼고,
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
@@ -521,107 +505,6 @@ function sharedRoundPayload(r) {
   const { examFile, studentId, examPath, examName, retestPath, retestName, retestAnsPath, retestAnsName, retestInfo, mainInfo, ...rest } = r;   // 서버 파일 경로·읽어 둔 유형표는 공용(GitHub) 파일에 넣지 않음
   return rest;
 }
-
-function ghFetch(url, token, opts = {}) {
-  return fetch(url, {
-    cache: 'no-store',
-    ...opts,
-    headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
-  });
-}
-
-async function ghErrorMessage(res) {
-  let detail = '';
-  try { detail = (await res.json()).message || ''; } catch (e) {}
-  if (res.status === 401) return '토큰이 올바르지 않거나 만료됐어요. 데이터 관리 탭에서 토큰을 다시 넣어주세요.';
-  if (res.status === 403 || res.status === 404) return '이 저장소에 쓸 권한이 없어요. 토큰 권한(Contents: Read and write)을 확인해주세요.';
-  return `${res.status} ${detail || res.statusText}`;
-}
-
-// 공용 파일을 받아 이 회차를 추가/갱신해서 다시 올림. 다른 선생님이 동시에 올려서 충돌하면 다시 받아서 합쳐 재시도함.
-async function publishRoundToShared(round) {
-  const token = getGhToken();
-  if (!token) throw new Error('GitHub 토큰이 없어요.');
-  const payload = sharedRoundPayload(round);
-  if (!payload) throw new Error('이름이 들어간 예전 방식 개별시험지는 공용으로 올릴 수 없어요.');
-  const url = `https://api.github.com/repos/${SHARE_REPO}/contents/${SHARE_PATH}`;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const getRes = await ghFetch(`${url}?ref=${SHARE_BRANCH}`, token);
-    if (!getRes.ok) throw new Error(await ghErrorMessage(getRes));
-    const meta = await getRes.json();
-    let text;
-    if (meta.content && meta.encoding === 'base64') {
-      text = b64ToUtf8(meta.content);
-    } else {
-      const rawRes = await ghFetch(`${url}?ref=${SHARE_BRANCH}`, token, { headers: { Accept: 'application/vnd.github.raw+json' } });
-      if (!rawRes.ok) throw new Error(await ghErrorMessage(rawRes));
-      text = await rawRes.text();
-    }
-    const list = JSON.parse(text);
-    if (!Array.isArray(list)) throw new Error('공용 파일 형식이 올바르지 않아요.');
-    const idx = list.findIndex(x => x.id === payload.id);
-    if (idx === -1) list.push(payload); else list[idx] = payload;
-    const putRes = await ghFetch(url, token, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `시험지 공유: ${payload.title || (payload.grade + ' ' + payload.date)}`,
-        content: utf8ToB64(JSON.stringify(list, null, 2)),
-        sha: meta.sha,
-        branch: SHARE_BRANCH,
-      }),
-    });
-    if (putRes.ok) return;
-    if (putRes.status === 409) continue;
-    if (putRes.status === 422) {
-      let msg = '';
-      try { msg = (await putRes.clone().json()).message || ''; } catch (e) {}
-      if (/sha|match/i.test(msg)) continue;
-    }
-    throw new Error(await ghErrorMessage(putRes));
-  }
-  throw new Error('다른 선생님이 동시에 올리는 중이라 실패했어요. 잠시 후 다시 저장해주세요.');
-}
-
-// 회차를 저장한 직후 호출 — 토큰이 있으면 자동으로 공용 파일에 올림(없으면 예전처럼 이 컴퓨터에만 저장).
-// 저장 자체는 이미 끝난 뒤라서, 공유가 실패해도 선생님 화면의 회차는 그대로 남음
-async function shareRoundToGitHub(round) {
-  if (window.KMMS && window.KMMS.demo) return; // 체험(guest) 모드는 어디에도 올리지 않음
-  if (!getGhToken() || !round) return;
-  toast('모든 선생님이 쓸 수 있게 공유하는 중이에요...');
-  try {
-    await publishRoundToShared(round);
-    toast('공유 완료! 1~2분 뒤 모든 선생님 화면에 나타나요.');
-  } catch (err) {
-    console.error(err);
-    alert('시험지는 이 컴퓨터에 저장됐지만, 다른 선생님께 공유하지 못했어요.\n\n' + err.message);
-  }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const input = document.getElementById('ghTokenInput');
-  const status = document.getElementById('ghTokenStatus');
-  const btn = document.getElementById('saveGhTokenBtn');
-  if (!input || !btn) return;
-  input.value = getGhToken();
-  if (getGhToken()) status.textContent = '저장된 토큰이 있어요.';
-  btn.addEventListener('click', async () => {
-    const t = input.value.trim();
-    setGhToken(t);
-    if (!t) { status.style.color = 'var(--muted)'; status.textContent = '토큰을 지웠어요.'; return; }
-    status.style.color = 'var(--muted)';
-    status.textContent = '연결 확인 중...';
-    try {
-      const res = await ghFetch(`https://api.github.com/repos/${SHARE_REPO}/contents/${SHARE_PATH}?ref=${SHARE_BRANCH}`, t);
-      if (!res.ok) throw new Error(await ghErrorMessage(res));
-      status.style.color = 'var(--good)';
-      status.textContent = '연결됐어요! 이제 시험지를 저장하면 자동으로 공유돼요.';
-    } catch (err) {
-      status.style.color = 'var(--critical)';
-      status.textContent = '연결 실패: ' + err.message;
-    }
-  });
-});
 
 let state = loadState();
 let editingRoundId = null;
@@ -2363,7 +2246,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await matchPlaceholdersFor(savedRound);
       } catch (e) { console.warn('match failed', e); }
     })();
-    shareRoundToGitHub(savedRound);
   });
 });
 

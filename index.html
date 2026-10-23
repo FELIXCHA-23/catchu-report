@@ -511,15 +511,6 @@
       <button type="button" class="btn danger" id="resetBtn">전체 데이터 초기화</button>
     </div>
     <div class="card">
-      <h2>시험지 자동 공유 (GitHub)</h2>
-      <p class="card-sub">토큰 입력 시 시험지 탭에서 회차를 저장하면 모든 선생님 화면에 자동 반영 (1~2분 소요). 유형·단원·난이도만 공유하며 시험지 이미지와 학생 정보는 제외. 토큰은 이 컴퓨터에만 저장되고 백업에 포함되지 않음. 토큰이 없으면 이 컴퓨터에만 저장.</p>
-      <div class="inline-form">
-        <input type="password" id="ghTokenInput" placeholder="github_pat_..." style="min-width:260px;">
-        <button type="button" class="btn ghost" id="saveGhTokenBtn">저장 · 연결 확인</button>
-        <span id="ghTokenStatus" class="field-hint"></span>
-      </div>
-    </div>
-    <div class="card">
       <h2>API 키 설정</h2>
       <p class="card-sub">console.anthropic.com에서 발급한 API 키를 입력하면 시험지 탭의 AI 자동 분석을 사용할 수 있음. 이 컴퓨터에만 저장되며 백업에 포함되지 않음.</p>
       <div class="inline-form">
@@ -535,7 +526,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=15"></script>
-<script src="app.js?v=224"></script>
+<script src="app.js?v=225"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
