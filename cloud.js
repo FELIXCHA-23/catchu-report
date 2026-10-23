@@ -663,7 +663,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     }
   }
   function attachStaged(round, rec) {
-    round.examPath = rec.path; round.examName = rec.name;
+    round.examPath = rec.path; round.examName = rec.name; round.examBy = rec.by || ''; round.examAt = rec.at || Date.now();
     const u = (state.examUploads || []).find(x => x.id === rec.id);
     if (u) u.roundId = round.id;
     saveState();
@@ -683,6 +683,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       const old = round.examPath;
       round.examPath = path;
       round.examName = file.name;
+      round.examBy = (staff && (staff.name || shownId(staff.email))) || ''; round.examAt = Date.now();   // 누가 언제 올렸는지
       if (old) delete round.mainInfo;   // 교체한 시험지 기준으로 다시 읽게 함
       if (old) { delete bufCache[old]; sb.storage.from('exams').remove([old]).catch(() => {}); }
       saveState();
@@ -811,6 +812,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (error) throw error;
       const old = round[f[0]];
       round[f[0]] = path; round[f[1]] = file.name;
+      round[f[0].replace('Path', 'By')] = (staff && (staff.name || shownId(staff.email))) || ''; round[f[0].replace('Path', 'At')] = Date.now();   // 누가 언제 올렸는지
       if (kind === 'retest') {
         // 재시험지를 새 파일로 교체하면 예전 재시험지 기준의 정보가 남지 않게 함 (빠른정답은 새 파일 맨 뒤 쪽을 씀)
         if (window.__lastRetestInfo) { round.retestInfo = window.__lastRetestInfo; window.__lastRetestInfo = null; }   // 읽어 둔 제목·범위·유형표 (나중에 같은 시험 찾기에 씀)
@@ -840,7 +842,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (error) console.warn('exam remove failed', error);
     } catch (e) { console.warn('exam remove failed', e); }
     delete bufCache[path];
-    delete round[f[0]]; delete round[f[1]];
+    delete round[f[0]]; delete round[f[1]]; delete round[f[0].replace('Path', 'By')]; delete round[f[0].replace('Path', 'At')];
     saveState();
     // 재시험지만 가진 임시 회차는 파일이 없어지면 회차째로 정리
     if (round.retestOnly && !round.retestPath) state.rounds = state.rounds.filter(x => x.id !== round.id);

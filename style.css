@@ -635,3 +635,6 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .seg-btn { border: 1px solid var(--border); background: transparent; color: inherit; border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; line-height: 1.25; text-align: left; }
 .seg-btn small { display: block; font-size: 11px; opacity: .65; }
 .seg-btn.active { border-color: var(--accent, #c8102e); background: var(--accent-fill, rgba(200,16,46,.08)); font-weight: 600; }
+
+.ws-who { flex-basis: 100%; font-size: 11px; color: var(--muted); }
+.drop-part .ws-who { margin-left: 8px; font-size: 11px; color: var(--muted); }

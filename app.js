@@ -502,7 +502,7 @@ try { localStorage.removeItem('catchu_gh_token'); } catch (e) {}
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
 function sharedRoundPayload(r) {
   if (r.retestOnly || (r.studentName && !r.individual)) return null;
-  const { examFile, studentId, examPath, examName, retestPath, retestName, retestAnsPath, retestAnsName, retestInfo, mainInfo, ...rest } = r;   // 서버 파일 경로·읽어 둔 유형표는 공용(GitHub) 파일에 넣지 않음
+  const { examFile, studentId, examPath, examName, examBy, examAt, retestPath, retestName, retestBy, retestAt, retestAnsPath, retestAnsName, retestAnsBy, retestAnsAt, retestInfo, mainInfo, ...rest } = r;   // 서버 파일 경로·읽어 둔 유형표는 공용(GitHub) 파일에 넣지 않음
   return rest;
 }
 
@@ -1204,10 +1204,24 @@ function renderTypesByUnit(types) {
   return groups.map(g => `<div class="unit-group"><b>${escapeHtml(g.major)}</b><br>${g.names.map(escapeHtml).join(', ')}</div>`).join('');
 }
 
+// 누가 언제 올렸는지 ("방희진 · 10/23 14:05") — 기록이 없는 예전 파일은 빈 문자열
+function uploadWho(round, kind) {
+  const by = round[kind === 'main' ? 'examBy' : kind === 'retestAns' ? 'retestAnsBy' : 'retestBy'];
+  const at = round[kind === 'main' ? 'examAt' : kind === 'retestAns' ? 'retestAnsAt' : 'retestAt'];
+  if (!by && !at) return '';
+  let when = '';
+  if (at) { const d = new Date(at); when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+  return `${escapeHtml(by || '')}${by && when ? ' · ' : ''}${when}`;
+}
+function uploadWhoHtml(round, kind) {
+  const w = uploadWho(round, kind);
+  return w ? `<span class="ws-who" title="올린 사람 · 올린 시각">${w}</span>` : '';
+}
+
 // 시험지 칸: 서버(비공개 저장소)에 올라간 시험지는 이 화면 안에서 바로 열고, 없으면 올리기 버튼을 보여줌
 function examCellHtml(r) {
   const up = window.KMMS ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
-  if (r.examPath) return `<div class="drop-part"><a href="#" data-exam-open="${r.id}">시험지 보기</a> ${up}</div>`;
+  if (r.examPath) return `<div class="drop-part"><a href="#" data-exam-open="${r.id}">시험지 보기</a> ${up}${uploadWhoHtml(r, 'main')}</div>`;
   const local = r.examFile ? (r.examFile.dataUrl ? `<a href="${r.examFile.dataUrl}" target="_blank" rel="noopener">시험지 보기</a>` : escapeHtml(r.examFile.name)) : '—';
   return `<div class="drop-part">${local} ${up}</div>`;
 }
@@ -1217,7 +1231,7 @@ function retestCellHtml(r) {
   const can = window.KMMS && !window.KMMS.demo;
   const part = (kind, label, path) => {
     const btn = can ? `<button class="icon-btn" data-exam-upload="${r.id}" data-kind="${kind}">${path ? '교체' : '올리기'}</button>` : '';
-    return `<div class="drop-part">${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}</div>`;
+    return `<div class="drop-part">${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}${path ? uploadWhoHtml(r, kind) : ''}</div>`;
   };
   return part('retest', '재시험지', r.retestPath);
 }
@@ -1239,7 +1253,7 @@ function renderWeeklyStatus() {
   const can = window.KMMS && !window.KMMS.demo;
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
   const all = scopedRoundsAll().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
-  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path && fileGradeMismatch(r, kind) ? `<span class="ws-badge ws-no" title="파일 이름에 ${fileGradeMismatch(r, kind)}라고 적혀 있어요. 다른 학년 시험지가 올라간 것 같아요. 교체해 주세요.">⚠ 파일은 ${fileGradeMismatch(r, kind)}</span>` : ''}${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? `<button class="icon-btn" data-ph-link="${r.id}">본시험지에 연결</button><span class="field-hint">또는 끌어다 놓아 분석</span>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
+  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path && fileGradeMismatch(r, kind) ? `<span class="ws-badge ws-no" title="파일 이름에 ${fileGradeMismatch(r, kind)}라고 적혀 있어요. 다른 학년 시험지가 올라간 것 같아요. 교체해 주세요.">⚠ 파일은 ${fileGradeMismatch(r, kind)}</span>` : ''}${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${path ? uploadWhoHtml(r, kind) : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? `<button class="icon-btn" data-ph-link="${r.id}">본시험지에 연결</button><span class="field-hint">또는 끌어다 놓아 분석</span>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round" data-round="${r.id}"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
@@ -1269,7 +1283,7 @@ function weekLabelsOf(r) {
   [r.week, weekFromTitle(r.title), r.date ? dateToWeekLabel(r.date) : ''].forEach(x => { if (x) s.add(x); });
   return s;
 }
-const RETEST_FIELDS = ['retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo'];
+const RETEST_FIELDS = ['retestPath', 'retestName', 'retestBy', 'retestAt', 'retestAnsPath', 'retestAnsName', 'retestAnsBy', 'retestAnsAt', 'retestInfo'];
 // 같은 시험의 본시험지 회차 후보: 같은 학년이고 주차가 하나라도 겹치는 정식 회차 (개별시험지·임시 회차 제외)
 function findRealRounds(grade, labels, date) {
   const L = new Set([].concat(labels).filter(Boolean));
@@ -2060,7 +2074,7 @@ function renderRetestUpload() {
   if (!r) { body.innerHTML = ''; return; }
   body.innerHTML = `<div class="upload-box drop-part">
       <div><b>재시험지</b> <span class="ws-badge ${r.retestPath ? 'ws-ok' : 'ws-no'}">${r.retestPath ? '✓ 업로드완료' : '✗ 없음'}</span></div>
-      ${r.retestPath ? `<div class="field-hint">${escapeHtml(r.retestName || '')}</div><a href="#" data-aux-open="${r.id}" data-kind="retest">재시험지 보기</a>` : '<div class="field-hint">업로드된 재시험지 없음 (맨 뒤에 정답 쪽 포함). 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>'}
+      ${r.retestPath ? `<div class="field-hint">${escapeHtml(r.retestName || '')}${uploadWho(r, 'retest') ? ' · ' + uploadWho(r, 'retest') : ''}</div><a href="#" data-aux-open="${r.id}" data-kind="retest">재시험지 보기</a>` : '<div class="field-hint">업로드된 재시험지 없음 (맨 뒤에 정답 쪽 포함). 버튼 클릭 또는 이 영역에 파일을 끌어다 놓기.</div>'}
       ${can ? `<button type="button" class="btn ghost" data-exam-upload="${r.id}" data-kind="retest">재시험지 ${r.retestPath ? '교체' : '업로드'} (이미지 · PDF)</button>` : '<div class="field-hint">이 모드에서는 올릴 수 없어요.</div>'}
     </div>`;
 }
