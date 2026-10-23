@@ -618,20 +618,24 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .rk-n { font-size: 12px; }
 .rk-pct { font-size: 12px; font-weight: 700; }
 .rk-more { margin-top: 8px; }
-/* 오답 순위 카드: 항상 본문 왼쪽에 띄움. 아이패드처럼 여백이 좁으면 작게 줄여서(조금 잘려도 왼쪽에 둠), 아주 좁은 세로 화면만 본문 맨 위에 작게 접어 둠 */
-@media (min-width: 1024px) {
-  #retestRankCard { position: absolute; right: calc(100% + 10px); top: 0; width: clamp(140px, calc((100vw - 868px) / 2 - 26px), 280px); padding: 6px; font-size: 10px; }
+/* 오답 순위 카드: 재시험 탭에서는 본문 왼쪽에 카드 폭만큼 자리를 만들고(본문을 오른쪽으로 밀어 줌), 카드 폭은 창 크기에 맞춰 줄어듦.
+   창이 아주 좁으면(900px 미만) 카드는 제목 한 줄로 접힘 */
+:root { --rk-w: clamp(170px, 20vw, 260px); }
+@media (min-width: 900px) {
+  body:has(#panel-retest.active) #app { margin-left: max(calc((100vw - 900px) / 2), calc(var(--rk-w) + 24px)); margin-right: 0; }
+  #retestRankCard { position: absolute; right: calc(100% + 10px); top: 0; width: var(--rk-w); padding: 6px; font-size: 10px; }
   #retestRankCard h2 { font-size: 12px; }
   #retestRankCard .card-sub { display: none; }
-  #retestRankCard .rk-head, #retestRankCard .rk-row { grid-template-columns: 12px 30px 1fr 24px 28px; gap: 2px; }
-  #retestRankCard .rk-head.rk-multi, #retestRankCard .rk-row.rk-multi { grid-template-columns: 12px 52px 1fr 24px 28px; }
+  #retestRankCard .rk-head, #retestRankCard .rk-row { grid-template-columns: 12px 30px 1fr 26px 30px; gap: 3px; }
+  #retestRankCard .rk-head.rk-multi, #retestRankCard .rk-row.rk-multi { grid-template-columns: 12px 56px 1fr 26px 30px; }
   #retestRankCard .rk-n, #retestRankCard .rk-pct { font-size: 10px; }
   #retestRankCard .rk-q { font-size: 11px; }
   #retestRankCard .rk-bar { height: 8px; }
   #retestRankCard .rk-ctrl select { font-size: 10px; padding: 3px 4px; }
 }
 @media (min-width: 1520px) {
-  #retestRankCard { width: 280px; padding: 12px; font-size: 12px; }
+  :root { --rk-w: 280px; }
+  #retestRankCard { padding: 12px; font-size: 12px; right: calc(100% + 14px); }
   #retestRankCard h2 { font-size: 14px; }
   #retestRankCard .card-sub { display: block; }
   #retestRankCard .rk-head, #retestRankCard .rk-row { grid-template-columns: 18px 38px 1fr 34px 34px; gap: 5px; }
@@ -641,8 +645,7 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
   #retestRankCard .rk-bar { height: 12px; }
   #retestRankCard .rk-ctrl select { font-size: 12px; padding: 5px 6px; }
 }
-/* 여백이 아예 없는 좁은 화면: 큰 블록으로 펼치지 않고 제목 한 줄로 접어 둠 (누르면 펼침) */
-@media (max-width: 1023px) {
+@media (max-width: 899px) {
   #retestRankCard { padding: 6px 10px; }
   #retestRankCard .card-sub { display: none; }
   #retestRankCard h2 { margin: 0; cursor: pointer; font-size: 13px; }
