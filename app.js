@@ -1600,6 +1600,11 @@ function confirmFileGrade(round, file) {
     });
   });
 }
+// 만든 재시험지가 어느 회차·파일에서 나왔는지 한 줄로 보여 줌 (잘못된 시험지가 나올 때 원인을 바로 알 수 있게)
+function retestSourceLine(round, student) {
+  const sg = student && (student.examGrade || student.grade);
+  return `<div class="field-hint">출처: <b>${escapeHtml(round.grade || '-')}</b> ${escapeHtml(roundLabel(round))} · ${escapeHtml(round.title || '')} · 파일 ${escapeHtml(round.retestName || '(이름 없음)')}${sg ? ' · 학생 학년 ' + escapeHtml(sg) : ''}</div>`;
+}
 // 학생 재시험지를 만들 때 쓰는 경고 (학생 학년 · 시험지 학년 · 파일 이름 학년 비교)
 function retestGradeWarn(round, student) {
   const fg = gradeInName(round.retestName);
@@ -1983,7 +1988,7 @@ function scheduleRetestGen(round, student, wrong) {
       if (seq !== retestGenSeq) return;
       if (retestGenUrl) URL.revokeObjectURL(retestGenUrl);
       retestGenUrl = URL.createObjectURL(res.blob);
-      const miss = retestGradeWarn(round, student) + (res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '');
+      const miss = retestSourceLine(round, student) + retestGradeWarn(round, student) + (res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '');
       const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
       retestGenLast = { res, student, round, key: cacheKey };
       { const hw = document.getElementById('retestGenWrap'); if (hw) hw._rtLast = retestGenLast; }
@@ -3188,7 +3193,7 @@ function renderRetestTabPdf() {
       if (seq !== rtTabSeq) return;
       if (rtTabUrl) URL.revokeObjectURL(rtTabUrl);
       rtTabUrl = URL.createObjectURL(res.blob);
-      const miss = (res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '') + `<div style="flex-basis:100%">${retestGradeWarn(round, student)}</div>`;
+      const miss = (res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '') + `<div style="flex-basis:100%">${retestSourceLine(round, student)}${retestGradeWarn(round, student)}</div>`;
       const html = `<button type="button" class="btn" data-rt-print="all">재시험지 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${rtTabUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a> <span class="field-hint rt-status">A4 · 문제 ${res.problemPages}쪽 먼저, 이어서 빠른정답 ${res.answerPages}장</span>${miss}<div style="flex-basis:100%">${AUTOPRINT_HINT}</div>`;
       retestGenLast = { res, student, round, key, tabHtml: html };
       wrap._rtLast = retestGenLast;
