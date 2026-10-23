@@ -1605,6 +1605,23 @@ function retestSourceLine(round, student) {
   const sg = student && (student.examGrade || student.grade);
   return `<div class="field-hint">출처: <b>${escapeHtml(round.grade || '-')}</b> ${escapeHtml(roundLabel(round))} · ${escapeHtml(round.title || '')} · 파일 ${escapeHtml(round.retestName || '(이름 없음)')}${sg ? ' · 학생 학년 ' + escapeHtml(sg) : ''}</div>`;
 }
+// 재시험지 PDF 안의 문항별 유형명이 이 회차의 유형과 거의 안 맞으면(다른 학년·다른 시험지 파일이 붙은 경우) 경고. 파일마다 한 번만 읽음
+const contentWarnCache = {};
+async function retestContentWarn(round, paperBuf) {
+  try {
+    if (!(window.RETEST && window.RETEST.describePaper)) return '';
+    const key = round.id + '|' + round.retestPath;
+    if (!(key in contentWarnCache)) {
+      const info = await window.RETEST.describePaper(paperBuf.slice(0));
+      const tr = typeRatio(info.types, await infoOfRound(round));
+      contentWarnCache[key] = tr.n >= 5 && tr.ratio < 0.3 ? { hit: tr.hit, n: tr.n, range: info.range || info.title || '' } : null;
+    }
+    const w = contentWarnCache[key];
+    if (!w) return '';
+    const can = window.KMMS && !window.KMMS.demo;
+    return `<div class="field-hint" style="color:#c0392b;font-weight:700;">⚠ 이 회차(${escapeHtml(round.grade || '')} ${escapeHtml(round.title || roundLabel(round))})에 올라간 재시험지 파일의 내용이 이 회차의 유형과 맞지 않아요 (유형 ${w.hit}/${w.n} 일치${w.range ? ' · 파일 범위: ' + escapeHtml(w.range) : ''}). 다른 학년·다른 시험의 재시험지가 붙은 것 같아요. ${can ? `<button type="button" class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 교체</button>` : ''}</div>`;
+  } catch (e) { console.warn('content warn failed', e); return ''; }
+}
 // 학생 재시험지를 만들 때 쓰는 경고 (학생 학년 · 시험지 학년 · 파일 이름 학년 비교)
 function retestGradeWarn(round, student) {
   const fg = gradeInName(round.retestName);
@@ -1988,7 +2005,7 @@ function scheduleRetestGen(round, student, wrong) {
       if (seq !== retestGenSeq) return;
       if (retestGenUrl) URL.revokeObjectURL(retestGenUrl);
       retestGenUrl = URL.createObjectURL(res.blob);
-      const miss = retestSourceLine(round, student) + retestGradeWarn(round, student) + (res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '');
+      const miss = retestSourceLine(round, student) + retestGradeWarn(round, student) + await retestContentWarn(round, paperBuf) + (res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '');
       const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
       retestGenLast = { res, student, round, key: cacheKey };
       { const hw = document.getElementById('retestGenWrap'); if (hw) hw._rtLast = retestGenLast; }
@@ -3193,7 +3210,7 @@ function renderRetestTabPdf() {
       if (seq !== rtTabSeq) return;
       if (rtTabUrl) URL.revokeObjectURL(rtTabUrl);
       rtTabUrl = URL.createObjectURL(res.blob);
-      const miss = (res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '') + `<div style="flex-basis:100%">${retestSourceLine(round, student)}${retestGradeWarn(round, student)}</div>`;
+      const miss = (res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '') + `<div style="flex-basis:100%">${retestSourceLine(round, student)}${retestGradeWarn(round, student)}${await retestContentWarn(round, paperBuf)}</div>`;
       const html = `<button type="button" class="btn" data-rt-print="all">재시험지 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${rtTabUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a> <span class="field-hint rt-status">A4 · 문제 ${res.problemPages}쪽 먼저, 이어서 빠른정답 ${res.answerPages}장</span>${miss}<div style="flex-basis:100%">${AUTOPRINT_HINT}</div>`;
       retestGenLast = { res, student, round, key, tabHtml: html };
       wrap._rtLast = retestGenLast;
