@@ -3181,6 +3181,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const g = document.getElementById('rkGrade'), r = document.getElementById('rkRound'), m = document.getElementById('rkMine');
   if (g) g.addEventListener('change', () => { document.getElementById('rkRound').value = ''; rkShowAll = false; renderRetestRank(); });
   if (r) r.addEventListener('change', () => { rkShowAll = false; renderRetestRank(); });
+  const rkTitle = document.querySelector('#retestRankCard h2');
+  if (rkTitle) rkTitle.addEventListener('click', () => document.getElementById('retestRankCard').classList.toggle('rk-open'));
   ['rkFrom', 'rkTo'].forEach(id => { const e = document.getElementById(id); if (e) e.addEventListener('change', () => { rkShowAll = false; renderRetestRank(); }); });
   if (m) m.addEventListener('change', renderRetestRank);
 });

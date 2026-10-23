@@ -641,9 +641,15 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
   #retestRankCard .rk-bar { height: 12px; }
   #retestRankCard .rk-ctrl select { font-size: 12px; padding: 5px 6px; }
 }
+/* 여백이 아예 없는 좁은 화면: 큰 블록으로 펼치지 않고 제목 한 줄로 접어 둠 (누르면 펼침) */
 @media (max-width: 1023px) {
+  #retestRankCard { padding: 6px 10px; }
   #retestRankCard .card-sub { display: none; }
-  #retestRankCard #rkBody { max-height: 200px; overflow-y: auto; }
+  #retestRankCard h2 { margin: 0; cursor: pointer; font-size: 13px; }
+  #retestRankCard h2::before { content: '▸ '; }
+  #retestRankCard.rk-open h2::before { content: '▾ '; }
+  #retestRankCard:not(.rk-open) > *:not(h2) { display: none; }
+  #retestRankCard.rk-open #rkBody { max-height: 240px; overflow-y: auto; }
 }
 
 .rk-row { cursor: pointer; }
