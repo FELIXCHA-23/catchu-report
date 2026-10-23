@@ -4825,12 +4825,6 @@ document.addEventListener('DOMContentLoaded', () => {
     toast(`학생 명단 ${roster.length}명을 내보냈어요.`);
   });
 
-  document.getElementById('importFile').addEventListener('change', e => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (file) importBackupFromFile(file);
-  });
-
   document.getElementById('seedBtn').addEventListener('click', () => {
     if (!confirm('예시 데이터를 불러올까요? (현재 데이터가 있다면 먼저 백업하세요)')) return;
     seedDemoData();

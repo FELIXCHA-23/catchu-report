@@ -487,11 +487,9 @@
       <h2>백업 · 이전 (관리자용)</h2>
       <p class="card-sub">데이터는 <b>서버에 자동으로 저장</b>되고 모든 선생님이 같이 씀. 그래서 백업 파일을 자동으로 받거나 따로 가져올 필요는 없고, 이 기능은 만일을 위한 관리자용 보관·복원 도구임.<br>
         <b>포함 항목:</b> 학생 명단, 회차·시험지 정보, 학생별 채점 기록, 재시험 기록, 보고서 의견, 교재 채점 기록과 교재 보고서 의견·PDF 포함 설정, 평균 난이도 조절 값.<br>
-        <b>가져오기는 기존 데이터를 전부 교체</b>하고 그 결과가 서버와 모든 선생님 화면에 반영되므로 꼭 필요할 때만 쓸 것. API 키는 포함되지 않음.</p>
+        <b>전체 가져오기(복원) 버튼은 위험해서 없앴어요.</b> 백업을 되돌려야 할 일이 생기면 이 백업 파일을 Claude 대화창에 올리고 복원해 달라고 요청하세요. API 키는 포함되지 않음.</p>
       <div class="inline-form">
         <button type="button" class="btn primary" id="exportBtn">전체 내보내기</button>
-        <label class="btn ghost" for="importFile">전체 가져오기 (기존 데이터 전체 교체)</label>
-        <input type="file" id="importFile" accept="application/json" style="display:none;">
       </div>
     </div>
     <div class="card">
@@ -521,7 +519,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=15"></script>
-<script src="app.js?v=226"></script>
+<script src="app.js?v=227"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
