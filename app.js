@@ -3022,6 +3022,18 @@ function currentRetestStudent() { return state.students.find(s => s.id === docum
 
 /* ===== 재시험 탭: 학생별 오답 모음 — 한 학생이 고른 기간(몇 주차~몇 주차)에 틀린 문항만 여러 회차에서 모아 재시험지 한 부(1번부터)로 만듦 ===== */
 let colSeq = 0;
+// 오답 모음에 넣을 문제: 'retest' 재시험지(유사 문제) · 'main' 본시험지(원래 문제) · 'mix' 문항마다 원래 문제 → 유사 문제
+let colMode = (() => { try { const m = localStorage.getItem('kmms_col_mode'); return ['retest', 'main', 'mix'].includes(m) ? m : 'retest'; } catch (e) { return 'retest'; } })();
+const COL_MODE_TEXT = { retest: '재시험지', main: '본시험지', mix: '본시험지+재시험지' };
+// 이 회차에서 현재 방식으로 쓸 수 있는 파일이 있는지
+function colUsable(round) {
+  return colMode === 'retest' ? !!round.retestPath : colMode === 'main' ? !!round.examPath : !!(round.retestPath || round.examPath);
+}
+function colMissingText(round) {
+  if (colMode === 'main') return '본시험지가 없어서';
+  if (colMode === 'mix') return (!round.examPath && !round.retestPath) ? '본시험지·재시험지가 없어서' : '';
+  return '재시험지가 없어서';
+}
 function collectItemsFor(studentId) {
   const fromRaw = document.getElementById('colFrom').value, toRaw = document.getElementById('colTo').value;
   const lo = fromRaw && toRaw && fromRaw > toRaw ? toRaw : fromRaw, hi = fromRaw && toRaw && fromRaw > toRaw ? fromRaw : toRaw;
@@ -3057,12 +3069,12 @@ function updateCollectInfo() {
   if (!info) return;
   const sid = document.getElementById('colStudent').value;
   const items = sid ? collectItemsFor(sid) : [];
-  const ok = items.filter(x => x.round.retestPath), no = items.filter(x => !x.round.retestPath);
+  const ok = items.filter(x => colUsable(x.round)), no = items.filter(x => !colUsable(x.round));
   const total = ok.reduce((n, x) => n + x.result.wrong.length, 0);
   btn.disabled = !ok.length;
   info.innerHTML = !sid ? '' : !items.length ? '이 기간에는 틀린 문항이 없어요.'
-    : `재시험지가 있는 ${ok.length}개 회차에서 오답 <b>${total}문항</b>을 모아요: ${ok.map(x => `${escapeHtml(roundLabel(x.round))}(${x.result.wrong.length})`).join(' · ') || '-'}`
-      + (no.length ? `<br><span style="color:#c0392b;">재시험지가 아직 없어서 빠지는 회차: ${no.map(x => escapeHtml(roundLabel(x.round))).join(', ')}</span>` : '');
+    : `${COL_MODE_TEXT[colMode]}가 있는 ${ok.length}개 회차에서 오답 <b>${total}문항</b>${colMode === 'mix' ? '(문제는 문항마다 원래 → 유사로 최대 두 배)' : ''}을 모아요: ${ok.map(x => `${escapeHtml(roundLabel(x.round))}(${x.result.wrong.length})${colMode === 'mix' && !(x.round.examPath && x.round.retestPath) ? '<span style="color:#c0392b;">' + (x.round.examPath ? '·재시험지 없음' : '·본시험지 없음') + '</span>' : ''}`).join(' · ') || '-'}`
+      + (no.length ? `<br><span style="color:#c0392b;">${colMissingText(no[0].round) || '파일이 없어서'} 빠지는 회차: ${no.map(x => escapeHtml(roundLabel(x.round))).join(', ')}</span>` : '');
 }
 async function buildCollect() {
   const sid = document.getElementById('colStudent').value;
@@ -3070,7 +3082,7 @@ async function buildCollect() {
   const wrap = document.getElementById('colPrintWrap'), btn = document.getElementById('colBuildBtn');
   if (!student) return;
   if (!(window.KMMS && window.KMMS.ready && window.RETEST)) { wrap.innerHTML = '<span class="field-hint">로그인한 뒤에 만들 수 있어요.</span>'; return; }
-  const items = collectItemsFor(sid).filter(x => x.round.retestPath);
+  const items = collectItemsFor(sid).filter(x => colUsable(x.round));
   if (!items.length) return;
   const seq = ++colSeq;
   btn.disabled = true;
@@ -3078,22 +3090,24 @@ async function buildCollect() {
     const sources = [];
     for (let i = 0; i < items.length; i++) {
       const { round, result } = items[i];
-      wrap.innerHTML = `<span class="field-hint">재시험지를 불러오는 중… (${i + 1}/${items.length})</span>`;
-      const paperBuf = await window.KMMS.fetchBuf(round.retestPath);
-      const ansBuf = round.retestAnsPath ? await window.KMMS.fetchBuf(round.retestAnsPath) : null;
-      sources.push({ paperBuf: paperBuf.slice(0), ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: result.wrong.slice(), label: roundLabel(round) });
+      wrap.innerHTML = `<span class="field-hint">시험지를 불러오는 중… (${i + 1}/${items.length})</span>`;
+      const useRetest = colMode !== 'main' && !!round.retestPath, useMain = colMode !== 'retest' && !!round.examPath;
+      const paperBuf = useRetest ? await window.KMMS.fetchBuf(round.retestPath) : null;
+      const ansBuf = useRetest && round.retestAnsPath ? await window.KMMS.fetchBuf(round.retestAnsPath) : null;
+      const mainBuf = useMain ? await window.KMMS.fetchBuf(round.examPath) : null;
+      sources.push({ paperBuf: paperBuf ? paperBuf.slice(0) : null, mainBuf: mainBuf ? mainBuf.slice(0) : null, ansBuf: ansBuf ? ansBuf.slice(0) : null, nums: result.wrong.slice(), label: roundLabel(round) });
     }
     const first = roundLabel(items[0].round), last = roundLabel(items[items.length - 1].round);
     const res = await window.RETEST.build({
       sources, studentName: student.name, dateText: todayText(),
-      title: `${student.grade || items[0].round.grade || ''} 오답 모음 · ${first === last ? first : first + ' ~ ' + last}`.trim(),
+      title: `${student.grade || items[0].round.grade || ''} 오답 모음${colMode === 'retest' ? '' : colMode === 'main' ? '(원래 문제)' : '(원래+유사)'} · ${first === last ? first : first + ' ~ ' + last}`.trim(),
       onProgress: (i, n) => { wrap.innerHTML = `<span class="field-hint">문제를 뽑는 중… (${i + 1}/${n})</span>`; },
     });
     if (seq !== colSeq) return;
     if (colUrl) URL.revokeObjectURL(colUrl);
     colUrl = URL.createObjectURL(res.blob);
     const miss = res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '';
-    const html = `<button type="button" class="btn" data-rt-print="all">오답 모음 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${colUrl}" download="오답모음_${escapeHtml(student.name)}.pdf">PDF 저장</a> <span class="field-hint rt-status">${res.found.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span>${miss}`;
+    const html = `<button type="button" class="btn" data-rt-print="all">오답 모음 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${colUrl}" download="오답모음_${escapeHtml(student.name)}${colMode === 'retest' ? '' : '_' + COL_MODE_TEXT[colMode]}.pdf">PDF 저장</a> <span class="field-hint rt-status">${res.found.length}문항 · 문제 ${res.problemPages}쪽${res.answerPages ? ' + 빠른정답 1장' : ''}</span>${miss}`;
     wrap._rtLast = { res, student, round: null, key: 'collect|' + sid + '|' + seq };
     wrap.innerHTML = html;
   } catch (e) {
@@ -3108,6 +3122,18 @@ document.addEventListener('DOMContentLoaded', () => {
   s.addEventListener('change', () => { document.getElementById('colFrom').value = ''; document.getElementById('colTo').value = ''; document.getElementById('colPrintWrap').innerHTML = ''; populateCollectCard(); });
   ['colFrom', 'colTo'].forEach(id => document.getElementById(id).addEventListener('change', () => { document.getElementById('colPrintWrap').innerHTML = ''; updateCollectInfo(); }));
   document.getElementById('colBuildBtn').addEventListener('click', buildCollect);
+  const modeWrap = document.getElementById('colModeWrap');
+  const paintMode = () => modeWrap.querySelectorAll('[data-col-mode]').forEach(b => b.classList.toggle('active', b.dataset.colMode === colMode));
+  paintMode();
+  modeWrap.addEventListener('click', e => {
+    const b = e.target.closest('[data-col-mode]');
+    if (!b) return;
+    colMode = b.dataset.colMode;
+    try { localStorage.setItem('kmms_col_mode', colMode); } catch (err) {}
+    paintMode();
+    document.getElementById('colPrintWrap').innerHTML = '';
+    updateCollectInfo();
+  });
 });
 
 /* ===== 재시험 탭 왼쪽: 시험지(학년)별 오답 순위 — 가장 많이 틀린 문항 번호를 오답 인원수 순으로, 가로막대 + 오답률 ===== */

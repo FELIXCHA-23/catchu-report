@@ -339,30 +339,42 @@
     ctx.fillText(text, PAGE_W / 2, PAGE_H - 50); ctx.textAlign = 'left';
   }
 
-  // 재시험지 PDF 하나에서 틀린 번호의 문제(와 정답)를 잘라 옴. startNo: 앞에서 이미 쓴 문항 수 — 번호를 이어서 1, 2, 3… 으로 다시 씀
+  // 시험지 PDF에서 틀린 번호의 문제(와 정답)를 잘라 옴. startNo: 앞에서 이미 쓴 문항 수 — 번호를 이어서 1, 2, 3… 으로 다시 씀
+  // src.paperBuf = 재시험지 PDF, src.mainBuf = 본시험지 PDF. 둘 다 있으면 문항마다 본시험지 문제 → 재시험지 문제 순으로 섞어서 이어 붙임
   async function collectSource(src, startNo) {
     const nums = Array.from(new Set((src.nums || []).map(Number))).filter(n => n > 0).sort((a, b) => a - b);
-    const paper = await openPdf(src.paperBuf);
-    const spots = await scanProblems(paper);
-    const crop = makeCropper(paper);
-    const found = nums.filter(n => spots[n]), missing = nums.filter(n => !spots[n]);
-    const crops = [];
-    for (let k = 0; k < found.length; k++) crops.push({ n: found[k], img: await crop({ ...spots[found[k]], label: String(startNo + k + 1) }) });
-
-    // 빠른정답: 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 재시험지 PDF 맨 뒤의 정답 쪽에서 같은 번호의 정답 칸만 잘라 둠
-    const acs = [];
-    try {
-      const ans = src.ansBuf ? await openPdf(src.ansBuf) : paper;
-      let aspots;
-      if (src.ansBuf) aspots = await scanAnswers(ans, 1);
-      else {
-        const f = await findAnswerPage(ans);
-        aspots = f ? f.spots : {};
-        if (!Object.keys(aspots).length) aspots = await scanExplanations(paper);   // 빠른정답 표가 없으면 해설 쪽의 "정답"에서 따옴
+    const streams = [];
+    const mk = async (paperBuf, ansBuf) => {
+      const paper = await openPdf(paperBuf);
+      const spots = await scanProblems(paper);
+      // 빠른정답: 따로 올린 빠른정답 PDF(예전 방식)가 있으면 그것을, 없으면 시험지 PDF 맨 뒤의 정답 쪽에서 같은 번호의 정답 칸만 잘라 둠
+      let ans = paper, aspots = {};
+      try {
+        if (ansBuf) { ans = await openPdf(ansBuf); aspots = await scanAnswers(ans, 1); }
+        else {
+          const f = await findAnswerPage(paper);
+          aspots = f ? f.spots : {};
+          if (!Object.keys(aspots).length) aspots = await scanExplanations(paper);   // 빠른정답 표가 없으면 해설 쪽의 "정답"에서 따옴
+        }
+      } catch (e) { console.warn('빠른정답을 읽지 못했어요', e && (e.stack || e.message || String(e))); aspots = {}; }
+      streams.push({ spots, crop: makeCropper(paper), aspots, acrop: makeCropper(ans) });
+    };
+    if (src.mainBuf) await mk(src.mainBuf, null);
+    if (src.paperBuf) await mk(src.paperBuf, src.ansBuf);
+    const seq = [];
+    nums.forEach(n => streams.forEach(st => { if (st.spots[n]) seq.push({ n, st }); }));
+    const crops = [], acs = [];
+    for (let k = 0; k < seq.length; k++) {
+      const { n, st } = seq[k];
+      const label = String(startNo + k + 1);
+      crops.push({ n, img: await st.crop({ ...st.spots[n], label }) });
+      if (st.aspots[n]) {
+        try { acs.push({ n, img: await st.acrop({ ...st.aspots[n], label }) }); }
+        catch (e) { console.warn('빠른정답을 붙이지 못했어요', e && (e.stack || e.message || String(e))); }
       }
-      const acrop = makeCropper(ans);
-      for (let k = 0; k < found.length; k++) { const n = found[k]; if (aspots[n]) acs.push({ n, img: await acrop({ ...aspots[n], label: String(startNo + k + 1) }) }); }
-    } catch (e) { console.warn('빠른정답을 붙이지 못했어요', e && (e.stack || e.message || String(e)), e && e.name); }
+    }
+    const found = seq.map(x => x.n);
+    const missing = nums.filter(n => !streams.some(st => st.spots[n]));
     return { crops, acs, found, missing };
   }
 

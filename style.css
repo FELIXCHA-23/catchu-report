@@ -629,3 +629,8 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 
 .rk-q small { display: block; font-size: 10px; font-weight: 400; color: var(--muted, #888); white-space: nowrap; }
 .rk-head.rk-multi, .rk-row.rk-multi { grid-template-columns: 18px 64px 1fr 34px 34px; }
+
+.col-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.seg-btn { border: 1px solid var(--border); background: transparent; color: inherit; border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; line-height: 1.25; text-align: left; }
+.seg-btn small { display: block; font-size: 11px; opacity: .65; }
+.seg-btn.active { border-color: var(--accent, #c8102e); background: var(--accent-fill, rgba(200,16,46,.08)); font-weight: 600; }
