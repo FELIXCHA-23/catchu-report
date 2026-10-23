@@ -679,7 +679,8 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       const old = round.examPath;
       round.examPath = path;
       round.examName = file.name;
-      if (old) sb.storage.from('exams').remove([old]).catch(() => {});
+      if (old) delete round.mainInfo;   // 교체한 시험지 기준으로 다시 읽게 함
+      if (old) { delete bufCache[old]; sb.storage.from('exams').remove([old]).catch(() => {}); }
       saveState();
       toast('시험지를 서버에 안전하게 올렸어요.');
       refreshAfterFile();
@@ -792,6 +793,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (!ready || !round || !f || !file || !file.dataUrl) return false;
     try {
       // 재시험지는 올리기 전에 고른 회차와 유형이 맞는지 확인하고, 더 잘 맞는 시험지가 있으면 선생님께 물어봄 (app.js checkRetestMatch)
+      if (kind === 'retest' && typeof confirmRetestAnswers === 'function' && !(await confirmRetestAnswers(file))) return false;   // 빠른정답이 없으면 알려 주고 올릴지 물어봄
       window.__lastRetestInfo = file.__matched ? window.__lastRetestInfo : null;
       if (kind === 'retest' && !file.__matched && typeof checkRetestMatch === 'function') {
         const r2 = await checkRetestMatch(round, file);
@@ -804,7 +806,13 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (error) throw error;
       const old = round[f[0]];
       round[f[0]] = path; round[f[1]] = file.name;
-      if (kind === 'retest' && window.__lastRetestInfo) { round.retestInfo = window.__lastRetestInfo; window.__lastRetestInfo = null; }   // 읽어 둔 제목·범위·유형표 (나중에 같은 시험 찾기에 씀)
+      if (kind === 'retest') {
+        // 재시험지를 새 파일로 교체하면 예전 재시험지 기준의 정보가 남지 않게 함 (빠른정답은 새 파일 맨 뒤 쪽을 씀)
+        if (window.__lastRetestInfo) { round.retestInfo = window.__lastRetestInfo; window.__lastRetestInfo = null; }   // 읽어 둔 제목·범위·유형표 (나중에 같은 시험 찾기에 씀)
+        else if (old) delete round.retestInfo;
+        if (round.retestAnsPath) { const oldAns = round.retestAnsPath; delete round.retestAnsPath; delete round.retestAnsName; delete bufCache[oldAns]; sb.storage.from('exams').remove([oldAns]).catch(() => {}); }
+      }
+      delete bufCache[old];
       if (old) sb.storage.from('exams').remove([old]).catch(() => {});
       saveState();
       toast((kind === 'retest' ? '재시험지' : '재시험 빠른정답') + '를 서버에 올렸어요.');

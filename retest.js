@@ -496,11 +496,21 @@
     return crop({ ...sp, align: false, mark: undefined, label: undefined, top: sp.headTop != null ? Math.max(0, sp.headTop) : sp.top });
   }
 
+  // 재시험지 PDF에 정답이 붙어 있는지 검사: 맨 뒤 빠른정답 표('quick') > 해설 쪽의 정답('explain') > 없음('none')
+  async function checkAnswers(paperBuf) {
+    const pdf = await openPdf(paperBuf);
+    const f = await findAnswerPage(pdf);
+    if (f) return { kind: 'quick', n: Object.keys(f.spots).length };
+    const e = await scanExplanations(pdf);
+    const n = Object.keys(e || {}).length;
+    return n >= 5 ? { kind: 'explain', n } : { kind: 'none', n: 0 };
+  }
+
   // 올려 둔 재시험지에서 찾을 수 있는 문제 번호 목록(검사용)
   async function listProblemNumbers(paperBuf) {
     const pdf = await openPdf(paperBuf);
     return Object.keys(await scanProblems(pdf)).map(Number).sort((a, b) => a - b);
   }
 
-  window.RETEST = { build, listProblemNumbers, describePaper, renderProblem, loadPdfJs };
+  window.RETEST = { build, listProblemNumbers, describePaper, renderProblem, checkAnswers, loadPdfJs };
 })();

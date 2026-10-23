@@ -1508,6 +1508,31 @@ function recentRealRounds(grade) {
   const since = new Date(Date.now() - 100 * 86400000).toISOString().slice(0, 10);
   return scopedRounds().filter(r => !r.individual && r.grade === grade && (r.date || '') >= since);
 }
+// 재시험지 업로드 직전에 호출됨(cloud.js uploadAux): 맨 뒤에 빠른정답(정답 쪽)이 있는지 보고, 없으면 알려 줌. 돌려주는 값: 올려도 되면 true
+async function confirmRetestAnswers(file) {
+  if (!(window.RETEST && window.RETEST.checkAnswers) || !/^data:application\/pdf/.test(file.dataUrl || '')) return true;
+  let r = null;
+  try { r = await window.RETEST.checkAnswers(dataUrlToBuf(file.dataUrl)); } catch (e) { console.warn('answer check failed', e); return true; }
+  if (!r || r.kind !== 'none') return true;
+  return new Promise(resolve => {
+    closeWsModal();
+    const ov = document.createElement('div');
+    ov.id = 'wsModal'; ov.className = 'ws-modal';
+    ov.innerHTML = `<div class="ws-modal-box"><h3>이 재시험지에는 빠른정답이 없어요</h3>
+      <div class="ws-modal-file">${escapeHtml(file.name || '')}</div>
+      <div class="field-hint">재시험지 PDF 맨 뒤에서 정답 쪽을 찾지 못했어요. 이대로 올리면 재시험지를 출력할 때 <b>빠른정답 1장이 빠져요.</b><br>정답 쪽을 맨 뒤에 붙인 파일이 따로 있다면 취소하고 그 파일을 올려 주세요.</div>
+      <div class="ws-choices">
+        <button type="button" class="ws-bigbtn" data-ans="cancel">취소 — 정답 쪽이 있는 파일로 다시 올릴게요</button>
+        <button type="button" class="ws-bigbtn" data-ans="go">빠른정답 없이 그대로 올리기</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => {
+      const b = e.target.closest('[data-ans]');
+      if (b) { closeWsModal(); resolve(b.dataset.ans === 'go'); return; }
+      if (e.target === ov) { closeWsModal(); resolve(false); }
+    });
+  });
+}
 // 재시험지 업로드 직전에 호출됨(cloud.js uploadAux): 고른 회차가 이 재시험지와 맞는지 확인하고, 더 잘 맞는 회차가 있으면 물어봄
 // 돌려주는 값: 붙일 회차 / null(취소)
 async function checkRetestMatch(round, file) {
