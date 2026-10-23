@@ -424,11 +424,11 @@
     if (hasAns) {
       const { cv, ctx } = newPage();
       drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
-      // 빠른정답은 작게, 번호 순서가 위→아래로 이어지는 세로 정렬(왼쪽 열을 먼저 채우고 다음 열로)
-      const N = acs.length, cols = N > 12 ? 4 : 3, rows = Math.ceil(N / cols);
+      // 빠른정답은 작게, 왼쪽 위부터 가로로 1번, 2번, 3번… 쭉 채우고 한 줄이 차면 다음 줄에서 이어서 씀
+      const N = acs.length, cols = N > 12 ? 4 : 3;
       const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols, rowH = 92;
       acs.forEach((a, i) => {
-        const c = Math.floor(i / rows), r = i % rows;
+        const c = i % cols, r = Math.floor(i / cols);
         const x = L + c * (cw + gapX), y = TOP + 10 + r * rowH;
         if (y + rowH > BOT) return;
         ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
