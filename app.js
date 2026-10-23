@@ -1967,27 +1967,6 @@ function printCanvases(canvases, opts) {
     w.print();
   });
 }
-// 앱이 없는 기기(아이패드 등)에서 출력할 때: 8층 출력 PC로 보낼지, 이 기기의 인쇄 창으로 출력할지 고름
-function askPrintTarget() {
-  return new Promise(resolve => {
-    closeWsModal();
-    const alive = window.KMMS.printHostAlive();
-    const ov = document.createElement('div');
-    ov.id = 'wsModal'; ov.className = 'ws-modal';
-    ov.innerHTML = `<div class="ws-modal-box"><h3>어디로 출력할까요?</h3>
-      <div class="ws-choices">
-        <button type="button" class="ws-bigbtn" data-pt="remote">8층 복사기로 보내기<small>양면 + 왼쪽 위 스테이플까지 자동 · ${alive ? '출력 PC가 켜져 있어요' : '⚠ 출력 PC가 켜져 있는지 확인되지 않아요 (켜지면 30분 안에 출력돼요)'}</small></button>
-        <button type="button" class="ws-bigbtn" data-pt="local">이 기기에서 인쇄 창으로 출력<small>프린터 선택·양면·스테이플은 직접 지정</small></button>
-      </div>
-      <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div></div>`;
-    document.body.appendChild(ov);
-    ov.addEventListener('click', e => {
-      const b = e.target.closest('[data-pt]');
-      if (b) { closeWsModal(); resolve(b.dataset.pt); return; }
-      if (e.target === ov || e.target.closest('#wsModalCancel')) { closeWsModal(); resolve(null); }
-    });
-  });
-}
 // 보낸 출력 요청이 실제로 출력됐는지 지켜보고 결과를 알려줌 (화면은 막지 않음)
 function watchPrintJobs(jobs, say) {
   (async () => {
@@ -2010,12 +1989,8 @@ async function printRetestSet(which) {
   const say = t => document.querySelectorAll('#rtPrintStatus, .rt-status').forEach(el => { el.textContent = t; });
   const prob = L.res.previews.slice(0, L.res.problemPages), ans = L.res.previews.slice(L.res.problemPages);
   const K = window.KMMS;
-  let remote = false;
-  if (!window.KMMS_DESKTOP && K && K.ready && !K.demo && K.sendPrint) {
-    const t = await askPrintTarget();
-    if (!t) return;
-    remote = t === 'remote';
-  }
+  // 앱이 없는 기기(아이패드 등)에서는 묻지 않고 바로 8층 출력 PC로 보냄
+  const remote = !window.KMMS_DESKTOP && !!(K && K.ready && !K.demo && K.sendPrint);
   const jobs = [];
   const out = async (cvs, opts, title) => {
     if (!remote) return printCanvases(cvs, opts);
@@ -2038,7 +2013,7 @@ async function printRetestSet(which) {
     if (remote) { say('보내지 못했어요. 다시 눌러 주세요.'); return; }
     throw e;
   }
-  if (remote) { say('8층 PC로 보냈어요. 출력되는지 확인 중…'); watchPrintJobs(jobs, say); return; }
+  if (remote) { say(K.printHostAlive() ? '8층 PC로 보냈어요. 출력되는지 확인 중…' : '8층 PC로 보냈어요. 다만 출력 PC가 켜져 있는지 확인되지 않아요 — 켜지면 30분 안에 출력돼요.'); watchPrintJobs(jobs, say); return; }
   say('인쇄를 보냈어요.');
 }
 document.addEventListener('click', e => {
