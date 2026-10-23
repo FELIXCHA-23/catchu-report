@@ -618,9 +618,30 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .rk-n { font-size: 12px; }
 .rk-pct { font-size: 12px; font-weight: 700; }
 .rk-more { margin-top: 8px; }
-/* 본문(900px) 양옆 여백이 카드(280px)+간격보다 넉넉할 때만 왼쪽에 띄움 — 아이패드 가로(1366px) 같은 화면에서는 잘리므로 본문 맨 위에 그대로 표시 */
+/* 오답 순위 카드: 본문(900px) 왼쪽 여백에 띄움. 여백이 좁은 화면(아이패드 등)에서는 여백 너비에 맞춰 작게 줄이고, 그보다 좁으면 본문 맨 위에 작게 접어 둠 */
+@media (min-width: 1170px) {
+  #retestRankCard { position: absolute; right: calc(100% + 10px); top: 0; width: calc((100vw - 868px) / 2 - 26px); padding: 6px; font-size: 10px; }
+  #retestRankCard h2 { font-size: 12px; }
+  #retestRankCard .card-sub { display: none; }
+  #retestRankCard .rk-head, #retestRankCard .rk-row { grid-template-columns: 12px 30px 1fr 24px 28px; gap: 2px; }
+  #retestRankCard .rk-head.rk-multi, #retestRankCard .rk-row.rk-multi { grid-template-columns: 14px 56px 1fr 28px 30px; }
+  #retestRankCard .rk-n, #retestRankCard .rk-pct { font-size: 10px; }
+  #retestRankCard .rk-q { font-size: 11px; }
+  #retestRankCard .rk-bar { height: 8px; }
+  #retestRankCard .rk-ctrl select { font-size: 11px; padding: 3px 4px; }
+}
 @media (min-width: 1520px) {
-  #retestRankCard { position: absolute; right: calc(100% + 14px); top: 0; width: 280px; }
+  #retestRankCard { width: 280px; padding: 12px; font-size: 12px; }
+  #retestRankCard h2 { font-size: 14px; }
+  #retestRankCard .card-sub { display: block; }
+  #retestRankCard .rk-head, #retestRankCard .rk-row { grid-template-columns: 18px 38px 1fr 34px 34px; gap: 5px; }
+  #retestRankCard .rk-head.rk-multi, #retestRankCard .rk-row.rk-multi { grid-template-columns: 18px 64px 1fr 34px 34px; }
+  #retestRankCard .rk-n, #retestRankCard .rk-pct { font-size: 12px; }
+  #retestRankCard .rk-ctrl select { font-size: 12px; padding: 5px 6px; }
+}
+@media (max-width: 1169px) {
+  #retestRankCard .card-sub { display: none; }
+  #retestRankCard #rkBody { max-height: 240px; overflow-y: auto; }
 }
 
 .rk-row { cursor: pointer; }
