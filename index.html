@@ -471,6 +471,12 @@
 
   <!-- 데이터 관리 -->
   <section class="tab-panel" id="panel-data">
+    <div class="card" id="printHostCard" style="display:none">
+      <h2>아이패드·다른 기기 출력 담당 PC</h2>
+      <p class="card-sub">아이패드나 앱이 없는 컴퓨터에서 "출력"을 누르면, 이 PC가 대신 8층 복사기로 <b>양면 + 왼쪽 위 스테이플</b>로 출력해요. 학원에서 이 설정은 <b>PC 한 대에만</b> 켜 두세요. 이 PC가 켜져 있고 KMMS 앱이 열려 있어야 출력돼요.</p>
+      <label><input type="checkbox" id="printHostBox"> 이 PC를 출력 담당으로 사용</label>
+      <div id="printHostInfo" class="field-hint" style="margin-top:8px;"></div>
+    </div>
     <div class="card admin-only">
       <h2>백업 · 이전 (관리자용)</h2>
       <p class="card-sub">데이터는 <b>서버에 자동으로 저장</b>되고 모든 선생님이 같이 씀. 그래서 백업 파일을 자동으로 받거나 따로 가져올 필요는 없고, 이 기능은 만일을 위한 관리자용 보관·복원 도구임.<br>
@@ -523,10 +529,10 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=11"></script>
-<script src="app.js?v=217"></script>
+<script src="app.js?v=218"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="cloud.js?v=22"></script>
+<script src="cloud.js?v=23"></script>
 </body>
 </html>

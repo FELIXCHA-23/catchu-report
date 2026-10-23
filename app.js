@@ -1942,20 +1942,78 @@ function printCanvases(canvases, opts) {
     w.print();
   });
 }
+// 앱이 없는 기기(아이패드 등)에서 출력할 때: 8층 출력 PC로 보낼지, 이 기기의 인쇄 창으로 출력할지 고름
+function askPrintTarget() {
+  return new Promise(resolve => {
+    closeWsModal();
+    const alive = window.KMMS.printHostAlive();
+    const ov = document.createElement('div');
+    ov.id = 'wsModal'; ov.className = 'ws-modal';
+    ov.innerHTML = `<div class="ws-modal-box"><h3>어디로 출력할까요?</h3>
+      <div class="ws-choices">
+        <button type="button" class="ws-bigbtn" data-pt="remote">8층 복사기로 보내기<small>양면 + 왼쪽 위 스테이플까지 자동 · ${alive ? '출력 PC가 켜져 있어요' : '⚠ 출력 PC가 켜져 있는지 확인되지 않아요 (켜지면 30분 안에 출력돼요)'}</small></button>
+        <button type="button" class="ws-bigbtn" data-pt="local">이 기기에서 인쇄 창으로 출력<small>프린터 선택·양면·스테이플은 직접 지정</small></button>
+      </div>
+      <div class="ws-modal-btns"><button type="button" class="btn ghost" id="wsModalCancel">취소</button></div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => {
+      const b = e.target.closest('[data-pt]');
+      if (b) { closeWsModal(); resolve(b.dataset.pt); return; }
+      if (e.target === ov || e.target.closest('#wsModalCancel')) { closeWsModal(); resolve(null); }
+    });
+  });
+}
+// 보낸 출력 요청이 실제로 출력됐는지 지켜보고 결과를 알려줌 (화면은 막지 않음)
+function watchPrintJobs(jobs, say) {
+  (async () => {
+    let bad = '';
+    for (const j of jobs) {
+      const st = await window.KMMS.waitPrint(j.id, x => { if (x.status === 'printing') say('8층 PC에서 출력하는 중…'); });
+      const cur = (state.printJobs || []).find(x => x.id === j.id) || j;
+      if (st === 'failed') bad = '출력 PC에서 출력하지 못했어요: ' + (cur.note || '프린터를 확인해 주세요');
+      else if (st === 'expired') bad = '요청이 오래돼서 출력되지 않았어요. 다시 보내 주세요.';
+      else if (st === 'timeout' || st === 'gone') bad = bad || '아직 출력되지 않았어요. 8층 PC가 켜져 있고 KMMS 앱이 열려 있는지 확인해 주세요. (켜지면 30분 안에 자동 출력돼요)';
+      else if (cur.note) say('출력했어요 (' + cur.note + ')');
+    }
+    say(bad || '8층 복사기에서 출력했어요 ✓');
+    if (bad) toast(bad);
+  })();
+}
 async function printRetestSet(which) {
   const L = retestGenLast;
   if (!L) return;
   const say = t => document.querySelectorAll('#rtPrintStatus, .rt-status').forEach(el => { el.textContent = t; });
   const prob = L.res.previews.slice(0, L.res.problemPages), ans = L.res.previews.slice(L.res.problemPages);
-  if (which !== 'ans') {
-    say(window.KMMS_DESKTOP ? '문제를 인쇄하고 있어요 (A4 · 1부 · 양면 · 왼쪽 위 스테이플)…' : '문제를 인쇄하고 있어요 (A4 · 1부)…');
-    await printCanvases(prob, { staple: true, duplex: true });   // 문제 쪽: 양면 · 왼쪽 위 스테이플
+  const K = window.KMMS;
+  let remote = false;
+  if (!window.KMMS_DESKTOP && K && K.ready && !K.demo && K.sendPrint) {
+    const t = await askPrintTarget();
+    if (!t) return;
+    remote = t === 'remote';
   }
-  if (ans.length) {
-    if (which !== 'ans') await new Promise(r => setTimeout(r, 1000));
-    say('빠른정답 1장을 인쇄하고 있어요…');
-    await printCanvases(ans, { staple: false, duplex: false });   // 빠른정답 1장: 단면 · 스테이플 없음
+  const jobs = [];
+  const out = async (cvs, opts, title) => {
+    if (!remote) return printCanvases(cvs, opts);
+    const job = await K.sendPrint(cvs, { ...opts, title });
+    if (!job) throw new Error('send');
+    jobs.push(job);
+    return true;
+  };
+  try {
+    if (which !== 'ans') {
+      say(remote ? '8층 PC로 문제를 보내는 중…' : window.KMMS_DESKTOP ? '문제를 인쇄하고 있어요 (A4 · 1부 · 양면 · 왼쪽 위 스테이플)…' : '문제를 인쇄하고 있어요 (A4 · 1부)…');
+      await out(prob, { staple: true, duplex: true }, '재시험지 문제');   // 문제 쪽: 양면 · 왼쪽 위 스테이플
+    }
+    if (ans.length) {
+      if (which !== 'ans' && !remote) await new Promise(r => setTimeout(r, 1000));
+      say(remote ? '8층 PC로 빠른정답을 보내는 중…' : '빠른정답 1장을 인쇄하고 있어요…');
+      await out(ans, { staple: false, duplex: false }, '재시험 빠른정답');   // 빠른정답 1장: 단면 · 스테이플 없음
+    }
+  } catch (e) {
+    if (remote) { say('보내지 못했어요. 다시 눌러 주세요.'); return; }
+    throw e;
   }
+  if (remote) { say('8층 PC로 보냈어요. 출력되는지 확인 중…'); watchPrintJobs(jobs, say); return; }
   say('인쇄를 보냈어요.');
 }
 document.addEventListener('click', e => {
@@ -5248,4 +5306,28 @@ function exportSharedRounds() {
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('exportRoundsBtn');
   if (btn) btn.addEventListener('click', exportSharedRounds);
+});
+
+
+/* ===== KMMS 앱 전용: 이 PC를 "아이패드·다른 기기 출력 담당"으로 ===== */
+function renderPrintHostCard() {
+  const card = document.getElementById('printHostCard');
+  if (!card) return;
+  const K = window.KMMS;
+  if (!(window.KMMS_DESKTOP && window.KMMS_DESKTOP.print && K && K.ready && !K.demo)) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const box = document.getElementById('printHostBox');
+  if (document.activeElement !== box) box.checked = K.isPrintHost;
+  const info = document.getElementById('printHostInfo');
+  const h = K.printHostInfo;
+  const jobs = (state.printJobs || []).slice().sort((x, y) => y.at - x.at).slice(0, 5);
+  const lab = { pending: '대기', printing: '출력 중', done: '출력됨', failed: '실패', expired: '건너뜀' };
+  const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  info.innerHTML = (K.isPrintHost ? '<b>이 PC가 출력 담당이에요.</b> 이 앱을 켜 두세요.' : (K.printHostAlive() && h ? `지금 출력 담당은 <b>${escapeHtml(h.name || '다른 PC')}</b> 쪽 PC예요.` : '출력 담당 PC가 아직 없어요.'))
+    + (jobs.length ? '<br>최근 요청: ' + jobs.map(j => `${fmt(j.at)} ${escapeHtml(j.title || '')} (${lab[j.status] || j.status}${j.note ? ' · ' + escapeHtml(j.note) : ''})`).join(' / ') : '');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const box = document.getElementById('printHostBox');
+  if (box) box.addEventListener('change', () => { if (window.KMMS && window.KMMS.setPrintHost) window.KMMS.setPrintHost(box.checked); setTimeout(renderPrintHostCard, 300); });
+  setInterval(() => { try { renderPrintHostCard(); } catch (e) {} }, 5000);
 });

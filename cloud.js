@@ -13,9 +13,12 @@
   const BULK_DELETE_CONFIRM = 20;           // 한 번에 이 개수 이상 지우면 확인을 받음
 
   // 서버로 동기화하는 항목. 배열은 항목마다 id로, 객체는 키마다 한 줄로 저장함.
-  const ARRAYS = [['students'], ['rounds'], ['results'], ['retests'], ['reportLog'], ['textbook', 'results'], ['examUploads']];
-  const MAPS = [['teacherNotes'], ['gradeOverrides'], ['difficultyOverrides'], ['reportHidden'], ['studentDone'], ['studentMemo'], ['studentMemoRetest'], ['mergedRoundIds'],
+  const ARRAYS = [['students'], ['rounds'], ['results'], ['retests'], ['reportLog'], ['textbook', 'results'], ['examUploads'], ['printJobs']];
+  const MAPS = [['teacherNotes'], ['gradeOverrides'], ['difficultyOverrides'], ['reportHidden'], ['studentDone'], ['studentMemo'], ['studentMemoRetest'], ['mergedRoundIds'], ['printHost'],
     ['textbook', 'notes'], ['textbook', 'hidden'], ['textbook', 'ai']];
+
+  // 출력 요청·출력 담당 PC 상태는 자주 바뀌므로 "다른 선생님이 바꿨어요" 안내를 띄우지 않음
+  const QUIET = new Set(['printJobs', 'printHost']);
 
   let sb = null;
   let session = null;
@@ -233,7 +236,7 @@
   }
 
   async function pull(full, serverWins) {
-    let changed = 0;
+    let changed = 0, quiet = 0;
     let latest = since;
     let from = 0;
     const startFrom = full ? '' : since;
@@ -248,7 +251,7 @@
       if (error) throw error;
       if (!data || !data.length) break;
       data.forEach(row => {
-        if (applyRow(row, flatNow, serverWins)) changed++;
+        if (applyRow(row, flatNow, serverWins)) { if (QUIET.has(row.collection)) quiet++; else changed++; }
         if (row.updated_at > latest) latest = row.updated_at;
       });
       if (data.length < 1000) break;
@@ -256,7 +259,7 @@
     }
     since = latest;
     saveSyncMeta();
-    if (changed) writeLocal();
+    if (changed || quiet) writeLocal();
     return changed;
   }
 
@@ -552,6 +555,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (typeof refreshTeacherSelects === 'function') refreshTeacherSelects();
       if (typeof renderAll === 'function') renderAll();
       pollTimer = setInterval(poll, POLL_MS);
+      clearInterval(window.__kmmsHostTimer); window.__kmmsHostTimer = setInterval(printHostTick, 6000);
       schedulePush(); // 시작 전에 생긴 로컬 변경(공용 시험지 반영 등) 올리기
       setTimeout(() => { healRetestFiles().catch(e => console.warn('heal failed', e)); }, 2500);   // 끊어진 재시험지 연결 되찾기
     } catch (e) {
@@ -998,6 +1002,112 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
 
   /* ---------- 시작 ---------- */
 
+
+  /* ---------- 아이패드 등에서 보낸 출력 → 출력 담당 PC(KMMS 앱)가 대신 출력 ----------
+     보내는 쪽: 쪽 이미지를 비공개 저장소(requests/print_…)에 올리고 printJobs 에 요청 1건을 남김.
+     받는 쪽: 앱에서 "출력 담당"을 켠 PC 한 대만 6초마다 새 요청을 확인해 순서대로 인쇄(양면·스테이플 지정)하고 결과를 남김. */
+  const LS_HOST = 'kmms_print_host';
+  const PRINT_FRESH_MS = 30 * 60 * 1000;   // 이보다 오래된 요청은 출력하지 않음 (PC가 꺼져 있다가 켜졌을 때 옛날 것이 쏟아지지 않게)
+  const HOST_ALIVE_MS = 3 * 60 * 1000;
+  const HOST_BEAT_MS = 60 * 1000;
+  let hostBusy = false, lastBeat = 0;
+  const hostAppReady = () => !!(window.KMMS_DESKTOP && window.KMMS_DESKTOP.print);
+  const isPrintHost = () => { try { return hostAppReady() && localStorage.getItem(LS_HOST) === '1'; } catch (e) { return false; } };
+  function setPrintHost(on) {
+    try { localStorage.setItem(LS_HOST, on ? '1' : '0'); } catch (e) {}
+    lastBeat = 0;
+    if (on) printHostTick();
+  }
+  function printHostAlive() {
+    const h = state.printHost && state.printHost.main;
+    return !!(h && Date.now() - h.at < HOST_ALIVE_MS);
+  }
+  function printJob(id) { return (state.printJobs || []).find(x => String(x.id) === String(id)); }
+  function patchJob(id, patch) { const j = printJob(id); if (j) { Object.assign(j, patch); saveState(); } return j; }
+  const blobToDataUrl = blob => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+
+  async function sendPrint(canvases, opts) {
+    if (demoMode) { toast('체험(guest) 모드에서는 보낼 수 없어요.'); return null; }
+    if (!ready || !canvases || !canvases.length) return null;
+    const id = 'pj_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const paths = [];
+    try {
+      for (let i = 0; i < canvases.length; i++) {
+        const blob = await new Promise(r => canvases[i].toBlob(r, 'image/jpeg', 0.9));
+        const path = `requests/print_${id}_${i + 1}.jpg`;
+        const { error } = await sb.storage.from('exams').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (error) throw error;
+        paths.push(path);
+      }
+    } catch (e) {
+      console.warn('print upload failed', e);
+      sb.storage.from('exams').remove(paths).catch(() => {});
+      toast('출력 요청을 보내지 못했어요: ' + (e.message || e));
+      return null;
+    }
+    if (!Array.isArray(state.printJobs)) state.printJobs = [];
+    const job = { id, at: Date.now(), by: (staff && (staff.name || shownId(staff.email))) || '', title: (opts && opts.title) || 'KMMS 출력', staple: !!(opts && opts.staple), duplex: !!(opts && opts.duplex), pages: paths.length, paths, status: 'pending' };
+    state.printJobs.push(job);
+    saveState();
+    return job;
+  }
+  // 보낸 요청이 출력됐는지 지켜봄 (끝나면 done/failed/expired 로 돌려줌, 3분 안에 안 끝나면 'timeout')
+  async function waitPrint(id, onStatus) {
+    const t0 = Date.now();
+    let last = '';
+    while (Date.now() - t0 < 180000) {
+      await new Promise(r => setTimeout(r, 4000));
+      try { await poll(); } catch (e) {}
+      const j = printJob(id);
+      if (!j) return 'gone';
+      if (j.status !== last) { last = j.status; if (onStatus) onStatus(j); }
+      if (j.status === 'done' || j.status === 'failed' || j.status === 'expired') return j.status;
+    }
+    return 'timeout';
+  }
+
+  async function printHostTick() {
+    if (!ready || demoMode || hostBusy || !isPrintHost()) return;
+    hostBusy = true;
+    try {
+      const now = Date.now();
+      if (now - lastBeat > HOST_BEAT_MS) {
+        lastBeat = now;
+        if (!state.printHost || typeof state.printHost !== 'object') state.printHost = {};
+        state.printHost.main = { at: now, name: (staff && (staff.name || shownId(staff.email))) || '' };
+        saveState();
+      }
+      await poll();
+      const jobs = (state.printJobs || []).filter(j => j.status === 'pending').sort((a, b) => a.at - b.at);
+      for (const j of jobs) {
+        const id = j.id;
+        if (Date.now() - j.at > PRINT_FRESH_MS) { patchJob(id, { status: 'expired', note: '출력 PC가 꺼져 있어서 오래된 요청은 건너뛰었어요' }); sb.storage.from('exams').remove(j.paths || []).catch(() => {}); continue; }
+        patchJob(id, { status: 'printing' });
+        let res = { status: 'done', note: '' };
+        try {
+          const pages = [];
+          for (const pth of (j.paths || [])) {
+            const { data, error } = await sb.storage.from('exams').download(pth);
+            if (error) throw error;
+            pages.push(await blobToDataUrl(data));
+          }
+          const r = await window.KMMS_DESKTOP.print(pages, j.title || 'KMMS 출력', { staple: !!j.staple, duplex: !!j.duplex });
+          if (r && r.ok === false) throw new Error(r.reason || '프린터를 확인해 주세요');
+          if (r && r.stapleRequested && !r.stapleApplied) res.note = '스테이플은 지정하지 못했어요';
+          else if (r && r.duplexRequested && r.duplexApplied === false) res.note = '양면은 지정하지 못했어요';
+        } catch (e) { res = { status: 'failed', note: String((e && e.message) || e).slice(0, 120) }; }
+        patchJob(id, { status: res.status, note: res.note, doneAt: Date.now() });
+        sb.storage.from('exams').remove(j.paths || []).catch(() => {});
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      // 하루 지난 끝난 요청 정리 (한 번에 20개 이상 지우면 확인창이 떠서 10개씩)
+      const old = (state.printJobs || []).filter(j => j.status !== 'pending' && j.status !== 'printing' && Date.now() - j.at > 24 * 3600 * 1000).slice(0, 10);
+      if (old.length) { const ids = new Set(old.map(x => String(x.id))); state.printJobs = state.printJobs.filter(x => !ids.has(String(x.id))); saveState(); }
+    } catch (e) {
+      console.warn('print host tick failed', e);
+    } finally { hostBusy = false; }
+  }
+
   function hookSave() {
     if (typeof saveState !== 'function' || saveState.__kmms) return;
     const orig = saveState;
@@ -1039,6 +1149,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
 
   window.KMMS = {
     uploadExam, uploadAux, deleteFile, fetchBuf, stageExam, attachStaged, viewExam, push, poll,
+    sendPrint, waitPrint, setPrintHost, printHostAlive, get isPrintHost() { return isPrintHost(); }, get printHostInfo() { return (state.printHost && state.printHost.main) || null; },
     get ready() { return ready; }, get staff() { return staff; },
     // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
     get teacherName() { return !demoMode && staff && staff.approved && TEACHER_OPTIONS.includes(staff.name) ? staff.name : ''; },
