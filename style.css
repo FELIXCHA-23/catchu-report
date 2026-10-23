@@ -618,7 +618,8 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .rk-n { font-size: 12px; }
 .rk-pct { font-size: 12px; font-weight: 700; }
 .rk-more { margin-top: 8px; }
-@media (min-width: 1340px) {
+/* 본문(900px) 양옆 여백이 카드(280px)+간격보다 넉넉할 때만 왼쪽에 띄움 — 아이패드 가로(1366px) 같은 화면에서는 잘리므로 본문 맨 위에 그대로 표시 */
+@media (min-width: 1520px) {
   #retestRankCard { position: absolute; right: calc(100% + 14px); top: 0; width: 280px; }
 }
 
