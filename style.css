@@ -88,14 +88,14 @@ button { font-family: inherit; }
 @media (min-width: 1340px) {
   #weeklyStatusCard { position: absolute; right: calc(100% + 14px); top: 0; width: 210px; }
   #weeklyStatusCard .ws-badge { min-width: 0; padding: 2px 7px; font-size: 11px; }
-  #weeklyStatusCard .ws-name { width: 44px; }
+  #weeklyStatusCard .ws-name { width: auto; white-space: nowrap; }
   #weeklyStatusCard .ws-row { flex-wrap: wrap; gap: 4px; }
 }
 .ws-grade { margin-bottom: 10px; }
 .ws-round { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
 .drop-hot { outline: 2px dashed #1a7f37; outline-offset: 2px; background: #eafaf0; }
 .ws-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
-.ws-name { width: 56px; font-weight: 600; }
+.ws-name { width: 56px; font-weight: 600; white-space: nowrap; }
 .ws-badge { display: inline-block; min-width: 92px; text-align: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
 .ws-ok { background: #1a7f37; color: #fff; }
 .ws-no { background: #fdecea; color: #c0392b; border: 1px solid #c0392b; }
@@ -638,3 +638,8 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 
 .ws-who { flex-basis: 100%; font-size: 11px; color: var(--muted); }
 .drop-part .ws-who { margin-left: 8px; font-size: 11px; color: var(--muted); }
+
+@media (min-width: 1520px) { #weeklyStatusCard { width: 250px; } }
+/* 현황판: 올린 사람은 "보기" 옆에 이어 붙이고, 자리가 모자랄 때만 다음 줄로 */
+#weeklyStatusCard .ws-who { flex-basis: auto; white-space: nowrap; }
+@media (min-width: 1700px) { #weeklyStatusCard { width: 320px; } }
