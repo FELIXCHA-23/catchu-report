@@ -675,6 +675,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (demoMode) { toast('체험(guest) 모드에서는 시험지를 올릴 수 없어요.'); return false; }
     if (!ready || !round || !file || !file.dataUrl) return false;
     try {
+      if (typeof confirmFileGrade === 'function' && !(await confirmFileGrade(round, file))) return false;
       const { blob, ext } = await toPdfBlob(file);
       const path = `rounds/${round.id}/${Date.now()}.${ext}`;
       const { error } = await sb.storage.from('exams').upload(path, blob, { contentType: blob.type || undefined, upsert: false });
@@ -796,6 +797,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     if (!ready || !round || !f || !file || !file.dataUrl) return false;
     try {
       // 재시험지는 올리기 전에 고른 회차와 유형이 맞는지 확인하고, 더 잘 맞는 시험지가 있으면 선생님께 물어봄 (app.js checkRetestMatch)
+      if (typeof confirmFileGrade === 'function' && !(await confirmFileGrade(round, file))) return false;   // 파일 이름의 학년이 시험지 학년과 다르면 물어봄
       if (kind === 'retest' && typeof confirmRetestAnswers === 'function' && !(await confirmRetestAnswers(file))) return false;   // 빠른정답이 없으면 알려 주고 올릴지 물어봄
       window.__lastRetestInfo = file.__matched ? window.__lastRetestInfo : null;
       if (kind === 'retest' && !file.__matched && typeof checkRetestMatch === 'function') {

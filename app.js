@@ -1239,7 +1239,7 @@ function renderWeeklyStatus() {
   const can = window.KMMS && !window.KMMS.demo;
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
   const all = scopedRoundsAll().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
-  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? `<button class="icon-btn" data-ph-link="${r.id}">본시험지에 연결</button><span class="field-hint">또는 끌어다 놓아 분석</span>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
+  const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path && fileGradeMismatch(r, kind) ? `<span class="ws-badge ws-no" title="파일 이름에 ${fileGradeMismatch(r, kind)}라고 적혀 있어요. 다른 학년 시험지가 올라간 것 같아요. 교체해 주세요.">⚠ 파일은 ${fileGradeMismatch(r, kind)}</span>` : ''}${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? `<button class="icon-btn" data-ph-link="${r.id}">본시험지에 연결</button><span class="field-hint">또는 끌어다 놓아 분석</span>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
   document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round" data-round="${r.id}"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
@@ -1567,6 +1567,49 @@ function openLinkRetestOnly(phId) {
     toast('본시험지와 한 세트로 연결했어요.');
   });
 }
+/* ===== 파일 이름에 적힌 학년(중1, 고1…)이 시험지·학생의 학년과 다르면 알려 줌 (엉뚱한 학년 시험지가 붙는 실수 방지) ===== */
+function gradeInName(name) {
+  const m = String(name || '').match(/(?<![가-힣])(초[1-6]|중[1-3]|고[1-3])(?![0-9])/);
+  return m ? m[1] : '';
+}
+// 시험지(회차)에 올라간 파일의 이름이 다른 학년이면 그 학년을, 아니면 ''
+function fileGradeMismatch(round, kind) {
+  const g = gradeInName(kind === 'main' ? round.examName : round.retestName);
+  return g && round.grade && g !== round.grade ? g : '';
+}
+// 업로드 직전: 올리려는 파일 이름의 학년이 고른 시험지 학년과 다르면 물어봄. 올려도 되면 true
+function confirmFileGrade(round, file) {
+  const g = gradeInName(file && file.name);
+  if (!g || !round || !round.grade || g === round.grade) return Promise.resolve(true);
+  return new Promise(resolve => {
+    closeWsModal();
+    const ov = document.createElement('div');
+    ov.id = 'wsModal'; ov.className = 'ws-modal';
+    ov.innerHTML = `<div class="ws-modal-box"><h3>학년이 다른 것 같아요</h3>
+      <div class="ws-modal-file">${escapeHtml(file.name || '')}</div>
+      <div class="field-hint">이 파일 이름에는 <b>${escapeHtml(g)}</b>라고 적혀 있는데, 올리려는 시험지는 <b>${escapeHtml(round.grade)}</b> ${escapeHtml(roundLabel(round))}이에요.<br>잘못 올리면 ${escapeHtml(round.grade)} 학생에게 ${escapeHtml(g)} 재시험지가 나와요.</div>
+      <div class="ws-choices">
+        <button type="button" class="ws-bigbtn" data-fg="cancel">취소 — 다시 확인할게요</button>
+        <button type="button" class="ws-bigbtn" data-fg="go">${escapeHtml(round.grade)} 시험지가 맞아요, 그대로 올리기</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => {
+      const b = e.target.closest('[data-fg]');
+      if (b) { closeWsModal(); resolve(b.dataset.fg === 'go'); return; }
+      if (e.target === ov) { closeWsModal(); resolve(false); }
+    });
+  });
+}
+// 학생 재시험지를 만들 때 쓰는 경고 (학생 학년 · 시험지 학년 · 파일 이름 학년 비교)
+function retestGradeWarn(round, student) {
+  const fg = gradeInName(round.retestName);
+  const sg = student && (student.examGrade || student.grade);
+  const bad = fg && ((round.grade && fg !== round.grade) || (sg && fg !== sg));
+  if (!bad) return '';
+  const can = window.KMMS && !window.KMMS.demo;
+  return `<div class="field-hint" style="color:#c0392b;font-weight:700;">⚠ 이 재시험지 파일 이름은 "${escapeHtml(fg)}"인데, ${student ? escapeHtml(student.name) + ' 학생은 ' + escapeHtml(sg || round.grade || '') + ' · ' : ''}시험지는 ${escapeHtml(round.grade || '')}이에요. 학년이 다른 재시험지가 올라간 것 같아요. ${can ? `<button type="button" class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 교체</button>` : ''}</div>`;
+}
+
 // 지금 현황판에서 보고 있는 주차의 금요일(YYYY-MM-DD)
 function wsFridayIso() {
   const d = new Date(wsDateOf(wsWeekOffset) + 'T00:00:00');
@@ -1936,7 +1979,7 @@ function scheduleRetestGen(round, student, wrong) {
       if (seq !== retestGenSeq) return;
       if (retestGenUrl) URL.revokeObjectURL(retestGenUrl);
       retestGenUrl = URL.createObjectURL(res.blob);
-      const miss = res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '';
+      const miss = retestGradeWarn(round, student) + (res.missing && res.missing.length ? `<div class="field-hint" style="color:#c0392b;">재시험지에서 못 찾은 번호: ${res.missing.join(', ')}</div>` : '');
       const noAns = res.answersFound && res.answersFound.length ? '' : '<div class="field-hint">재시험지 맨 뒤에서 정답 쪽을 찾지 못해 정답 페이지는 빠졌어요.</div>';
       retestGenLast = { res, student, round, key: cacheKey };
       { const hw = document.getElementById('retestGenWrap'); if (hw) hw._rtLast = retestGenLast; }
@@ -3141,7 +3184,7 @@ function renderRetestTabPdf() {
       if (seq !== rtTabSeq) return;
       if (rtTabUrl) URL.revokeObjectURL(rtTabUrl);
       rtTabUrl = URL.createObjectURL(res.blob);
-      const miss = res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '';
+      const miss = (res.missing && res.missing.length ? ` <span class="field-hint" style="color:#c0392b;">못 찾은 번호: ${res.missing.join(', ')}</span>` : '') + `<div style="flex-basis:100%">${retestGradeWarn(round, student)}</div>`;
       const html = `<button type="button" class="btn" data-rt-print="all">재시험지 출력</button>${res.answerPages ? ' <button type="button" class="btn ghost" data-rt-print="ans">빠른정답만</button>' : ''} <a class="btn ghost" href="${rtTabUrl}" download="재시험_${escapeHtml(student.name)}_${roundLabel(round)}.pdf">PDF 저장</a> <span class="field-hint rt-status">A4 · 문제 ${res.problemPages}쪽 먼저, 이어서 빠른정답 ${res.answerPages}장</span>${miss}<div style="flex-basis:100%">${AUTOPRINT_HINT}</div>`;
       retestGenLast = { res, student, round, key, tabHtml: html };
       wrap._rtLast = retestGenLast;
