@@ -556,6 +556,8 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (typeof renderAll === 'function') renderAll();
       pollTimer = setInterval(poll, POLL_MS);
       clearInterval(window.__kmmsHostTimer); window.__kmmsHostTimer = setInterval(printHostTick, 6000);
+      // 원장 PC는 열면 바로, 방희진 PC는 출력 담당이 아무도 없을 때(원장 PC가 꺼짐·체크 해제) 대신 자동으로 켜짐 — 15초마다 확인
+      clearInterval(window.__kmmsAutoHostTimer); window.__kmmsAutoHostTimer = setInterval(() => { if (ready && !isPrintHost()) autoPrintHost().catch(() => {}); }, 15000);
       schedulePush(); // 시작 전에 생긴 로컬 변경(공용 시험지 반영 등) 올리기
       setTimeout(() => { autoPrintHost().catch(e => console.warn('auto print host failed', e)); }, 2000);   // 원장 PC는 열면 바로 출력 담당
       setTimeout(() => { healRetestFiles().catch(e => console.warn('heal failed', e)); }, 2500);   // 끊어진 재시험지 연결 되찾기
@@ -1023,6 +1025,8 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   const myDevice = (() => { try { let d = localStorage.getItem('kmms_device_id'); if (!d) { d = 'dv_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('kmms_device_id', d); } return d; } catch (e) { return 'dv_unknown'; } })();
   const LS_HOST_OFF = 'kmms_print_host_manual_off';   // 사용자가 직접 끈 PC는 자동으로 다시 켜지 않음
   const isPrioHost = () => !!(staff && staff.role === 'admin');   // 원장(관리자)이 연 앱은 출력 담당 최우선
+  const BACKUP_HOST_NAME = '방희진';   // 원장 PC가 꺼져 있거나 출력 담당이 아닐 때 대신 맡는 선생님
+  const isBackupHost = () => !!(staff && staff.name === BACKUP_HOST_NAME);
   const hostAppReady = () => !!(window.KMMS_DESKTOP && window.KMMS_DESKTOP.print);
   const isPrintHost = () => { try { return hostAppReady() && localStorage.getItem(LS_HOST) === '1'; } catch (e) { return false; } };
   // 켜기/끄기. 다른 PC가 이미 출력 담당으로 쓰는 중이면 켜지 않고 { ok: false, by: 그 PC의 선생님 이름 } 을 돌려줌 (출력 담당은 한 대만)
@@ -1047,7 +1051,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   // 원장이 앱을 열면 출력 담당이 자동으로 켜짐 (직접 끈 적이 있으면 그대로 둠)
   async function autoPrintHost() {
     try {
-      if (!hostAppReady() || !isPrioHost() || localStorage.getItem(LS_HOST_OFF) === '1' || isPrintHost()) return;
+      if (!hostAppReady() || !(isPrioHost() || isBackupHost()) || localStorage.getItem(LS_HOST_OFF) === '1' || isPrintHost()) return;
     } catch (e) { return; }
     const r = await setPrintHost(true);
     if (r && r.ok) toast(r.tookOver ? '이 PC가 아이패드 출력 담당을 이어받았어요.' : '이 PC가 아이패드 출력 담당으로 켜졌어요.');
