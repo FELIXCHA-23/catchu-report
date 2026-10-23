@@ -1604,9 +1604,13 @@ function confirmFileGrade(round, file) {
 function retestGradeWarn(round, student) {
   const fg = gradeInName(round.retestName);
   const sg = student && (student.examGrade || student.grade);
+  const can = window.KMMS && !window.KMMS.demo;
+  // 학생 학년과 이 회차의 학년이 다르면(예: 중1 학생이 고1 시험지로 채점돼 있음) 파일과 상관없이 알려 줌
+  if (student && sg && round.grade && sg !== round.grade) {
+    return `<div class="field-hint" style="color:#c0392b;font-weight:700;">⚠ ${escapeHtml(student.name)} 학생은 ${escapeHtml(sg)}인데, 이 채점 기록은 <b>${escapeHtml(round.grade)}</b> 시험지(${escapeHtml(roundLabel(round))})예요. 그래서 ${escapeHtml(round.grade)} 재시험지가 나와요. 채점 입력 탭 아래 "학생별 채점 현황"에서 이 회차 기록을 취소하고, ${escapeHtml(sg)} 시험지로 다시 채점하세요.</div>`;
+  }
   const bad = fg && ((round.grade && fg !== round.grade) || (sg && fg !== sg));
   if (!bad) return '';
-  const can = window.KMMS && !window.KMMS.demo;
   return `<div class="field-hint" style="color:#c0392b;font-weight:700;">⚠ 이 재시험지 파일 이름은 "${escapeHtml(fg)}"인데, ${student ? escapeHtml(student.name) + ' 학생은 ' + escapeHtml(sg || round.grade || '') + ' · ' : ''}시험지는 ${escapeHtml(round.grade || '')}이에요. 학년이 다른 재시험지가 올라간 것 같아요. ${can ? `<button type="button" class="icon-btn" data-exam-upload="${round.id}" data-kind="retest">재시험지 교체</button>` : ''}</div>`;
 }
 
@@ -2913,7 +2917,7 @@ function populateRetestRoundSelect() {
     .filter(x => x.round)
     .sort((a, b) => b.round.date.localeCompare(a.round.date));
   sel.innerHTML = withWrong.length
-    ? withWrong.map(({ r, round }) => `<option value="${round.id}">${escapeHtml(round.grade || '')} · ${roundLabel(round)} (${shortDate(round.date)}) · 오답 ${r.wrong.length}개</option>`).join('')
+    ? withWrong.map(({ r, round }) => { const st = state.students.find(s => s.id === studentId); const sg = st && (st.examGrade || st.grade); return `<option value="${round.id}">${sg && round.grade && sg !== round.grade ? '⚠ 학년 다름 · ' : ''}${escapeHtml(round.grade || '')} · ${roundLabel(round)} (${shortDate(round.date)}) · 오답 ${r.wrong.length}개</option>`; }).join('')
     : '<option value="">오답이 있는 회차가 없어요</option>';
 }
 
