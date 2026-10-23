@@ -557,6 +557,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       pollTimer = setInterval(poll, POLL_MS);
       clearInterval(window.__kmmsHostTimer); window.__kmmsHostTimer = setInterval(printHostTick, 6000);
       schedulePush(); // 시작 전에 생긴 로컬 변경(공용 시험지 반영 등) 올리기
+      setTimeout(() => { autoPrintHost().catch(e => console.warn('auto print host failed', e)); }, 2000);   // 원장 PC는 열면 바로 출력 담당
       setTimeout(() => { healRetestFiles().catch(e => console.warn('heal failed', e)); }, 2500);   // 끊어진 재시험지 연결 되찾기
     } catch (e) {
       console.error(e);
@@ -1020,23 +1021,36 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   const HOST_BEAT_MS = 60 * 1000;
   let hostBusy = false, lastBeat = 0;
   const myDevice = (() => { try { let d = localStorage.getItem('kmms_device_id'); if (!d) { d = 'dv_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('kmms_device_id', d); } return d; } catch (e) { return 'dv_unknown'; } })();
+  const LS_HOST_OFF = 'kmms_print_host_manual_off';   // 사용자가 직접 끈 PC는 자동으로 다시 켜지 않음
+  const isPrioHost = () => !!(staff && staff.role === 'admin');   // 원장(관리자)이 연 앱은 출력 담당 최우선
   const hostAppReady = () => !!(window.KMMS_DESKTOP && window.KMMS_DESKTOP.print);
   const isPrintHost = () => { try { return hostAppReady() && localStorage.getItem(LS_HOST) === '1'; } catch (e) { return false; } };
   // 켜기/끄기. 다른 PC가 이미 출력 담당으로 쓰는 중이면 켜지 않고 { ok: false, by: 그 PC의 선생님 이름 } 을 돌려줌 (출력 담당은 한 대만)
-  async function setPrintHost(on) {
+  async function setPrintHost(on, opts) {
+    opts = opts || {};
     if (!on) {
-      try { localStorage.setItem(LS_HOST, '0'); } catch (e) {}
+      try { localStorage.setItem(LS_HOST, '0'); if (opts.manual) localStorage.setItem(LS_HOST_OFF, '1'); } catch (e) {}
       const h = state.printHost && state.printHost.main;
       if (h && h.dev === myDevice) { delete state.printHost.main; saveState(); }   // 내가 쓰던 자리를 비워서 다른 PC가 바로 쓸 수 있게
       return { ok: true };
     }
     try { await poll(); } catch (e) {}
     const h = state.printHost && state.printHost.main;
-    if (h && h.dev !== myDevice && Date.now() - h.at < HOST_ALIVE_MS) return { ok: false, by: h.name || '다른 선생님' };
-    try { localStorage.setItem(LS_HOST, '1'); } catch (e) {}
+    const other = h && h.dev !== myDevice && Date.now() - h.at < HOST_ALIVE_MS;
+    // 다른 PC가 쓰는 중이면 거절. 단, 원장(최우선) PC는 일반 선생님 PC의 자리를 이어받음
+    if (other && !(isPrioHost() && !h.prio)) return { ok: false, by: h.name || '다른 선생님' };
+    try { localStorage.setItem(LS_HOST, '1'); localStorage.removeItem(LS_HOST_OFF); } catch (e) {}
     lastBeat = 0;
     printHostTick();
-    return { ok: true };
+    return { ok: true, tookOver: !!other };
+  }
+  // 원장이 앱을 열면 출력 담당이 자동으로 켜짐 (직접 끈 적이 있으면 그대로 둠)
+  async function autoPrintHost() {
+    try {
+      if (!hostAppReady() || !isPrioHost() || localStorage.getItem(LS_HOST_OFF) === '1' || isPrintHost()) return;
+    } catch (e) { return; }
+    const r = await setPrintHost(true);
+    if (r && r.ok) toast(r.tookOver ? '이 PC가 아이패드 출력 담당을 이어받았어요.' : '이 PC가 아이패드 출력 담당으로 켜졌어요.');
   }
   function printHostAlive() {
     const h = state.printHost && state.printHost.main;
@@ -1093,7 +1107,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     try {
       await poll();
       const cur = state.printHost && state.printHost.main;
-      if (cur && cur.dev !== myDevice && Date.now() - cur.at < HOST_ALIVE_MS) {
+      if (cur && cur.dev !== myDevice && Date.now() - cur.at < HOST_ALIVE_MS && !(isPrioHost() && !cur.prio)) {
         try { localStorage.setItem(LS_HOST, '0'); } catch (e) {}
         toast(`${cur.name || '다른 선생님'} 선생님 PC가 이미 출력 담당으로 쓰는 중이라, 이 PC는 출력 담당을 끌게요.`);
         return;
@@ -1102,7 +1116,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       if (now - lastBeat > HOST_BEAT_MS) {
         lastBeat = now;
         if (!state.printHost || typeof state.printHost !== 'object') state.printHost = {};
-        state.printHost.main = { at: now, name: (staff && (staff.name || shownId(staff.email))) || '', dev: myDevice };
+        state.printHost.main = { at: now, name: (staff && (staff.name || shownId(staff.email))) || '', dev: myDevice, prio: isPrioHost() ? 1 : 0 };
         saveState();
       }
       const jobs = (state.printJobs || []).filter(j => j.status === 'pending').sort((a, b) => a.at - b.at);

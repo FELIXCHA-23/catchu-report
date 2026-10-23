@@ -5359,7 +5359,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!(K && K.setPrintHost)) return;
     const want = box.checked;
     box.disabled = true;
-    const r = await K.setPrintHost(want);
+    const r = await K.setPrintHost(want, { manual: true });
     box.disabled = false;
     if (want && r && r.ok === false) {
       box.checked = false;
