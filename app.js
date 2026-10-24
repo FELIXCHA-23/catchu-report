@@ -3142,7 +3142,8 @@ function renderRetestRank() {
   mineWrap.style.display = teacher ? '' : 'none';
   const onlyMine = !!teacher && mineBox.checked;
   if (!round) { body.innerHTML = '<div class="empty-state">이 학년에는 시험지가 없어요.</div>'; return; }
-  const pool = new Set((onlyMine ? filterByCurrentTeacher(state.students) : state.students.filter(inStudentScope)).map(s => s.id));
+  // "내 학생만"은 전체 권한 선생님(원장 등)이어도 그 선생님이 담당인 학생만 남김 (filterByCurrentTeacher는 전체 권한이면 모두 돌려줘서 쓰지 않음)
+  const pool = new Set((onlyMine ? state.students.filter(inStudentScope).filter(s => s.teacher === teacher) : state.students.filter(inStudentScope)).map(s => s.id));
   // 보는 회차들: 한 시험지, 또는 고른 주차 범위 안의 모든 시험지
   let from = fSel.value, to = tSel.value;
   if (from > to) [from, to] = [to, from];
