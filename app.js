@@ -248,7 +248,7 @@ function knownUnitsByGrade() {
 const EXAM_ANALYSIS_PROMPT_TEMPLATE = (total, knownUnits = [], grade = '', gradeUnits = null) => `다음은 초·중·고 수학 시험지 이미지입니다. 이 시험지는 총 ${total}문항입니다. (시험지에 표시된 실제 총 문항 수가 다르면 total에 실제 문항 수를 적어주세요.)
 시험지에 표시된 유형(또는 단원) 구분을 참고하여 문항 번호를 유형별로 묶고, 각 유형이 대한민국 2022 개정 수학과 교육과정의 어떤 단원에 해당하는지 "대단원 - 중단원 - 소단원" 3단계로 판단해주세요 (예: "도함수의 활용 - 접선의 방정식과 평균값 정리 - 접선의 기울기"). 대단원·중단원은 교과서의 큰 챕터/절 단위로 크게 잡고, 소단원에 문항의 구체적인 개념을 적으세요.
 유형명(name)은 시험지에 문항마다 인쇄된 유형 이름이 있으면 그 이름을 그대로 쓰세요. 이름이 같거나 "(1)", "(2)", "①"처럼 번호만 다른 것은 하나의 유형으로 합쳐서 문항 번호를 한데 묶으세요 (예: "원의 접선의 방정식(1)", "(2)", "(3)" → "원의 접선의 방정식" 하나). 인쇄된 유형 이름이 없을 때만 직접 굵직하게 묶어주세요 (같은 단원 안에서 유형이 2~3개를 넘지 않게).
-유형을 너무 잘게 나누지 마세요. 개념과 풀이 방식이 비슷한 문항은 하나의 유형으로 묶어서 보고서에서 한눈에 묶여 보이게 하세요 (예: 지수법칙 문항 5개는 "지수법칙" 하나로, 접선 문항들은 "접선" 하나로, 대칭이동 문항들은 "대칭이동" 하나로). 중단원 하나에 유형은 보통 1~3개, 한 유형에는 가능하면 2문항 이상이 들어가게 하세요.${knownUnits.length ? `
+유형은 중단원 이름이 아니라 소단원(구체적인 개념·풀이) 수준으로 구분하세요. 중단원 하나를 통째로 유형 하나로 만들지 말고, 개념이나 풀이 방식이 다른 문항은 서로 다른 유형으로 나누되(예: 접선이면 "접선의 길이", "기울기가 주어진 접선", "원 밖의 한 점에서 그은 접선"처럼), 개념과 풀이가 같은 문항만 하나로 묶으세요. 대단원은 초·중등은 교과서의 대단원 이름(예: 소인수분해, 정수와 유리수, 문자와 식, 기본 도형, 입체도형, 통계), 고등은 과목의 대단원 이름(예: 도형의 방정식, 집합과 명제)으로 쓰고, "수와 연산", "기하", "함수", "확률과 통계" 같은 영역 이름은 대단원으로 쓰지 마세요.${knownUnits.length ? `
 같은 단원은 항상 같은 이름으로 써야 합니다. 이 학년(${grade})에서 이미 쓰고 있는 "대단원 - 중단원" 목록이에요. 문항이 이 중 어느 단원에 해당하면 철자와 띄어쓰기까지 목록의 이름을 글자 그대로 쓰고, 어느 것에도 맞지 않는 새 단원일 때만 새 이름을 만드세요:
 ${knownUnits.map(u => '- ' + u).join('\n')}` : (gradeUnits && Object.keys(gradeUnits).length ? `
 같은 단원은 항상 같은 이름으로 써야 합니다. 아래는 학년별로 이미 쓰고 있는 "대단원 - 중단원" 목록이에요. 시험지의 학년에 해당하는 목록 중 문항이 맞는 단원이 있으면 철자와 띄어쓰기까지 글자 그대로 쓰고, 어느 것에도 맞지 않는 새 단원일 때만 새 이름을 만드세요:
@@ -3639,11 +3639,11 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
   // 유형명이 아니라 중단원 기준으로 묶음 (typeGroupKey) — 유형명 그대로 묶으면 주차마다 이름이 조금씩
   // 달라 붙어서 너무 잘게 쪼개지고, 대단원까지만 묶으면 반대로 너무 뭉뚱그려져서 중단원 단위로 묶음
   const groupKeys = [];
-  windowed.forEach(x => x.round.types.forEach(t => { const key = typeGroupKey(t); if (!groupKeys.includes(key)) groupKeys.push(key); }));
+  windowed.forEach(x => x.round.types.forEach(t => { const key = typeDetailKey(t); if (!groupKeys.includes(key)) groupKeys.push(key); }));
   // 항상 "단원 순서대로" 보이도록 정렬 — 대단원이 먼저 기준이 되고(같은 대단원끼리는 반드시 붙어서 나오고),
   // 그 안에서는 중단원이 교육과정상 처음 나간 날짜 순. 복습 주차에 새 소단원이 섞여 들어와도 순서가 안 흔들림
   const majorOrder = buildUnitOrderMap(t => t.unit ? t.unit.split(' - ')[0].trim() : null);
-  const typeOrder = buildUnitOrderMap(typeGroupKey);
+  const typeOrder = buildUnitOrderMap(typeDetailKey);
   groupKeys.sort((a, b) => {
     const majorCmp = (majorOrder[a.split(' - ')[0]] || '9999').localeCompare(majorOrder[b.split(' - ')[0]] || '9999');
     if (majorCmp !== 0) return majorCmp;
@@ -3652,7 +3652,7 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
 
   const typeStats = groupKeys.map((key, i) => {
     const series = windowed.map(x => {
-      const matching = x.round.types.filter(tt => typeGroupKey(tt) === key);
+      const matching = x.round.types.filter(tt => typeDetailKey(tt) === key);
       const questions = matching.flatMap(tt => tt.questions);
       if (!questions.length) return null;
       const wrongSet = new Set(x.result.wrong);
@@ -3666,7 +3666,7 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     const last = vals.length ? vals[vals.length - 1] : null;
     const delta = (first !== null && last !== null) ? last - first : null;
     const classAvg = computeClassAverageByType(roundIds, key, studentId);
-    const { title, caption } = typeGroupLabel(key);
+    const { title, caption } = typeDetailLabel(key);
     return { name: title, unit: caption, color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
   });
 
@@ -3733,6 +3733,20 @@ function typeGroupKey(type) {
   return type.name;
 }
 
+// 유형별 정답률용 세분화 키 — 대단원 - 중단원 - 소단원(3단계)까지 구분. 3단계가 아니면 중단원 기준 키를 그대로 씀
+// 보고서를 출력(저장)하는 날 — 입학테스트 보고서의 날짜는 이 날짜로 표시함
+function printDateText() { const d = new Date(); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
+function typeDetailKey(type) {
+  if (type.unit) {
+    const parts = type.unit.split(' - ').map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 3) return parts.slice(0, 3).join(' - ');
+  }
+  return typeGroupKey(type);
+}
+function typeDetailLabel(key) {
+  const parts = key.split(' - ');
+  return parts.length >= 3 ? { title: parts.slice(2).join(' - '), caption: parts.slice(0, 2).join(' - ') } : typeGroupLabel(key);
+}
 // 그룹 키에서 카드 제목(중단원, 없으면 대단원)과 캡션(대단원, 중단원이 있을 때만)을 분리함
 function typeGroupLabel(groupKey) {
   const parts = groupKey.split(' - ');
@@ -3760,14 +3774,14 @@ function computeUnitBreakdown(windowed) {
     const wrongSet = new Set(x.result.wrong);
     x.round.types.forEach(t => {
       if (!t.unit || !t.questions.length) return;
-      const major = t.unit.split(' - ')[0].trim();
+      const major = typeGroupKey(t);   // 대단원 - 중단원
       const wrongInType = t.questions.filter(q => wrongSet.has(q)).length;
       if (!map[major]) map[major] = { unit: major, total: 0, correct: 0 };
       map[major].total += t.questions.length;
       map[major].correct += t.questions.length - wrongInType;
     });
   });
-  const unitOrder = buildUnitOrderMap(t => t.unit ? t.unit.split(' - ')[0].trim() : null);
+  const unitOrder = buildUnitOrderMap(t => t.unit ? typeGroupKey(t) : null);
   return Object.values(map).map(u => ({ ...u, pct: u.total ? Math.round((u.correct / u.total) * 100) : 0 })).sort((a, b) => (unitOrder[a.unit] || '9999').localeCompare(unitOrder[b.unit] || '9999'));
 }
 
@@ -3849,7 +3863,7 @@ function computeClassAverageByType(roundIds, groupKey, excludeStudentId) {
   state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
     const round = state.rounds.find(x => x.id === r.roundId);
     if (!round) return;
-    const questions = round.types.filter(tt => typeGroupKey(tt) === groupKey).flatMap(tt => tt.questions);
+    const questions = round.types.filter(tt => typeDetailKey(tt) === groupKey).flatMap(tt => tt.questions);
     if (!questions.length) return;
     const wrongSet = new Set(r.wrong);
     const wrongInType = questions.filter(q => wrongSet.has(q)).length;
@@ -4146,7 +4160,7 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
   }
   if (unitBreakdown && unitBreakdown.length) {
     const weakest = [...unitBreakdown].sort((a, b) => a.pct - b.pct)[0];
-    if (weakest.pct < 70) parts.push(`단원 중에서는 ${josa(weakest.unit, '을', '를')} 다음에 함께 좀 더 채워가면 좋겠어요.`);
+    if (weakest.pct < 70) parts.push(`단원 중에서는 ${josa(typeGroupLabel(weakest.unit).title, '을', '를')} 다음에 함께 좀 더 채워가면 좋겠어요.`);
   }
   if (retest && retest.items.length) {
     const retestPhrase = retest.overallPct >= 90 ? '재시험에서는 틀렸던 문항들을 거의 다 스스로 바로잡아냈어요.'
@@ -4341,10 +4355,10 @@ function renderReportTab() {
   const unitSection = unitBreakdown.length ? `
     <div class="card" data-rkey="unit">
       <h2>단원별 학습성과</h2>
-      <p class="card-sub">2022 개정 교육과정 단원 기준 · 기간 누적</p>
+      <p class="card-sub">교과서 중단원 기준 · 기간 누적</p>
       ${unitBreakdown.map(u => `
         <div class="unit-row">
-          <div class="unit-name">${escapeHtml(u.unit)}</div>
+          <div class="unit-name">${escapeHtml(typeGroupLabel(u.unit).title)}${typeGroupLabel(u.unit).caption ? `<span class="unit-sub">${escapeHtml(typeGroupLabel(u.unit).caption)}</span>` : ''}</div>
           <div class="unit-count">${u.total}문항</div>
           <div class="unit-bar-wrap">${buildBarRow(u.pct, u.pct < 70 ? 'var(--warn-dot)' : 'var(--data)')}</div>
           <div class="unit-pct tnum">${u.pct}%</div>
@@ -4416,7 +4430,7 @@ function renderReportTab() {
           <div class="student-name-big">${escapeHtml(displayName(student.name))}</div>
           <div>${[student.school, student.grade].filter(Boolean).map(escapeHtml).join(' ')}</div>
           ${student.teacher ? `<div>담임: ${escapeHtml(teacherDisplayName(student.teacher))} ${teacherTitle(student.teacher)}</div>` : ''}
-          <div>기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)</div>
+          <div>${isEntranceStudent(student) ? `출력일 ${escapeHtml(printDateText())}` : `기간 ${escapeHtml(first.date)} – ${escapeHtml(last.date)} (${points.length}회차)`}</div>
         </div>
       </div>
     </div>
@@ -4786,7 +4800,7 @@ async function pdfAddCoverPage(pdf, student, points) {
   const takenTxt = testDates.length ? (testDates.length === 1 ? fmtFull(testDates[0]) : `${fmtFull(testDates[0])} – ${fmtFull(testDates[testDates.length - 1])}`) : escapeHtml(period);
   const coverTitle = entrance ? '입학테스트 분석보고서' : '캐치유테스트 분석보고서';
   const infoItems = entrance
-    ? [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['응시일', takenTxt], ['담당', student.teacher ? teacherTxt : '캐슬수학']]
+    ? [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['출력일', printDateText()], ['담당', student.teacher ? teacherTxt : '캐슬수학']]
     : [['학교/학년', escapeHtml(schoolGradeText(student.school, student.grade))], ['측정 기간', `${escapeHtml(period)} (${points.length}회차)`], ['담임', teacherTxt]];
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed; left:-99999px; top:0;';
