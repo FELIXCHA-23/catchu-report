@@ -2554,7 +2554,14 @@ function populateScoreWeekFix() {
 }
 
 const ENTRANCE_CLASS = '입학테스트';
-function isEntranceRound(r) { return /입학\s*(테스트|TEST)/i.test(r.title || ''); }
+function isEntranceRound(r) {
+  if (/입학\s*(테스트|TEST)/i.test(r.title || '')) return true;
+  // 제목에 "입학테스트"가 없어도, 입학테스트 반 학생에게 배정된 개별 시험지면 입학테스트 시험지로 봄
+  const sts = state.students || [];
+  let st = r.studentId ? sts.find(s => s.id === r.studentId) : null;
+  const nm = r.studentName || r.hintName; if (!st && nm) { const same = sts.filter(s => s.name === nm); if (same.length === 1) st = same[0]; }
+  return !!st && st.class === ENTRANCE_CLASS;
+}
 function isEntranceStudent(s) { return !!s && s.class === ENTRANCE_CLASS; }
 
 // 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
