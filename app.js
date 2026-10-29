@@ -2309,7 +2309,11 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const data = JSON.parse(reader.result);
         if (!Array.isArray(data.types) || !data.types.length) throw new Error('형식 오류');
-        if (data.date && !document.getElementById('roundDate').value) document.getElementById('roundDate').value = data.date;
+        // 학년·제목·날짜가 들어 있으면 같이 채움 (Claude 채팅에서 만든 분석 파일)
+        const gSel = document.getElementById('roundGrade');
+        if (data.grade && [...gSel.options].some(x => x.value === data.grade)) gSel.value = data.grade;
+        if (data.title) document.getElementById('roundTitle').value = data.title;
+        if (data.date) { try { setRoundDate(data.date); } catch (e) { if (!document.getElementById('roundDate').value) document.getElementById('roundDate').value = data.date; } }
         if (data.total) document.getElementById('roundTotal').value = data.total;
         document.getElementById('typeRows').innerHTML = '';
         data.types.forEach(t => addTypeRow(t.name || '', rangeToString(t.questions || []), t.unit || ''));
