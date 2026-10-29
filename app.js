@@ -263,6 +263,8 @@ ${Object.keys(gradeUnits).map(g => '[' + g + ']\n' + gradeUnits[g].map(u => '- '
   - 연결: 실생활 소재의 문장제(word problem)처럼 수학을 현실 상황과 이어서 푸는 문제, 서로 다른 단원·영역의 개념이 한 문제에 함께 쓰이는 융합 문제(예: 함수+도형, 방정식+통계), 배운 개념을 다른 단원 개념과 연결지어야 하는 문제는 모두 연결로 판단하세요
   - 정보처리: 표·통계·여러 조건 등 주어진 자료를 정리·계산해서 처리하는 문제, 공식에 값을 대입해 기계적으로 계산하는 문제
 
+문항마다 그 문항이 속한 교육과정 학년-학기를 terms에 "중1-1"(학년-학기) 형식으로 적어주세요. 시험지에 출제 출처(예: "중1 1학기", "중2 1학기중간")가 인쇄돼 있으면 그대로 따르고, 없으면 문항 내용이 속한 교육과정(2022 개정)의 학년·학기를 판단하세요. 고등 공통수학1은 "고1-1", 공통수학2는 "고1-2"로 적고, 학기를 알 수 없으면 해당 문항은 빼세요.
+
 시험지 맨 위 제목에 "9월 5주차"처럼 주차가 인쇄돼 있으면, 그 주차를 week에 "9-5" 형식(월-주차 숫자)으로, 시험지에 인쇄된 제목을 printedTitle에 그대로 적어주세요. 주차가 인쇄돼 있지 않으면 week는 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
 
 이 시험지가 몇 학년 교육과정인지 반드시 grade에 "초3"~"고3" 중 하나로("고1" 형식) 적어주세요. 제목이나 머리글에 학년이 인쇄돼 있으면("고1", "중2", "초5-1", "중1 LEVEL TEST" 같은 표기) 그대로 따르고 gradeBasis에 "printed"를, 인쇄돼 있지 않으면 문항 내용이 속한 대한민국 2022 개정 교육과정(단원·개념·난이도)을 보고 가장 알맞은 학년 하나를 판단해서 gradeBasis에 "content"를 적어주세요. grade는 절대 비워두지 마세요 (여러 학년에 걸친 시험지면 문항 대부분이 속한 학년으로).
@@ -280,7 +282,8 @@ ${Object.keys(gradeUnits).map(g => '[' + g + ']\n' + gradeUnits[g].map(u => '- '
     { "name": "유형명", "unit": "대단원 - 중단원 - 소단원", "questions": [1,2,3] }
   ],
   "difficulty": { "1": 2, "2": 3 },
-  "competency": { "1": "문제해결", "2": "추론" }
+  "competency": { "1": "문제해결", "2": "추론" },
+  "terms": { "1": "중1-1", "2": "중1-2" }
 }`;
 
 // "9-5주차" 같은 표기에 해당하는 금요일을 날짜 목록에서 찾음. 주차에는 연도가 없어서 같은 표기가 다른 해에도 있으므로,
@@ -447,6 +450,7 @@ async function analyzeExamWithAI() {
     if (json.total) document.getElementById('roundTotal').value = json.total;
     pendingDifficulty = (json.difficulty && typeof json.difficulty === 'object') ? json.difficulty : null;
     pendingCompetency = (json.competency && typeof json.competency === 'object') ? json.competency : null;
+    pendingTerms = (json.terms && typeof json.terms === 'object') ? json.terms : null;
     updateCoverageHint();
     let weekNote = applyPrintedGrade(json); // 시험지에 적힌 학년을 먼저 채우고, 그 학년 기준으로 날짜를 맞춤
     if (needsWeekAsk(json)) {
@@ -513,6 +517,7 @@ let editingStudentId = null;
 let pendingExamFile = null;
 let pendingDifficulty = null;
 let pendingCompetency = null;
+let pendingTerms = null;
 // 채점 입력에서 마지막으로 저장한 학생 — 재시험 탭으로 넘어갔을 때 그 학생이 바로 선택되어 있게 씀
 let lastScoredStudentId = null;
 
@@ -1105,6 +1110,7 @@ function resetRoundForm() {
   pendingExamFile = null;
   pendingDifficulty = null;
   pendingCompetency = null;
+  pendingTerms = null;
   document.getElementById('roundForm').reset();
   document.getElementById('roundDate').dataset.picked = '';
   populateRoundDateSelect(document.getElementById('roundDate'), '');
@@ -2304,6 +2310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         data.types.forEach(t => addTypeRow(t.name || '', rangeToString(t.questions || []), t.unit || ''));
         pendingDifficulty = (data.difficulty && typeof data.difficulty === 'object') ? data.difficulty : null;
         pendingCompetency = (data.competency && typeof data.competency === 'object') ? data.competency : null;
+        pendingTerms = (data.terms && typeof data.terms === 'object') ? data.terms : null;
         updateCoverageHint();
         document.getElementById('manualFallback').open = true;
         toast('AI 분석 결과를 불러왔어요. 확인 후 회차를 저장하세요.');
@@ -2344,9 +2351,10 @@ document.addEventListener('DOMContentLoaded', () => {
       r.date = date; r.grade = grade; r.total = total; r.types = types; r.examFile = storableExamFile(pendingExamFile); r.title = title || undefined;
       if (finalDifficulty) r.difficulty = finalDifficulty;
       if (mergedCompetency) r.competency = mergedCompetency;
+      if (pendingTerms) r.terms = pendingTerms;
       savedRound = r;
     } else {
-      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined };
+      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined, terms: pendingTerms || undefined };
       state.rounds.push(savedRound);
       const rtInfoless = state.rounds.some(x => x.retestOnly && x.grade === savedRound.grade && x.retestPath && !(x.retestInfo && x.retestInfo.types && Object.keys(x.retestInfo.types).length >= 5));
       if (rtInfoless && mergeRetestOnlyInto(savedRound)) toast('먼저 올려 둔 재시험지를 이 회차에 합쳤어요.');
@@ -2362,6 +2370,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainFileForInfo = pendingExamFile;
     pendingDifficulty = null;
     pendingCompetency = null;
+    pendingTerms = null;
     resetRoundForm();
     renderRounds(); populateSelects();
     toast('회차를 저장했어요.');
@@ -3595,8 +3604,10 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
 
   // 재시험 (원래 회차의 오답 문항을 쌍둥이문제로 재검사한 기록) — 메인 정답률과는 별도로 집계
   const retest = computeRetestSummary(studentId, points);
+  const termStats = computeTermBreakdown(windowed);
+  const focusUnits = computeFocusUnits(windowed);
 
-  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, competencyHasAnyData, retest };
+  return { student, points, typeStats, overallPct, classAvgOverall, difficulty: diff, unitBreakdown, competencyStats, competencyHasAnyData, retest, termStats, focusUnits };
 }
 
 function computeRetestSummary(studentId, points) {
@@ -3670,6 +3681,47 @@ function computeUnitBreakdown(windowed) {
   });
   const unitOrder = buildUnitOrderMap(t => t.unit ? t.unit.split(' - ')[0].trim() : null);
   return Object.values(map).map(u => ({ ...u, pct: u.total ? Math.round((u.correct / u.total) * 100) : 0 })).sort((a, b) => (unitOrder[a.unit] || '9999').localeCompare(unitOrder[b.unit] || '9999'));
+}
+
+// 문항별 학년-학기 표기를 "중1-1" 꼴로 통일 ("중1 1학기", "중2 1학기중간" 등도 받음)
+function normTerm(s) {
+  const m = String(s || '').match(/(초|중|고)\s*([1-6])\s*[-·\s]?\s*([12])/);
+  return m ? `${m[1]}${m[2]}-${m[3]}` : '';
+}
+function termSortKey(t) { const m = t.match(/(초|중|고)(\d)-(\d)/); return m ? ({ 초: 0, 중: 1, 고: 2 }[m[1]] * 100 + (+m[2]) * 10 + (+m[3])) : 999; }
+// 학기별 정답률 — 시험지에 문항별 학기(round.terms)가 있을 때만 집계
+function computeTermBreakdown(windowed) {
+  const map = {};
+  windowed.forEach(x => {
+    const tm = x.round.terms;
+    if (!tm) return;
+    const wrongSet = new Set(x.result.wrong);
+    for (let q = 1; q <= x.round.total; q++) {
+      const t = normTerm(tm[q] ?? tm[String(q)]);
+      if (!t) continue;
+      if (!map[t]) map[t] = { term: t, total: 0, correct: 0 };
+      map[t].total += 1;
+      if (!wrongSet.has(q)) map[t].correct += 1;
+    }
+  });
+  return Object.values(map).map(u => ({ ...u, pct: Math.round((u.correct / u.total) * 100) })).sort((x, y) => termSortKey(x.term) - termSortKey(y.term));
+}
+// 입학 후 먼저 채울 단원: 중단원 단위로 묶어 정답률이 낮은 순서(같으면 틀린 문항이 많은 순) 상위 3개, 만점 단원은 제외
+function computeFocusUnits(windowed) {
+  const map = {};
+  windowed.forEach(x => {
+    const wrongSet = new Set(x.result.wrong);
+    x.round.types.forEach(t => {
+      if (!t.questions || !t.questions.length) return;
+      const key = typeGroupKey(t);
+      if (!map[key]) map[key] = { key, total: 0, wrong: 0 };
+      map[key].total += t.questions.length;
+      map[key].wrong += t.questions.filter(q => wrongSet.has(q)).length;
+    });
+  });
+  return Object.values(map).filter(u => u.wrong > 0)
+    .map(u => ({ ...u, pct: Math.round(((u.total - u.wrong) / u.total) * 100), ...typeGroupLabel(u.key) }))
+    .sort((x, y) => x.pct - y.pct || y.wrong - x.wrong).slice(0, 3);
 }
 
 // 역량은 문항 단위(round.competency: {문항번호: 역량})로 집계 — 같은 유형 안에서도 문항마다 다를 수 있음
@@ -4050,7 +4102,7 @@ function populateReportRoundSelects() {
 const REPORT_PART_NAMES = {
   masthead: '제목 영역', pillGrade: '예상 등급', pillRate: '정답률', pillCount: '채점 문항 수', pillDiff: '시험 난이도', pillDelta: '상승/최고 기록',
   trend: '전체 정답률 추이', note: '선생님 의견', sw: '대표 강점·취약 유형', extend: '추가 추이 그래프', types: '유형별 정답률',
-  retest: '재시험 결과', unit: '단원별 학습성과', diff: '난이도 분석', radar: '핵심역량', table: '회차별 상세 기록',
+  retest: '재시험 결과', unit: '단원별 학습성과', term: '학기별 정답률', first3: '입학 후 먼저 채울 단원', diff: '난이도 분석', radar: '핵심역량', table: '회차별 상세 기록',
 };
 function updateReportPillColumns(out) {
   const row = out.querySelector('.pill-row');
@@ -4110,7 +4162,7 @@ function renderReportTab() {
     out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? displayName(data.student.name) : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
     return;
   }
-  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, competencyHasAnyData, retest } = data;
+  const { student, points, typeStats, overallPct, classAvgOverall, difficulty, unitBreakdown, competencyStats, competencyHasAnyData, retest, termStats, focusUnits } = data;
   const first = points[0], last = points[points.length - 1];
   const totalQ = points.reduce((a, p) => a + p.total, 0);
   const delta = last.pct - first.pct;
@@ -4168,6 +4220,33 @@ function renderReportTab() {
           <div class="unit-count">오답 ${it.originalWrong}개</div>
           <div class="unit-bar-wrap">${buildBarRow(it.pct, it.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
           <div class="unit-pct tnum">${it.corrected}/${it.originalWrong}</div>
+        </div>`).join('')}
+    </div>` : '';
+
+  // 학기가 둘 이상 섞인 시험지면 학기별 정답률 (체크박스로 PDF에서 뺄 수 있음)
+  const termSection = (termStats && termStats.length >= 2) ? `
+    <div class="card" data-rkey="term">
+      <h2>학기별 정답률</h2>
+      <p class="card-sub">시험지에 섞여 있는 학년·학기별로 나눈 정답률 · 기간 누적</p>
+      ${termStats.map(u => `
+        <div class="unit-row">
+          <div class="unit-name">${escapeHtml(u.term.replace('-', ' ') + '학기')}</div>
+          <div class="unit-count">${u.total}문항</div>
+          <div class="unit-bar-wrap">${buildBarRow(u.pct, u.pct < 70 ? 'var(--warn-dot)' : 'var(--good)')}</div>
+          <div class="unit-pct tnum">${u.pct}%</div>
+        </div>`).join('')}
+    </div>` : '';
+  // 초등 입학테스트: 입학 후 먼저 채울 단원 상위 3개
+  const firstFocusSection = (isEntranceStudent(student) && isElementaryGrade(student.examGrade || student.grade) && focusUnits && focusUnits.length) ? `
+    <div class="card" data-rkey="first3">
+      <h2>입학 후 먼저 채울 단원 TOP ${focusUnits.length}</h2>
+      <p class="card-sub">이번 입학테스트에서 정답률이 낮았던 단원 순서 · 입학 후 가장 먼저 함께 다져갈 부분이에요</p>
+      ${focusUnits.map((u, i) => `
+        <div class="unit-row">
+          <div class="unit-name"><b>${i + 1}</b> ${escapeHtml(u.title)}${u.caption ? `<span class="unit-sub">${escapeHtml(u.caption)}</span>` : ''}</div>
+          <div class="unit-count">${u.total}문항 중 ${u.wrong}문항</div>
+          <div class="unit-bar-wrap">${buildBarRow(u.pct, 'var(--warn-dot)')}</div>
+          <div class="unit-pct tnum">${u.pct}%</div>
         </div>`).join('')}
     </div>` : '';
 
@@ -4340,6 +4419,8 @@ function renderReportTab() {
       <p class="card-sub">최근 정답률</p>
       <div class="type-grid">${typeCards}</div>
     </div>
+    ${firstFocusSection}
+    ${termSection}
     ${retestSection}
     ${unitSection}
     ${diffSection}
