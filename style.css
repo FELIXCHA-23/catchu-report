@@ -699,3 +699,7 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 
 /* 입학테스트 채점 입력: 학생 이름을 왼쪽에, 시험지를 오른쪽에 */
 .view-entrance #scoreStudentSel { order: -1; }
+
+/* 보고서 출력일 칸: 입학테스트 화면에서만 */
+#reportPrintDateWrap { display: none; align-items: center; gap: 4px; }
+.view-entrance #reportPrintDateWrap { display: inline-flex; }

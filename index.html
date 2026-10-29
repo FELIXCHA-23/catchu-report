@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=112">
+<link rel="stylesheet" href="style.css?v=113">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -478,6 +478,7 @@
         <span class="field-hint">부터</span>
         <select id="reportToSel"></select>
         <span class="field-hint">까지</span>
+        <label class="field-hint" id="reportPrintDateWrap" title="보고서에 찍히는 날짜 (기본: 오늘)">출력일 <input type="date" id="reportPrintDate"></label>
         <label class="field-hint" style="display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="pdfCoverToggle" checked> 겉표지 포함</label>
         <button type="button" class="btn primary" id="pdfExportBtn">PDF 저장</button>
         <span id="pdfExportStatus" class="field-hint"></span>
@@ -533,7 +534,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=15"></script>
-<script src="app.js?v=243"></script>
+<script src="app.js?v=245"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

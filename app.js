@@ -1279,10 +1279,10 @@ function renderEntranceStatus() {
         <div class="ent-types">${gr.list.map(t => `<span class="ent-type" title="${escapeHtml(t.unit || '')}">${escapeHtml(t.name)} <i>${rangeToString(t.questions || [])}</i></span>`).join('')}</div></div>`).join('')
         : '<div class="field-hint">유형 정보가 아직 없어요 (분석 전)</div>';
       const upBtn = can ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
-      return `<div class="ws-round" data-round="${r.id}"><div class="ent-head"><span class="ent-title">${escapeHtml(r.title || shortDate(r.date))}${roundStudentTag(r)}</span>
+      return `<div class="ws-round" data-round="${r.id}"><div class="ent-head"><span class="ent-title">${escapeHtml(r.title || '입학테스트')}${roundStudentTag(r)}</span>
         <span class="ws-badge ${r.examPath ? 'ws-ok' : 'ws-no'}">${r.examPath ? '✓ 업로드완료' : '✗ 시험지없음'}</span>
         ${r.examPath ? `<a href="#" data-exam-open="${r.id}">보기</a>${uploadWhoHtml(r, 'main')}` : ''}${upBtn}
-        <span class="field-hint">${r.total || ''}문항 · ${shortDate(r.date)}</span></div>
+        <span class="field-hint">${r.total || ''}문항</span></div>
         <details class="ent-details"><summary class="field-hint" style="cursor:pointer;">유형별 문항 보기${groups.length ? ` (단원 ${groups.length}개)` : ''}</summary>${typeHtml}</details></div>`;
     }).join('');
     return `<div class="ws-grade" data-grade="${escapeHtml(g)}"><b>${escapeHtml(g)}</b> <span class="field-hint">시험지 ${rs.length}개 중 ${done}개 업로드 · 입학테스트 학생 ${n}명</span>${items}</div>`;
@@ -2614,7 +2614,7 @@ function populateScoreExamSel(prefDate) {
     : scopedRounds().filter(r => r.grade === grade && roundWeekKey(r) === key).sort((x, y) => x.date.localeCompare(y.date));
   const multiDate = new Set(rounds.map(r => r.date)).size > 1;
   sel.innerHTML = rounds.length
-    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ' + shortDate(r.date) + ' · ') : (multiDate ? shortDate(r.date) + ' · ' : '')}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
+    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ') : (multiDate ? shortDate(r.date) + ' · ' : '')}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
     : '<option value="">시험지를 먼저 등록하세요</option>';
   if (entranceAll && !rounds.some(r => r.id === prev)) {
     const stu = state.students.find(s => s.id === document.getElementById('scoreStudentSel').value);
@@ -3633,7 +3633,7 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     const wrongSet = new Set(x.result.wrong);
     const correct = x.round.total - wrongSet.size;
     const pct = x.round.total ? Math.round((correct / x.round.total) * 100) : 0;
-    return { label: x.label, date: shortDate(x.round.date), pct, correct, total: x.round.total, roundId: x.round.id };
+    return { label: isEntranceStudent(student) ? '입학테스트' : x.label, date: isEntranceStudent(student) ? shortDate(printDateISO()) : shortDate(x.round.date), pct, correct, total: x.round.total, roundId: x.round.id };
   });
 
   // 유형명이 아니라 중단원 기준으로 묶음 (typeGroupKey) — 유형명 그대로 묶으면 주차마다 이름이 조금씩
@@ -3735,7 +3735,12 @@ function typeGroupKey(type) {
 
 // 유형별 정답률용 세분화 키 — 대단원 - 중단원 - 소단원(3단계)까지 구분. 3단계가 아니면 중단원 기준 키를 그대로 씀
 // 보고서를 출력(저장)하는 날 — 입학테스트 보고서의 날짜는 이 날짜로 표시함
-function printDateText() { const d = new Date(); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
+function printDateISO() {
+  const el = document.getElementById('reportPrintDate');
+  if (el && /^\d{4}-\d{2}-\d{2}$/.test(el.value)) return el.value;
+  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function printDateText() { const [y, m, d] = printDateISO().split('-').map(Number); return `${y}.${m}.${d}`; }
 function typeDetailKey(type) {
   if (type.unit) {
     const parts = type.unit.split(' - ').map(s => s.trim()).filter(Boolean);
@@ -4249,6 +4254,13 @@ function setupReportPartToggles(out, studentId) {
     };
   }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('reportPrintDate');
+  if (!el) return;
+  el.value = printDateISO();
+  el.addEventListener('change', () => { if (!el.value) el.value = printDateISO(); renderReportTab(); });
+});
 
 function renderReportTab() {
   try { renderReportArchive(); } catch (e) { console.warn(e); }
