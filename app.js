@@ -1251,10 +1251,12 @@ function renderEntranceStatus() {
   if (!body) return;
   if (appScope() !== 'entrance') { body.innerHTML = ''; return; }
   const can = window.KMMS && !window.KMMS.demo;
-  const rounds = scopedRoundsAll().filter(r => !r.individual && isEntranceRound(r));
+  const rounds = scopedRoundsAll().filter(r => isEntranceRound(r) && !r.retestOnly);
+  const pending = (state.examUploads || []).filter(u => !u.roundId).sort((x, y) => y.at - x.at);
   const grades = [...new Set(rounds.map(r => r.grade || '학년 없음'))]
     .sort((x, y) => (ENT_GRADE_ORDER.indexOf(x) + 1 || 99) - (ENT_GRADE_ORDER.indexOf(y) + 1 || 99));
-  if (!grades.length) { body.innerHTML = '<div class="field-hint">아직 등록된 입학테스트 시험지가 없어요. 채점 입력 탭에서 시험지를 올려 분석하면 여기에 나타나요.</div>'; return; }
+  const pendHtml = pending.length ? `<div class="ws-grade"><b>아직 시험지로 등록되지 않은 업로드</b> <span class="field-hint">분석만 하고 저장하지 않은 파일이에요. 시험지 탭에서 회차를 저장하면 학년별로 들어가요.</span>${pending.map(u => { const d = new Date(u.at); return `<div class="ws-round"><span>${escapeHtml(u.name)}</span> <span class="field-hint">${escapeHtml(u.by || '')} · ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</span> <a href="#" data-upload-open="${escapeHtml(u.id)}">보기</a></div>`; }).join('')}</div>` : '';
+  if (!grades.length) { body.innerHTML = pendHtml || '<div class="field-hint">아직 등록된 입학테스트 시험지가 없어요. 채점 입력 탭에서 시험지를 올려 분석하면 여기에 나타나요.</div>'; return; }
   const kids = state.students.filter(isEntranceStudent);
   body.innerHTML = grades.map(g => {
     const rs = rounds.filter(r => (r.grade || '학년 없음') === g).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
@@ -1273,13 +1275,14 @@ function renderEntranceStatus() {
         <div class="ent-types">${gr.list.map(t => `<span class="ent-type" title="${escapeHtml(t.unit || '')}">${escapeHtml(t.name)} <i>${rangeToString(t.questions || [])}</i></span>`).join('')}</div></div>`).join('')
         : '<div class="field-hint">유형 정보가 아직 없어요 (분석 전)</div>';
       const upBtn = can ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
-      return `<div class="ws-round" data-round="${r.id}"><div class="ent-head"><span class="ent-title">${escapeHtml(r.title || shortDate(r.date))}</span>
+      return `<div class="ws-round" data-round="${r.id}"><div class="ent-head"><span class="ent-title">${escapeHtml(r.title || shortDate(r.date))}${roundStudentTag(r)}</span>
         <span class="ws-badge ${r.examPath ? 'ws-ok' : 'ws-no'}">${r.examPath ? '✓ 업로드완료' : '✗ 시험지없음'}</span>
         ${r.examPath ? `<a href="#" data-exam-open="${r.id}">보기</a>${uploadWhoHtml(r, 'main')}` : ''}${upBtn}
-        <span class="field-hint">${r.total || ''}문항 · ${shortDate(r.date)}</span></div>${typeHtml}</div>`;
+        <span class="field-hint">${r.total || ''}문항 · ${shortDate(r.date)}</span></div>
+        <details class="ent-details"><summary class="field-hint" style="cursor:pointer;">유형별 문항 보기${groups.length ? ` (단원 ${groups.length}개)` : ''}</summary>${typeHtml}</details></div>`;
     }).join('');
     return `<div class="ws-grade" data-grade="${escapeHtml(g)}"><b>${escapeHtml(g)}</b> <span class="field-hint">시험지 ${rs.length}개 중 ${done}개 업로드 · 입학테스트 학생 ${n}명</span>${items}</div>`;
-  }).join('');
+  }).join('') + pendHtml;
 }
 
 /* ===== 채점 입력: 주간 시험지 업로드 현황 (중1~고2) ===== */
