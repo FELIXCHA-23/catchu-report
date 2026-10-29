@@ -696,3 +696,6 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .ent-types { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .ent-type { font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; }
 .ent-type i { font-style: normal; opacity: .6; margin-left: 2px; }
+
+/* 입학테스트 채점 입력: 학생 이름을 왼쪽에, 시험지를 오른쪽에 */
+.view-entrance #scoreStudentSel { order: -1; }

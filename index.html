@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=111">
+<link rel="stylesheet" href="style.css?v=112">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -336,6 +336,10 @@
     <div class="card">
       <h2>입학테스트 현황</h2>
       <p class="card-sub">학년별로 입학테스트 시험지가 올라갔는지, 시험지에 어떤 유형(단원)이 몇 문항 들어 있는지 한눈에 봐요.</p>
+      <div id="entUploadBox" class="ws-drop" style="margin-bottom:12px;">
+        <div>입학테스트 시험지 파일(PDF·사진)을 이 화면 어디에나 끌어다 놓거나 아래 버튼으로 고르세요. 분석 후 자동으로 입학테스트 시험지로 저장돼요.</div>
+        <div class="ws-drop-btns"><button type="button" class="btn ghost" id="entPickBtn">시험지 파일 올리기</button></div>
+      </div>
       <div id="entStatusBody"></div>
     </div>
   </section>
@@ -529,7 +533,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=15"></script>
-<script src="app.js?v=237"></script>
+<script src="app.js?v=240"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

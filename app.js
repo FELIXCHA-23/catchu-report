@@ -1249,6 +1249,8 @@ const ENT_GRADE_ORDER = ['초1','초2','초3','초4','초5','초6','중1','중2'
 function renderEntranceStatus() {
   const body = document.getElementById('entStatusBody');
   if (!body) return;
+  const up = document.getElementById('entUploadBox');
+  if (up) up.style.display = (window.KMMS && !window.KMMS.demo) ? '' : 'none';
   if (appScope() !== 'entrance') { body.innerHTML = ''; return; }
   const can = window.KMMS && !window.KMMS.demo;
   const rounds = scopedRoundsAll().filter(r => isEntranceRound(r) && !r.retestOnly);
@@ -2522,6 +2524,73 @@ function populateScoreRoundGroupSel(req) {
   populateScoreExamSel(prefDate);
 }
 
+// 입학테스트 화면: 학생을 먼저 고르고, 그 학생에게 맞는 시험지만 오른쪽에 보여줌
+function roundOwnerId(r) {
+  if (r.studentId) return r.studentId;
+  const nm = r.studentName || r.hintName;
+  if (!nm) return '';
+  const same = state.students.filter(s => s.name === nm);
+  return same.length === 1 ? same[0].id : '';
+}
+function entranceRoundsFor(student) {
+  const lvl = ((student && (student.examGrade || student.grade)) || '').charAt(0);
+  return scopedRounds().filter(r => {
+    const owner = roundOwnerId(r);
+    if (owner && student && owner !== student.id) return false;          // 다른 학생의 개별 시험지는 안 보임
+    if (lvl === '고' && !owner && /^(초|중)/.test(r.grade || '')) return false;   // 고등학생에게는 초등·중등 시험지를 자동으로 뺌
+    return true;
+  }).sort((x, y) => ((roundOwnerId(y) === (student && student.id)) - (roundOwnerId(x) === (student && student.id))) || (y.date || '').localeCompare(x.date || '') || (x.grade || '').localeCompare(y.grade || ''));
+}
+function populateEntranceStudentSelect() {
+  const sel = document.getElementById('scoreStudentSel');
+  const prev = sel.value;
+  let list = state.students.filter(isEntranceStudent);
+  const sp = splitMineAndOthers(list);
+  list = sp.mine.concat(sp.others);
+  sel.innerHTML = list.length
+    ? groupedOptions(sp.mine, sp.others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`)
+    : '<option value="">입학테스트 반 학생이 없어요</option>';
+  if (list.some(s => s.id === prev)) sel.value = prev;
+}
+// 입학테스트 화면에서 시험지 파일을 놓거나 고르면 시험지 탭의 등록 칸에 넣고 바로 AI 분석(분석 뒤 회차로 자동 저장)
+function entranceUploadFile(file) {
+  if (!file) return;
+  if (!(file.type === 'application/pdf' || (file.type || '').startsWith('image/'))) { toast('이미지(JPG·PNG)나 PDF 파일만 올릴 수 있어요.'); return; }
+  switchTab('rounds');
+  const input = document.getElementById('examFileInput');
+  const dt = new DataTransfer(); dt.items.add(file);
+  input.files = dt.files;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  toast('시험지를 올리고 분석을 시작해요. 끝나면 입학테스트 현황에 나타나요.');
+  let tries = 0;
+  const wait = setInterval(() => {
+    tries++;
+    if (pendingExamFile && pendingExamFile.fresh && pendingExamFile.dataUrl) { clearInterval(wait); analyzeExamWithAI(); }
+    else if (tries > 50) { clearInterval(wait); toast('시험지를 읽지 못했어요. 시험지 탭에서 다시 올려주세요.'); }
+  }, 300);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+  const inEntZone = e => appScope() === 'entrance'
+    && ['panel-score', 'panel-entstatus'].some(id => { const el = document.getElementById(id); return el && el.classList.contains('active'); })
+    && !(e.target.closest && e.target.closest('input[type=file]'));
+  document.addEventListener('drop', e => {
+    if (!hasFiles(e) || !inEntZone(e)) return;
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files.length > 1) toast('한 번에 한 파일씩 올려 주세요. 첫 번째 파일만 올려요.');
+    entranceUploadFile(files[0]);
+  });
+  document.addEventListener('click', e => {
+    const b = e.target.closest('#entPickBtn');
+    if (!b) return;
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/pdf,image/*';
+    input.onchange = () => entranceUploadFile(input.files[0]);
+    input.click();
+  });
+});
+
 // 같은 주차에 시험지가 여러 개인 경우(진도가 다른 반, 날짜가 다른 시험 등) 어떤 시험지인지 고름
 function populateScoreExamSel(prefDate) {
   const grade = document.getElementById('scoreGradeSel').value;
@@ -2530,14 +2599,19 @@ function populateScoreExamSel(prefDate) {
   const prev = sel.value;
   // 입학테스트 화면은 학년·날짜와 상관없이 등록된 입학테스트 시험지를 전부 고를 수 있음 (최신순)
   const entranceAll = appScope() === 'entrance';
+  if (entranceAll) populateEntranceStudentSelect();
   const rounds = entranceAll
-    ? scopedRounds().slice().sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.grade || '').localeCompare(y.grade || ''))
+    ? entranceRoundsFor(state.students.find(s => s.id === document.getElementById('scoreStudentSel').value))
     : scopedRounds().filter(r => r.grade === grade && roundWeekKey(r) === key).sort((x, y) => x.date.localeCompare(y.date));
   const multiDate = new Set(rounds.map(r => r.date)).size > 1;
   sel.innerHTML = rounds.length
     ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ' + shortDate(r.date) + ' · ') : (multiDate ? shortDate(r.date) + ' · ' : '')}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
     : '<option value="">시험지를 먼저 등록하세요</option>';
-  if (entranceAll && !rounds.some(r => r.id === prev)) { const m = rounds.find(r => r.grade === grade && r.date === (prefDate || document.getElementById('scoreDateInput').value)); if (m) sel.value = m.id; }
+  if (entranceAll && !rounds.some(r => r.id === prev)) {
+    const stu = state.students.find(s => s.id === document.getElementById('scoreStudentSel').value);
+    const m = rounds.find(r => stu && roundOwnerId(r) === stu.id) || rounds.find(r => stu && r.grade === (stu.examGrade || stu.grade)) || rounds[0];
+    if (m) sel.value = m.id;
+  }
   if (rounds.some(r => r.id === prev)) sel.value = prev;
   if (prefDate) { const m = rounds.find(r => r.date === prefDate); if (m) sel.value = m.id; }
   populateScoreWeekFix();
@@ -2579,6 +2653,7 @@ function isEntranceStudent(s) { return !!s && s.class === ENTRANCE_CLASS; }
 // 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
 // 개별시험지(studentId 지정된 회차)는 그 학생 한 명만 보여줌
 function populateScoreStudentSelect() {
+  if (appScope() === 'entrance') { populateEntranceStudentSelect(); return; }
   const round = state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value);
   const sel = document.getElementById('scoreStudentSel');
   const prev = sel.value;
@@ -2892,10 +2967,11 @@ document.addEventListener('DOMContentLoaded', () => {
     renderScoreTab(); renderRounds();
     toast(`이 시험지를 ${roundWeekLabel(round)}로 분류했어요.`);
   });
-  document.getElementById('scoreRoundSel').addEventListener('change', () => { populateScoreStudentSelect(); renderScoreTab(); });
+  document.getElementById('scoreRoundSel').addEventListener('change', () => { if (appScope() !== 'entrance') populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', () => {
     // 개별시험지를 실수로 잘못된 학생에게 배정했을 때, 여기서 다른 학생을 고르면 바로 재배정함.
     // 이미 채점해둔 기록이 있으면 지우지 않고 새 학생 쪽으로 그대로 옮겨서 다시 채점할 필요 없게 함
+    if (appScope() === 'entrance') { document.getElementById('scoreRoundSel').value = ''; populateScoreExamSel(); renderScoreTab(); return; }   // 입학테스트: 학생을 먼저 고르면 그 학생의 시험지 목록으로 바뀜(개별시험지 재배정 안 함)
     const round = currentScoreRound();
     const newStudentId = document.getElementById('scoreStudentSel').value;
     if (round && round.individual && round.studentId && newStudentId && round.studentId !== newStudentId) {
