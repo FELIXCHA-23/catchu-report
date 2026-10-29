@@ -518,6 +518,7 @@ let pendingExamFile = null;
 let pendingDifficulty = null;
 let pendingCompetency = null;
 let pendingTerms = null;
+let pendingAnswers = null;
 // 채점 입력에서 마지막으로 저장한 학생 — 재시험 탭으로 넘어갔을 때 그 학생이 바로 선택되어 있게 씀
 let lastScoredStudentId = null;
 
@@ -1111,6 +1112,7 @@ function resetRoundForm() {
   pendingDifficulty = null;
   pendingCompetency = null;
   pendingTerms = null;
+  pendingAnswers = null;
   document.getElementById('roundForm').reset();
   document.getElementById('roundDate').dataset.picked = '';
   populateRoundDateSelect(document.getElementById('roundDate'), '');
@@ -2320,6 +2322,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingDifficulty = (data.difficulty && typeof data.difficulty === 'object') ? data.difficulty : null;
         pendingCompetency = (data.competency && typeof data.competency === 'object') ? data.competency : null;
         pendingTerms = (data.terms && typeof data.terms === 'object') ? data.terms : null;
+        pendingAnswers = (data.answers && typeof data.answers === 'object') ? data.answers : null;
         updateCoverageHint();
         document.getElementById('manualFallback').open = true;
         toast('AI 분석 결과를 불러왔어요. 확인 후 회차를 저장하세요.');
@@ -2361,9 +2364,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (finalDifficulty) r.difficulty = finalDifficulty;
       if (mergedCompetency) r.competency = mergedCompetency;
       if (pendingTerms) r.terms = pendingTerms;
+      if (pendingAnswers) r.answers = pendingAnswers;
       savedRound = r;
     } else {
-      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined, terms: pendingTerms || undefined };
+      savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined, terms: pendingTerms || undefined, answers: pendingAnswers || undefined };
       state.rounds.push(savedRound);
       const rtInfoless = state.rounds.some(x => x.retestOnly && x.grade === savedRound.grade && x.retestPath && !(x.retestInfo && x.retestInfo.types && Object.keys(x.retestInfo.types).length >= 5));
       if (rtInfoless && mergeRetestOnlyInto(savedRound)) toast('먼저 올려 둔 재시험지를 이 회차에 합쳤어요.');
@@ -2380,6 +2384,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingDifficulty = null;
     pendingCompetency = null;
     pendingTerms = null;
+    pendingAnswers = null;
     resetRoundForm();
     renderRounds(); populateSelects();
     toast('회차를 저장했어요.');
