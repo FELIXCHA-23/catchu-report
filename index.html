@@ -6,7 +6,7 @@
 <title>KMMS · KASTLE MATH MANAGEMENT SYSTEM</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=110">
+<link rel="stylesheet" href="style.css?v=111">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -136,6 +136,7 @@
   </div>
   <nav class="tabs" id="tabNav">
     <button class="tab-btn active" data-tab="score">채점 입력</button>
+    <button class="tab-btn" data-tab="entstatus">입학테스트 현황</button>
     <button class="tab-btn" data-tab="retest">재시험</button>
     <button class="tab-btn" data-tab="report">보고서</button>
     <button class="tab-btn" data-tab="collect">오답 모음</button>
@@ -330,6 +331,15 @@
     </div>
   </section>
 
+  <!-- 입학테스트 현황 (입학테스트 화면 전용) -->
+  <section class="tab-panel" id="panel-entstatus">
+    <div class="card">
+      <h2>입학테스트 현황</h2>
+      <p class="card-sub">학년별로 입학테스트 시험지가 올라갔는지, 시험지에 어떤 유형(단원)이 몇 문항 들어 있는지 한눈에 봐요.</p>
+      <div id="entStatusBody"></div>
+    </div>
+  </section>
+
   <!-- 채점 입력 -->
   <section class="tab-panel active" id="panel-score">
     <div class="card" id="weeklyStatusCard">
@@ -519,7 +529,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=15"></script>
-<script src="app.js?v=231"></script>
+<script src="app.js?v=232"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

@@ -686,3 +686,13 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
   #weeklyStatusCard:not(.ws-open) > *:not(h2) { display: none; }
   #weeklyStatusCard.ws-open #weeklyStatusBody { max-height: 360px; overflow-y: auto; }
 }
+
+/* 입학테스트 현황 탭: 입학테스트 화면에서만 보임 */
+#tabNav [data-tab="entstatus"] { display: none; }
+.view-entrance #tabNav [data-tab="entstatus"] { display: inline-block; }
+.ent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ent-title { font-weight: 700; }
+.ent-unit { margin: 4px 0 6px; }
+.ent-types { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.ent-type { font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; }
+.ent-type i { font-style: normal; opacity: .6; margin-left: 2px; }

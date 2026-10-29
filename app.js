@@ -770,6 +770,7 @@ function switchTab(name) {
   if (name === 'score') renderScoreTab();
   if (name === 'retest') renderRetestTab();
   if (name === 'report') renderReportTab();
+  if (name === 'entstatus') { try { renderEntranceStatus(); } catch (e) { console.warn(e); } }
   if (name === 'collect') { try { populateCollectCard(); } catch (e) { console.warn(e); } }
   if (name === 'example') openExampleReport();
 }
@@ -1234,6 +1235,44 @@ function retestCellHtml(r) {
     return `<div class="drop-part">${path ? `<a href="#" data-aux-open="${r.id}" data-kind="${kind}">${label} 보기</a>` : `<span class="field-hint">${label} 없음</span>`} ${btn}${path ? uploadWhoHtml(r, kind) : ''}</div>`;
   };
   return part('retest', '재시험지', r.retestPath);
+}
+
+/* ===== 입학테스트 현황: 학년별 시험지 업로드 + 유형별 분류 (입학테스트 화면의 "입학테스트 현황" 탭) ===== */
+const ENT_GRADE_ORDER = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
+function renderEntranceStatus() {
+  const body = document.getElementById('entStatusBody');
+  if (!body) return;
+  if (appScope() !== 'entrance') { body.innerHTML = ''; return; }
+  const can = window.KMMS && !window.KMMS.demo;
+  const rounds = scopedRoundsAll().filter(r => !r.individual && isEntranceRound(r));
+  const grades = [...new Set(rounds.map(r => r.grade || '학년 없음'))]
+    .sort((x, y) => (ENT_GRADE_ORDER.indexOf(x) + 1 || 99) - (ENT_GRADE_ORDER.indexOf(y) + 1 || 99));
+  if (!grades.length) { body.innerHTML = '<div class="field-hint">아직 등록된 입학테스트 시험지가 없어요. 채점 입력 탭에서 시험지를 올려 분석하면 여기에 나타나요.</div>'; return; }
+  const kids = state.students.filter(isEntranceStudent);
+  body.innerHTML = grades.map(g => {
+    const rs = rounds.filter(r => (r.grade || '학년 없음') === g).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+    const done = rs.filter(r => r.examPath).length;
+    const n = kids.filter(s => (s.examGrade || s.grade) === g).length;
+    const items = rs.map(r => {
+      // 유형별 분류: 대단원(unit) 단위로 묶고 그 아래 유형과 문항 번호·개수를 보여줌
+      const groups = [];
+      (r.types || []).forEach(t => {
+        const major = t.unit ? t.unit.split(' - ')[0].trim() : '(단원 미지정)';
+        let gr = groups.find(x => x.major === major);
+        if (!gr) { gr = { major, list: [], cnt: 0 }; groups.push(gr); }
+        gr.list.push(t); gr.cnt += (t.questions || []).length;
+      });
+      const typeHtml = groups.length ? groups.map(gr => `<div class="ent-unit"><b>${escapeHtml(gr.major)}</b> <span class="field-hint">${gr.cnt}문항</span>
+        <div class="ent-types">${gr.list.map(t => `<span class="ent-type" title="${escapeHtml(t.unit || '')}">${escapeHtml(t.name)} <i>${rangeToString(t.questions || [])}</i></span>`).join('')}</div></div>`).join('')
+        : '<div class="field-hint">유형 정보가 아직 없어요 (분석 전)</div>';
+      const upBtn = can ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
+      return `<div class="ws-round" data-round="${r.id}"><div class="ent-head"><span class="ent-title">${escapeHtml(r.title || shortDate(r.date))}</span>
+        <span class="ws-badge ${r.examPath ? 'ws-ok' : 'ws-no'}">${r.examPath ? '✓ 업로드완료' : '✗ 시험지없음'}</span>
+        ${r.examPath ? `<a href="#" data-exam-open="${r.id}">보기</a>${uploadWhoHtml(r, 'main')}` : ''}${upBtn}
+        <span class="field-hint">${r.total || ''}문항 · ${shortDate(r.date)}</span></div>${typeHtml}</div>`;
+    }).join('');
+    return `<div class="ws-grade" data-grade="${escapeHtml(g)}"><b>${escapeHtml(g)}</b> <span class="field-hint">시험지 ${rs.length}개 중 ${done}개 업로드 · 입학테스트 학생 ${n}명</span>${items}</div>`;
+  }).join('');
 }
 
 /* ===== 채점 입력: 주간 시험지 업로드 현황 (중1~고2) ===== */
@@ -2095,6 +2134,7 @@ function renderRounds() {
   try { reconcileDuplicateRounds(); } catch (e) { console.warn(e); }
   try { reconcileRetestOnly(); } catch (e) { console.warn(e); }
   renderWeeklyStatus();
+  try { renderEntranceStatus(); } catch (e) { console.warn(e); }
   try { renderRetestUpload(); } catch (e) { console.warn(e); }
   const wrap = document.getElementById('roundListWrap');
   populateRoundGradeFilter();
