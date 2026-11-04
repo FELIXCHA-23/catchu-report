@@ -704,3 +704,20 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 /* 보고서 출력일 칸: 입학테스트 화면에서만 */
 #reportPrintDateWrap { display: none; align-items: center; gap: 4px; }
 .view-entrance #reportPrintDateWrap { display: inline-flex; }
+
+/* 캐치유테스트 초등 화면: 대문 버튼 · 제목 · 학생별 시험지 업로드 현황 */
+.landing-buttons { grid-template-columns: repeat(2, 1fr); }
+.landing-btn.elem { background: #fff; border: 2px solid var(--brand-red); color: var(--brand-red); }
+.landing-btn.elem:hover { background: #fdeef1; }
+.topbar .ttl-elem { display: none; }
+.view-elem .topbar .ttl-catchu { display: none; }
+.view-elem .topbar .ttl-elem { display: inline; }
+.view-elem #tabNav [data-tab="example"] { display: none; }
+.view-elem #scoreWeekWrap, .view-elem #scoreWeekFixWrap, .view-elem #scoreGradeSel, .view-elem #scoreDateInput, .view-elem #scoreDateHint { display: none; }
+.view-elem #scoreStudentSel { order: -1; }
+.es-table td { vertical-align: middle; font-size: 13px; }
+.es-table th { text-align: center; }
+.es-table td[data-es-cell] { min-width: 150px; }
+.es-table td[data-es-cell].es-hot { outline: 2px dashed var(--brand-red); background: #fdeef1; }
+.es-name { white-space: nowrap; }
+@media (max-width: 700px) { .landing-buttons { grid-template-columns: 1fr; } }

@@ -85,6 +85,7 @@ function hasAllAccess() { return ALL_ACCESS_TEACHERS.includes(getCurrentTeacher(
 function appScope() {
   const cl = document.body.classList;
   if (cl.contains('view-entrance')) return 'entrance';
+  if (cl.contains('view-elem')) return 'elem';   // 캐치유테스트 초등
   if (cl.contains('view-students') || cl.contains('view-landing')) return 'all';
   return 'regular';
 }
@@ -93,11 +94,13 @@ function inStudentScope(st) {
   const sc = appScope();
   if (st.hidden && !(sc === 'all' && studentsShowHidden)) return false;
   if (sc === 'all') return true;
+  if (sc === 'elem') return !isEntranceStudent(st) && isElementaryGrade(st.examGrade || st.grade);
   return sc === 'entrance' ? isEntranceStudent(st) : !isEntranceStudent(st);
 }
 function inRoundScope(r) {
   const sc = appScope();
   if (sc === 'all') return true;
+  if (sc === 'elem') return !isEntranceRound(r) && isElementaryGrade(r.grade);
   return sc === 'entrance' ? isEntranceRound(r) : !isEntranceRound(r);
 }
 // retestOnly: 본시험지 없이 재시험지만 먼저 올려서 만든 임시 회차 — 업로드 현황판·재시험지 올리기에서만 쓰고, 채점·보고서에는 나오지 않음
@@ -361,7 +364,7 @@ function applyPrintedWeek(json) {
 // 토·일요일에 올린 시험지에 주차·날짜가 없으면 "올린 날 이후 금요일"로 추측하지 않고 몇 주차 시험지인지 물어봄
 // (초등은 날짜별 회차라 당일로 정하고, 입학테스트는 주차를 쓰지 않으므로 묻지 않음)
 function needsWeekAsk(json) {
-  if (editingRoundId || appScope() === 'entrance') return false;
+  if (editingRoundId || appScope() === 'entrance' || pendingElemExtras) return false;
   const g = document.getElementById('roundGrade').value;
   if (!g || isElementaryGrade(g)) return false;
   const day = new Date().getDay();
@@ -519,6 +522,7 @@ let pendingDifficulty = null;
 let pendingCompetency = null;
 let pendingTerms = null;
 let pendingAnswers = null;
+let pendingElemExtras = null;   // 캐치유테스트 초등: 학생 칸에서 올린 시험지를 그 학생의 개별 회차로 저장할 때 쓰는 값
 // 채점 입력에서 마지막으로 저장한 학생 — 재시험 탭으로 넘어갔을 때 그 학생이 바로 선택되어 있게 씀
 let lastScoredStudentId = null;
 
@@ -1158,7 +1162,7 @@ function roundWeekSource(round) {
   return '날짜 기준';
 }
 function roundLabel(round) {
-  return roundWeekLabel(round);
+  return roundWeekLabel(round) + (round.session ? ' ' + round.session + '회' : '');
 }
 // 주차 범위("OO부터 OO까지")용: 같은 주차(같은 해)의 회차를 한 칸으로 묶고, 그 주차에서 가장 이른 날짜를 대표 날짜로 씀
 function roundWeekKey(r) { return (r.date || '').slice(0, 4) + '|' + roundWeekLabel(r); }
@@ -1246,6 +1250,126 @@ function retestCellHtml(r) {
   return part('retest', '재시험지', r.retestPath);
 }
 
+/* ===== 캐치유테스트 초등: 학생별 시험지 업로드 현황 (이번 주 1회 · 2회) =====
+ * 초등은 미니캐치유를 한 주에 두 번 보고 시험지가 학생마다 달라서, 학생 줄마다 "1회 · 2회" 칸에 본시험지·재시험지를 올림.
+ * 본시험지는 AI가 유형을 분석해서 그 학생의 개별 시험지로 저장함: round = { individual, studentId, elem, week, session, ... } */
+let elemWeekOffset = 0;
+function elemWeekInfo() {
+  const iso = wsDateOf(elemWeekOffset);
+  const slot = new Date(); slot.setHours(0, 0, 0, 0);
+  if (elemWeekOffset !== 0) { slot.setTime(new Date(iso + 'T00:00:00').getTime()); slot.setDate(slot.getDate() - ((slot.getDay() + 6) % 7)); }   // 이번 주가 아니면 그 주 월요일 날짜로 저장
+  return { label: dateToWeekLabel(iso), date: toISODate(slot), year: String(slot.getFullYear()) };
+}
+function elemSlotRound(studentId, info, n) {
+  return state.rounds.find(r => r.elem && !r.retestOnly && r.studentId === studentId && r.week === info.label && r.session === n && (r.date || '').slice(0, 4) === info.year);
+}
+// 채점 입력(학생 먼저 고르기): 이 학생의 개별 시험지가 위, 같은 학년 공용 시험지는 그 아래
+function elemRoundsFor(student) {
+  const g = student && (student.examGrade || student.grade);
+  const mine = r => roundOwnerId(r) === (student && student.id);
+  return scopedRounds().filter(r => { const o = roundOwnerId(r); return o ? mine(r) : (!!g && r.grade === g); })
+    .sort((x, y) => (mine(y) - mine(x)) || (y.date || '').localeCompare(x.date || '') || ((y.session || 0) - (x.session || 0)));
+}
+function esCell(r, s, n, kind) {
+  const can = window.KMMS && !window.KMMS.demo;
+  const path = r && (kind === 'main' ? r.examPath : r.retestPath);
+  const attr = `data-es-cell data-es-sid="${s.id}" data-es-n="${n}" data-es-kind="${kind}"`;
+  if (path) {
+    const view = kind === 'main' ? `data-exam-open="${r.id}"` : `data-aux-open="${r.id}" data-kind="retest"`;
+    return `<td ${attr}><span class="ws-badge ws-ok">✓ 완료</span> <a href="#" ${view}>보기</a>${uploadWhoHtml(r, kind === 'main' ? 'main' : 'retest')}
+      ${can ? `<button type="button" class="icon-btn" data-es-up>교체</button> <button type="button" class="icon-btn ws-del" data-es-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 파일만 지워요">삭제</button>` : ''}
+      ${kind === 'main' && r.types && r.types.length ? `<button type="button" class="icon-btn" data-es-score="${s.id}" data-n="${n}">채점</button>` : ''}</td>`;
+  }
+  if (kind === 'retest' && !(r && r.types && r.types.length)) return `<td ${attr}><span class="field-hint">본시험지 먼저</span></td>`;
+  return `<td ${attr}><span class="ws-badge ws-no">✗ 없음</span> ${can ? '<button type="button" class="icon-btn" data-es-up>올리기</button>' : ''}${kind === 'main' && r && r.types && r.types.length ? ` <button type="button" class="icon-btn" data-es-score="${s.id}" data-n="${n}">채점</button>` : ''}</td>`;
+}
+function renderElemStatus() {
+  const card = document.getElementById('elemStatusCard');
+  if (!card) return;
+  if (appScope() !== 'elem') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const info = elemWeekInfo();
+  document.getElementById('esLabel').textContent = info.label + (elemWeekOffset === 0 ? ' (이번 주)' : '');
+  const kids = filterByCurrentTeacher(state.students).slice()
+    .sort((x, y) => classSortKey(x.class) - classSortKey(y.class) || (x.class || '').localeCompare(y.class || '', 'ko') || (x.name || '').localeCompare(y.name || '', 'ko'));
+  const body = document.getElementById('esBody');
+  if (!kids.length) { body.innerHTML = '<div class="field-hint">초등 학생이 없어요. 학생 관리에서 학생을 등록하세요 (학년이 초등이면 여기에 나와요).</div>'; return; }
+  const rows = kids.map(s => `<tr><td class="es-name"><b>${escapeHtml(s.name)}</b> <span class="field-hint">${escapeHtml(s.examGrade || s.grade || '')}${s.class ? ' · ' + escapeHtml(s.class) : ''}</span></td>
+    ${[1, 2].map(n => { const r = elemSlotRound(s.id, info, n); return esCell(r, s, n, 'main') + esCell(r, s, n, 'retest'); }).join('')}</tr>`).join('');
+  body.innerHTML = `<div class="table-wrap"><table class="data-table es-table"><thead>
+    <tr><th rowspan="2">학생</th><th colspan="2">${escapeHtml(info.label)} 1회</th><th colspan="2">${escapeHtml(info.label)} 2회</th></tr>
+    <tr><th>본시험지</th><th>재시험지</th><th>본시험지</th><th>재시험지</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function elemHandleFile(sid, n, kind, file) {
+  if (!window.KMMS) { toast('로그인한 뒤에 올릴 수 있어요.'); return; }
+  if (window.KMMS.demo) { toast('체험(guest) 모드에서는 시험지를 올릴 수 없어요.'); return; }
+  if (!file || !/^(application\/pdf|image\/)/.test(file.type)) { toast('PDF나 사진 파일만 올릴 수 있어요.'); return; }
+  if (file.size > 20 * 1024 * 1024) { toast(`파일이 너무 커요 (${(file.size / 1024 / 1024).toFixed(1)}MB). 20MB 이하로 올려주세요.`); return; }
+  const s = state.students.find(x => x.id === sid);
+  if (!s) return;
+  const info = elemWeekInfo();
+  const r = elemSlotRound(sid, info, n);
+  const readUrl = () => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(file); });
+  if (kind === 'retest') {
+    if (!r || !(r.types && r.types.length)) { toast('본시험지를 먼저 올려 주세요. 재시험지는 본시험지를 올린 뒤에 올려요.'); return; }
+    toast('재시험지를 올리는 중…');
+    await window.KMMS.uploadAux(r, 'retest', { name: file.name, dataUrl: await readUrl() });
+    return;
+  }
+  if (r) { toast('시험지를 올리는 중…'); await window.KMMS.uploadExam(r, { name: file.name, dataUrl: await readUrl() }); return; }   // 이미 있는 회차는 파일만 바꿈
+  // 새 시험지: AI가 유형을 분석해서 이 학생의 개별 시험지로 저장
+  await startMainExamAnalysis(file, s.examGrade || s.grade, { statusId: 'esAnalyzeStatus', elem: { studentId: s.id, grade: s.examGrade || s.grade, week: info.label, session: n, date: info.date, title: `${info.label} ${n}회` } });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const card = document.getElementById('elemStatusCard');
+  if (!card) return;
+  const go = n => { elemWeekOffset = n; renderElemStatus(); };
+  document.getElementById('esPrev').addEventListener('click', () => go(elemWeekOffset - 1));
+  document.getElementById('esNext').addEventListener('click', () => go(elemWeekOffset + 1));
+  document.getElementById('esToday').addEventListener('click', () => go(0));
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  card.addEventListener('dragover', e => { const c = e.target.closest('[data-es-cell]'); if (c && hasFiles(e)) { e.preventDefault(); c.classList.add('es-hot'); } });
+  card.addEventListener('dragleave', e => { const c = e.target.closest('[data-es-cell]'); if (c) c.classList.remove('es-hot'); });
+  card.addEventListener('drop', e => {
+    const c = e.target.closest('[data-es-cell]');
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (!c) { toast('올릴 칸(학생·회차) 위에 파일을 놓아 주세요.'); return; }
+    c.classList.remove('es-hot');
+    const files = e.dataTransfer.files;
+    if (files.length > 1) toast('한 번에 한 파일씩 올려 주세요. 첫 번째 파일만 올려요.');
+    elemHandleFile(c.dataset.esSid, +c.dataset.esN, c.dataset.esKind, files[0]);
+  });
+  card.addEventListener('click', e => {
+    const up = e.target.closest('[data-es-up]');
+    if (up) {
+      const c = up.closest('[data-es-cell]');
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'application/pdf,image/*';
+      input.onchange = () => { if (input.files[0]) elemHandleFile(c.dataset.esSid, +c.dataset.esN, c.dataset.esKind, input.files[0]); };
+      input.click();
+      return;
+    }
+    const del = e.target.closest('[data-es-del]');
+    if (del) {
+      const r = state.rounds.find(x => x.id === del.dataset.esDel);
+      if (!r || !window.KMMS) return;
+      const nm = del.dataset.kind === 'main' ? '본시험지' : '재시험지';
+      if (!confirm(`${roundLabel(r)}의 ${nm} 파일을 삭제할까요?\n(잘못 올렸을 때 지우는 용도예요. 삭제 후 다시 올릴 수 있어요.)`)) return;
+      window.KMMS.deleteFile(r, del.dataset.kind);
+      return;
+    }
+    const sc = e.target.closest('[data-es-score]');
+    if (sc) {
+      const ssel = document.getElementById('scoreStudentSel'), rsel = document.getElementById('scoreRoundSel');
+      ssel.value = sc.dataset.esScore; ssel.dispatchEvent(new Event('change'));
+      const r = elemSlotRound(sc.dataset.esScore, elemWeekInfo(), +sc.dataset.n);
+      if (r) { rsel.value = r.id; rsel.dispatchEvent(new Event('change')); }
+      const mc = document.getElementById('scoreMainCard'); if (mc) mc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
+
 /* ===== 입학테스트 현황: 학년별 시험지 업로드 + 유형별 분류 (입학테스트 화면의 "입학테스트 현황" 탭) ===== */
 const ENT_GRADE_ORDER = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
 function renderEntranceStatus() {
@@ -1297,9 +1421,10 @@ function wsDateOf(offset) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function renderWeeklyStatus() {
+  try { renderElemStatus(); } catch (e) { console.warn(e); }
   const card = document.getElementById('weeklyStatusCard');
   if (!card) return;
-  if (typeof appScope === 'function' && appScope() === 'entrance') { card.style.display = 'none'; return; }
+  if (typeof appScope === 'function' && (appScope() === 'entrance' || appScope() === 'elem')) { card.style.display = 'none'; return; }
   card.style.display = '';
   const label = dateToWeekLabel(wsDateOf(wsWeekOffset));
   document.getElementById('wsLabel').textContent = label + (wsWeekOffset === 0 ? ' (이번 주)' : '');
@@ -1751,7 +1876,8 @@ function wsRounds() {
 function closeWsModal() { const m = document.getElementById('wsModal'); if (m) m.remove(); }
 // 본시험지를 시험지 탭의 "본시험지 등록"과 똑같이 처리: 시험지 탭 양식에 파일을 넣고 → AI 분석 → 회차 자동 저장 → 서버 업로드 → 공용 파일 공유.
 // 주차는 시험지(제목·인쇄된 주차)가 우선, 없으면 현황판에서 보고 있는 주차의 금요일로 정함
-async function startMainExamAnalysis(file, grade) {
+async function startMainExamAnalysis(file, grade, opt) {
+  opt = opt || {};
   const btn = document.getElementById('aiAnalyzeBtn');
   if (btn && btn.disabled) { toast('분석 중인 시험지가 있어요. 끝난 뒤 다시 올려주세요.'); return; }
   resetRoundForm();
@@ -1761,10 +1887,11 @@ async function startMainExamAnalysis(file, grade) {
   const dt = new DataTransfer(); dt.items.add(file);
   input.files = dt.files;
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  const st = document.getElementById('wsAnalyzeStatus');
+  const st = document.getElementById(opt.statusId || 'wsAnalyzeStatus');
   if (st) { st.style.color = 'var(--ink)'; st.textContent = '⏳ AI가 유형을 분석하는 중이에요. 끝날 때까지 잠시만 기다려 주세요 (몇 초~1분)'; }
   for (let n = 0; n < 150 && !(pendingExamFile && pendingExamFile.dataUrl); n++) await new Promise(r => setTimeout(r, 100));
   if (!(pendingExamFile && pendingExamFile.dataUrl)) { if (st) st.textContent = '시험지 파일을 읽지 못했어요.'; return; }
+  if (opt.elem) pendingElemExtras = { ...opt.elem, file: pendingExamFile };   // 이 파일의 분석 결과는 그 학생의 개별 시험지로 저장함
   // 제목(파일명)에 주차가 없으면 현황판에서 보고 있는 주차의 금요일로 날짜를 맞춰둠 (이후 AI가 시험지에서 읽은 주차가 있으면 그쪽이 우선)
   if (!/(\d{1,2})\s*(?:월|-)\s*(\d)\s*주\s*차/.test(document.getElementById('roundTitle').value) && !isElementaryGrade(gsel.value)) {
     const d = new Date(wsDateOf(wsWeekOffset) + 'T00:00:00');
@@ -1775,9 +1902,10 @@ async function startMainExamAnalysis(file, grade) {
 }
 // 시험지 탭의 분석 진행 문구를 현황판에도 보여줌 (채점 입력 화면에서 진행 상황을 볼 수 있게)
 document.addEventListener('DOMContentLoaded', () => {
-  const src = document.getElementById('aiAnalyzeStatus'), dst = document.getElementById('wsAnalyzeStatus');
-  if (!src || !dst) return;
-  new MutationObserver(() => { const t = src.textContent; dst.textContent = /분석 중이에요/.test(t) ? '⏳ AI가 유형 분석 중이에요. 끝날 때까지 기다려 주세요 (몇 초~1분)' : t; dst.style.color = src.style.color; }).observe(src, { childList: true, characterData: true, subtree: true });
+  const src = document.getElementById('aiAnalyzeStatus');
+  const dsts = ['wsAnalyzeStatus', 'esAnalyzeStatus'].map(id => document.getElementById(id)).filter(Boolean);
+  if (!src || !dsts.length) return;
+  new MutationObserver(() => { const t = src.textContent; dsts.forEach(dst => { dst.textContent = /분석 중이에요/.test(t) ? '⏳ AI가 유형 분석 중이에요. 끝날 때까지 기다려 주세요 (몇 초~1분)' : t; dst.style.color = src.style.color; }); }).observe(src, { childList: true, characterData: true, subtree: true });
 });
 
 // 끌어다 놓은(또는 고른) 파일이 본시험지인지 재시험지인지 물어봄.
@@ -2336,10 +2464,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('roundForm').addEventListener('submit', e => {
     e.preventDefault();
-    const date = document.getElementById('roundDate').value;
-    const grade = document.getElementById('roundGrade').value;
+    const ex = (pendingElemExtras && pendingElemExtras.file === pendingExamFile) ? pendingElemExtras : null;   // 캐치유테스트 초등 학생 칸에서 올린 시험지
+    const date = ex ? ex.date : document.getElementById('roundDate').value;
+    const grade = ex ? ex.grade : document.getElementById('roundGrade').value;
     const total = parseInt(document.getElementById('roundTotal').value, 10) || 30;
-    let title = document.getElementById('roundTitle').value.trim();
+    let title = ex ? ex.title : document.getElementById('roundTitle').value.trim();
     if (!date) { toast('날짜를 선택해주세요.'); return; }
     if (!grade) { toast('학년을 선택해주세요.'); return; }
     const ENTRANCE_TITLE = /입학\s*(테스트|TEST)/i;
@@ -2368,8 +2497,9 @@ document.addEventListener('DOMContentLoaded', () => {
       savedRound = r;
     } else {
       savedRound = { id: uid(), date, grade, total, types, title: title || undefined, examFile: storableExamFile(pendingExamFile), difficulty: finalDifficulty || undefined, competency: mergedCompetency || undefined, terms: pendingTerms || undefined, answers: pendingAnswers || undefined };
+      if (ex) Object.assign(savedRound, { individual: true, studentId: ex.studentId, week: ex.week, session: ex.session, elem: true });
       state.rounds.push(savedRound);
-      const rtInfoless = state.rounds.some(x => x.retestOnly && x.grade === savedRound.grade && x.retestPath && !(x.retestInfo && x.retestInfo.types && Object.keys(x.retestInfo.types).length >= 5));
+      const rtInfoless = !ex && state.rounds.some(x => x.retestOnly && x.grade === savedRound.grade && x.retestPath && !(x.retestInfo && x.retestInfo.types && Object.keys(x.retestInfo.types).length >= 5));
       if (rtInfoless && mergeRetestOnlyInto(savedRound)) toast('먼저 올려 둔 재시험지를 이 회차에 합쳤어요.');
     }
     saveState();
@@ -2385,6 +2515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingCompetency = null;
     pendingTerms = null;
     pendingAnswers = null;
+    pendingElemExtras = null;
     resetRoundForm();
     renderRounds(); populateSelects();
     toast('회차를 저장했어요.');
@@ -2392,7 +2523,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const info = mainFileForInfo ? await describeFile(mainFileForInfo) : null;
         if (info && info.types && Object.keys(info.types).length >= 5) { savedRound.mainInfo = info; saveState(); }
-        await matchPlaceholdersFor(savedRound);
+        if (!savedRound.individual) await matchPlaceholdersFor(savedRound);
       } catch (e) { console.warn('match failed', e); }
     })();
   });
@@ -2550,15 +2681,18 @@ function entranceRoundsFor(student) {
     return true;
   }).sort((x, y) => ((roundOwnerId(y) === (student && student.id)) - (roundOwnerId(x) === (student && student.id))) || (y.date || '').localeCompare(x.date || '') || (x.grade || '').localeCompare(y.grade || ''));
 }
+// 학생을 먼저 고르고 그 학생의 시험지를 오른쪽에서 고르는 화면: 입학테스트, 캐치유테스트 초등
+function isStudentFirstScope() { const s = appScope(); return s === 'entrance' || s === 'elem'; }
+function studentFirstRounds(stu) { return appScope() === 'elem' ? elemRoundsFor(stu) : entranceRoundsFor(stu); }
 function populateEntranceStudentSelect() {
   const sel = document.getElementById('scoreStudentSel');
   const prev = sel.value;
-  let list = state.students.filter(isEntranceStudent);
+  let list = state.students.filter(inStudentScope);
   const sp = splitMineAndOthers(list);
   list = sp.mine.concat(sp.others);
   sel.innerHTML = list.length
     ? groupedOptions(sp.mine, sp.others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.grade ? ' · ' + escapeHtml(s.grade) : ''}</option>`)
-    : '<option value="">입학테스트 반 학생이 없어요</option>';
+    : `<option value="">${appScope() === 'elem' ? '초등 학생이 없어요' : '입학테스트 반 학생이 없어요'}</option>`;
   if (list.some(s => s.id === prev)) sel.value = prev;
 }
 // 입학테스트 화면에서 시험지 파일을 놓거나 고르면 시험지 탭의 등록 칸에 넣고 바로 AI 분석(분석 뒤 회차로 자동 저장)
@@ -2607,15 +2741,15 @@ function populateScoreExamSel(prefDate) {
   const sel = document.getElementById('scoreRoundSel');
   const prev = sel.value;
   // 입학테스트 화면은 학년·날짜와 상관없이 등록된 입학테스트 시험지를 전부 고를 수 있음 (최신순)
-  const entranceAll = appScope() === 'entrance';
+  const entranceAll = isStudentFirstScope();
   if (entranceAll) populateEntranceStudentSelect();
   const rounds = entranceAll
-    ? entranceRoundsFor(state.students.find(s => s.id === document.getElementById('scoreStudentSel').value))
+    ? studentFirstRounds(state.students.find(s => s.id === document.getElementById('scoreStudentSel').value))
     : scopedRounds().filter(r => r.grade === grade && roundWeekKey(r) === key).sort((x, y) => x.date.localeCompare(y.date));
   const multiDate = new Set(rounds.map(r => r.date)).size > 1;
   sel.innerHTML = rounds.length
-    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml((r.grade || '') + ' · ') : (multiDate ? shortDate(r.date) + ' · ' : '')}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
-    : '<option value="">시험지를 먼저 등록하세요</option>';
+    ? rounds.map(r => `<option value="${r.id}">${entranceAll ? escapeHtml(appScope() === 'elem' ? shortDate(r.date) + ' · ' : (r.grade || '') + ' · ') : (multiDate ? shortDate(r.date) + ' · ' : '')}${r.title ? escapeHtml(r.title) : escapeHtml(r.types[0] ? r.types[0].name : '시험지') + (r.types.length > 1 ? ' 외' : '')}${roundStudentTag(r)}</option>`).join('')
+    : `<option value="">${appScope() === 'elem' ? '이 학생의 시험지가 없어요 (위 표에서 올려 주세요)' : '시험지를 먼저 등록하세요'}</option>`;
   if (entranceAll && !rounds.some(r => r.id === prev)) {
     const stu = state.students.find(s => s.id === document.getElementById('scoreStudentSel').value);
     const m = rounds.find(r => stu && roundOwnerId(r) === stu.id) || rounds.find(r => stu && r.grade === (stu.examGrade || stu.grade)) || rounds[0];
@@ -2662,7 +2796,7 @@ function isEntranceStudent(s) { return !!s && s.class === ENTRANCE_CLASS; }
 // 회차에 등록된 학년과 같은 학년의 학생만 채점 대상으로 보여줌 (학년별로 시험지가 다르므로 잘못 매칭되지 않게)
 // 개별시험지(studentId 지정된 회차)는 그 학생 한 명만 보여줌
 function populateScoreStudentSelect() {
-  if (appScope() === 'entrance') { populateEntranceStudentSelect(); return; }
+  if (isStudentFirstScope()) { populateEntranceStudentSelect(); return; }
   const round = state.rounds.find(r => r.id === document.getElementById('scoreRoundSel').value);
   const sel = document.getElementById('scoreStudentSel');
   const prev = sel.value;
@@ -2976,11 +3110,11 @@ document.addEventListener('DOMContentLoaded', () => {
     renderScoreTab(); renderRounds();
     toast(`이 시험지를 ${roundWeekLabel(round)}로 분류했어요.`);
   });
-  document.getElementById('scoreRoundSel').addEventListener('change', () => { if (appScope() !== 'entrance') populateScoreStudentSelect(); renderScoreTab(); });
+  document.getElementById('scoreRoundSel').addEventListener('change', () => { if (!isStudentFirstScope()) populateScoreStudentSelect(); renderScoreTab(); });
   document.getElementById('scoreStudentSel').addEventListener('change', () => {
     // 개별시험지를 실수로 잘못된 학생에게 배정했을 때, 여기서 다른 학생을 고르면 바로 재배정함.
     // 이미 채점해둔 기록이 있으면 지우지 않고 새 학생 쪽으로 그대로 옮겨서 다시 채점할 필요 없게 함
-    if (appScope() === 'entrance') { document.getElementById('scoreRoundSel').value = ''; populateScoreExamSel(); renderScoreTab(); return; }   // 입학테스트: 학생을 먼저 고르면 그 학생의 시험지 목록으로 바뀜(개별시험지 재배정 안 함)
+    if (isStudentFirstScope()) { document.getElementById('scoreRoundSel').value = ''; populateScoreExamSel(); renderScoreTab(); return; }   // 입학테스트: 학생을 먼저 고르면 그 학생의 시험지 목록으로 바뀜(개별시험지 재배정 안 함)
     const round = currentScoreRound();
     const newStudentId = document.getElementById('scoreStudentSel').value;
     if (round && round.individual && round.studentId && newStudentId && round.studentId !== newStudentId) {
@@ -3611,7 +3745,7 @@ function studentScoredRounds(studentId) {
   if (studentId === EXAMPLE_STUDENT_ID) {
     return EXAMPLE_ROUNDS.map(r => ({ round: r, label: roundLabel(r), result: EXAMPLE_RESULTS.find(x => x.roundId === r.id) }));
   }
-  const ascRounds = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date));
+  const ascRounds = [...state.rounds].sort((a, b) => a.date.localeCompare(b.date) || (a.session || 0) - (b.session || 0));
   return ascRounds
     .map(r => ({ round: r, label: roundLabel(r), result: state.results.find(x => x.studentId === studentId && x.roundId === r.id) }))
     .filter(x => x.result);
@@ -5316,11 +5450,11 @@ function populateCurrentTeacherSel() {
 // 캐치유 오답과 합쳐서 보여주면 됨 — 담당 선생님 선택(getCurrentTeacher)은 두 화면이 같이 씀.
 const VIEW_KEY = 'catchu_view';
 function currentView() {
-  try { const v = sessionStorage.getItem(VIEW_KEY); if (v === 'catchu' || v === 'textbook' || v === 'entrance') return v; } catch (e) {}
+  try { const v = sessionStorage.getItem(VIEW_KEY); if (v === 'catchu' || v === 'textbook' || v === 'entrance' || v === 'elem') return v; } catch (e) {}
   return 'landing';
 }
 function showView(name) {
-  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook', 'view-students', 'view-entrance');
+  document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook', 'view-students', 'view-entrance', 'view-elem');
   document.body.classList.add('view-' + name);
   // 학생 관리 전용 화면은 새로고침하면 열려 있던 곳이 아니라 대문으로 돌아가므로 저장하지 않음
   try { if (name === 'landing') sessionStorage.removeItem(VIEW_KEY); else if (name !== 'students') sessionStorage.setItem(VIEW_KEY, name); } catch (e) {}
@@ -5334,7 +5468,7 @@ function showView(name) {
 let studentsReturnTo = 'landing';
 function openStudentsView() {
   const cl = document.body.classList;
-  studentsReturnTo = cl.contains('view-textbook') ? 'textbook' : cl.contains('view-entrance') ? 'entrance' : cl.contains('view-catchu') ? 'catchu' : 'landing';
+  studentsReturnTo = cl.contains('view-textbook') ? 'textbook' : cl.contains('view-entrance') ? 'entrance' : cl.contains('view-elem') ? 'elem' : cl.contains('view-catchu') ? 'catchu' : 'landing';
   showView('students');
 }
 // 대문과 앱 상단의 담당 선생님 드롭다운을 같은 값으로 맞춤
@@ -5359,6 +5493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 처음 화면에서 들어올 때는 마지막으로 보던 탭이 아니라 항상 "채점 입력" 탭으로 열림
   document.getElementById('goCatchuBtn').addEventListener('click', () => { showView('catchu'); switchTab('score'); });
   document.getElementById('goEntranceBtn').addEventListener('click', () => { showView('entrance'); switchTab('score'); });
+  document.getElementById('goElemBtn').addEventListener('click', () => { showView('elem'); switchTab('score'); });
   document.getElementById('goTextbookBtn').addEventListener('click', () => showView('textbook'));
   document.querySelectorAll('[data-go-home]').forEach(b => {
     b.addEventListener('click', () => showView('landing'));
