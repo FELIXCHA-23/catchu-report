@@ -5748,7 +5748,10 @@ function fbWeekText(label, kind) {
   return kind === 'dash' ? `${m[1]}-${m[2]}주차` : kind === 'spaced' ? `${m[1]}월 ${m[2]}주차` : `${m[1]}월${m[2]}주차`;
 }
 // 단원명: 시험지 이름의 " - " 뒤(예: "유리함수의 그래프 ~ 무리함수의 그래프") > 유형들의 대단원 첫~끝 > 비워 두면 "N월N주차 캐치유 TEST"
+const fbRangeCache = new Map();   // 회차id → 시험지 PDF 첫 장 제목 바로 아래 줄(시험 범위). '' = 못 읽음
 function fbUnitName(round) {
+  const pdfRange = fbRangeCache.get(round.id);
+  if (pdfRange) return pdfRange;
   const t = String(round.title || ''), i = t.indexOf(' - ');
   if (i >= 0) { const u = t.slice(i + 3).trim(); if (u) return u; }
   const big = [];
@@ -5830,6 +5833,31 @@ function paintFeedbackList() {
     <textarea class="fb-text" rows="${it.wrong ? 11 : 9}" style="width:100%;margin-top:8px;font-family:inherit;">${escapeHtml(it.text)}</textarea>
     <div style="margin-top:6px;"><button type="button" class="btn primary fb-copy">복사</button> <span class="field-hint fb-done"></span></div>
   </div>`).join('');
+  fbLoadRanges(items);
+}
+// 시험지 PDF 첫 장에서 제목 바로 아래 줄(시험 범위)을 읽어 단원명으로 씀 (읽은 뒤 한 번만 화면을 다시 그림)
+let fbRangeBusy = false;
+async function fbLoadRanges(items) {
+  if (fbRangeBusy || !(window.KMMS && window.KMMS.ready && window.RETEST && window.RETEST.describePaper)) return;
+  const todo = [...new Map(items.filter(it => !fbRangeCache.has(it.round.id)).map(it => [it.round.id, it.round])).values()];
+  if (!todo.length) return;
+  fbRangeBusy = true;
+  try {
+    for (const round of todo) {
+      let range = '';
+      const path = round.examPath || round.retestPath;
+      if (path) {
+        try {
+          const buf = await window.KMMS.fetchBuf(path);
+          const info = await window.RETEST.describePaper(buf.slice(0));
+          range = String((info && info.range) || '').replace(/^\s*(시험\s*)?범위\s*[:：]?\s*/, '').trim();
+        } catch (e) { console.warn('시험 범위를 못 읽었어요', e); }
+      }
+      fbRangeCache.set(round.id, range);
+    }
+  } finally { fbRangeBusy = false; }
+  const wSel = document.getElementById('fbWeek');
+  if (wSel && document.getElementById('panel-feedback').classList.contains('active')) paintFeedbackList();
 }
 async function fbCopy(text, doneEl) {
   let ok = false;
