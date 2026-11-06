@@ -5769,7 +5769,8 @@ function fbItems() {
   const wk = document.getElementById('fbWeek').value;
   const sender = document.getElementById('fbSender').value;
   const wmap = weekStartMap();
-  const visible = new Set(state.students.filter(inStudentScope).map(s => s.id));
+  // 선생님 계정은 본인 담당 학생만, 원장(전체 권한)은 전체 (내 반이 위)
+  const visible = new Set(filterByCurrentTeacher(state.students).map(s => s.id));
   const sp = splitMineAndOthers(state.students);
   const order = new Map(sp.mine.concat(sp.others).map((s, i) => [s.id, i]));
   const rounds = scopedRounds();
@@ -5781,7 +5782,11 @@ function fbItems() {
     .map(x => {
       const key = x.student.id + '|' + x.round.id;
       const wrong = new Set(x.r.wrong).size, total = x.round.total || 30;
-      const retestOk = Math.min(wrong, fbRetestOk.has(key) ? fbRetestOk.get(key) : wrong);
+      // 재시험 맞힌 개수: 재시험 탭에 찍어 둔 "아직 틀린 번호"(stillWrong)대로, 재시험 기록이 없으면 전부 맞힌 것으로 둠
+      const rt = (state.retests || []).find(t => t.studentId === x.student.id && t.roundId === x.round.id);
+      const still = rt ? new Set((rt.stillWrong || []).map(Number)) : new Set();
+      const stillCount = new Set((x.r.wrong || []).map(Number).filter(n => still.has(n))).size;
+      const retestOk = Math.max(0, Math.min(wrong, fbRetestOk.has(key) ? fbRetestOk.get(key) : wrong - stillCount));
       const unit = fbUnitEdit.has(key) ? fbUnitEdit.get(key) : fbUnitName(x.round);
       const teacher = sender === 'principal' ? '차성빈' : (x.student.teacher || '');
       return { key, student: x.student, round: x.round, wrong, total, retestOk, unit, teacher, text: fbMessage({ student: x.student, round: x.round, wrong, total, retestOk, unit, teacher }) };
