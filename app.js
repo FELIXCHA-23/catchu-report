@@ -562,6 +562,7 @@ function loadState() {
       if (!data.studentMemo) data.studentMemo = {};
       if (!data.studentMemoRetest) data.studentMemoRetest = {};
       if (!Array.isArray(data.reportLog)) data.reportLog = [];
+      if (!data.feedbackUnits) data.feedbackUnits = {};
       return data;
     }
   } catch (e) { console.warn('load failed', e); }
@@ -5488,6 +5489,8 @@ function renderAll() {
   renderRetestTab();
   renderReportTab();
   if (typeof renderTextbook === 'function') renderTextbook();
+  // 다른 선생님이 바꾼 단원명이 서버에서 들어오면 피드백 문자 탭도 최신으로
+  try { const fp = document.getElementById('panel-feedback'); if (fp && fp.classList.contains('active')) renderFeedbackTab(); } catch (e) { console.warn(e); }
 }
 
 function populateCurrentTeacherSel() {
@@ -5843,7 +5846,9 @@ function fbItems() {
       const still = rt ? new Set((rt.stillWrong || []).map(Number)) : new Set();
       const stillCount = new Set((x.r.wrong || []).map(Number).filter(n => still.has(n))).size;
       const retestOk = Math.max(0, Math.min(wrong, fbRetestOk.has(key) ? fbRetestOk.get(key) : wrong - stillCount));
-      const unit = fbUnitEdit.has(key) ? fbUnitEdit.get(key) : fbUnitName(x.round);
+      // 단원명 우선순위: 이 카드에서 직접 고친 것 > 학년별로 지정해 둔 최신 단원명(모든 선생님 공통) > 시험지에서 읽은 범위
+      const shared = fbSharedUnit(x.round);
+      const unit = fbUnitEdit.has(key) ? fbUnitEdit.get(key) : (shared ? shared.unit : fbUnitName(x.round));
       const teacher = sender === 'principal' ? '차성빈' : (x.student.teacher || '');
       return { key, student: x.student, round: x.round, wrong, total, retestOk, unit, teacher, text: fbMessage({ student: x.student, round: x.round, wrong, total, retestOk, unit, teacher }) };
     });
@@ -5865,8 +5870,61 @@ function renderFeedbackTab() {
   }
   paintFeedbackList();
 }
+/* ----- 학년별 단원명: 선생님 누구나 적을 수 있고, 모든 선생님의 해당 학년 학생 문자에 최신 내용이 반영됨 (서버 동기화: state.feedbackUnits) ----- */
+function fbUnitKey(round) { return roundWeekKey(round) + '|' + (round.grade || ''); }
+function fbSharedUnit(round) {
+  const v = state.feedbackUnits && state.feedbackUnits[fbUnitKey(round)];
+  return v && v.unit ? v : null;
+}
+function fbTimeText(ms) {
+  const d = new Date(ms); if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}.${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fbWriterName() {
+  const s = window.KMMS && window.KMMS.staff;
+  return (s && (s.name || (s.email || '').split('@')[0])) || getCurrentTeacher() || '선생님';
+}
+function paintFbUnitRows() {
+  const box = document.getElementById('fbUnitRows'), wk = document.getElementById('fbWeek').value;
+  if (!box) return;
+  const wmap = weekStartMap();
+  const order = ['중1', '중2', '중3', '고1', '고2', '고3'];
+  const byGrade = new Map();
+  scopedRounds().filter(r => r.grade && !r.individual && roundWeekDate(r, wmap) === wk).forEach(r => { if (!byGrade.has(r.grade)) byGrade.set(r.grade, r); });
+  const grades = [...byGrade.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  if (!grades.length) { box.innerHTML = '<div class="field-hint">이 주차에 등록된 시험지가 없어요.</div>'; return; }
+  box.innerHTML = grades.map(g => {
+    const r = byGrade.get(g), sh = fbSharedUnit(r);
+    const auto = fbUnitName(r) || `${fbWeekText(roundWeekLabel(r), 'tight')} 캐치유 TEST`;
+    return `<div class="fbu-row" data-grade="${escapeHtml(g)}" style="padding:8px 0;border-top:1px solid var(--line);">
+      <div class="inline-form" style="align-items:center;">
+        <b style="min-width:34px;">${escapeHtml(g)}</b>
+        <input type="text" class="fbu-input" value="${escapeHtml(sh ? sh.unit : '')}" placeholder="${escapeHtml(auto)}" style="min-width:320px;flex:1;">
+        <button type="button" class="btn primary fbu-save">적용</button>
+      </div>
+      <div class="field-hint" style="margin-top:4px;">${sh ? `작성: <b>${escapeHtml(sh.by || '')}</b> · ${fbTimeText(sh.at)} — 모든 선생님의 ${escapeHtml(g)} 학생 문자에 적용 중` : '지정 안 됨 — 시험지에서 읽은 범위를 써요 (회색 글씨)'}</div>
+    </div>`;
+  }).join('');
+}
+function saveFbUnit(grade, text) {
+  const wk = document.getElementById('fbWeek').value, wmap = weekStartMap();
+  const r = scopedRounds().find(x => x.grade === grade && !x.individual && roundWeekDate(x, wmap) === wk);
+  if (!r) return;
+  if (window.KMMS && window.KMMS.staff && window.KMMS.staff.role === 'observer') { toast('observer(읽기 전용) 계정에서는 할 수 없어요.'); return; }
+  if (!state.feedbackUnits) state.feedbackUnits = {};
+  const key = fbUnitKey(r), unit = String(text || '').replace(/\s+/g, ' ').trim();
+  if (unit) state.feedbackUnits[key] = { unit, by: fbWriterName(), at: Date.now() };
+  else delete state.feedbackUnits[key];
+  // 그 학년 카드에서 따로 고쳐 둔 단원명은 지워서 방금 지정한 최신 단원명이 바로 반영되게 함
+  [...fbUnitEdit.keys()].forEach(k => { const rid = k.split('|')[1]; const rr = state.rounds.find(x => x.id === rid); if (rr && rr.grade === grade && roundWeekKey(rr) === roundWeekKey(r)) fbUnitEdit.delete(k); });
+  saveState();
+  paintFeedbackList();
+  toast(unit ? `${grade} 단원명을 적용했어요.` : `${grade} 단원명 지정을 풀었어요.`);
+}
 function paintFeedbackList() {
   const list = document.getElementById('fbList'), info = document.getElementById('fbInfo');
+  paintFbUnitRows();
   const items = fbItems();
   info.textContent = items.length ? `${items.length}명 · 학생마다 담당 선생님 양식으로 만들었어요. 단원명·재시험 맞힌 개수는 칸에서 고칠 수 있어요.` : '이 주차에 채점된 학생이 없어요.';
   list.innerHTML = items.map(it => `<div class="card fb-card" data-fb-key="${escapeHtml(it.key)}">
@@ -5939,6 +5997,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('fbCopyAllBtn').addEventListener('click', () => {
     const t = [...list.querySelectorAll('.fb-text')].map(x => x.value).join('\n\n――――――――――\n\n');
     fbCopy(t, document.getElementById('fbInfo'));
+  });
+  // 학년별 단원명: "적용"을 누르거나 입력칸에서 Enter
+  const unitRows = document.getElementById('fbUnitRows');
+  unitRows.addEventListener('click', e => {
+    const b = e.target.closest('.fbu-save');
+    if (!b) return;
+    const row = b.closest('.fbu-row');
+    saveFbUnit(row.dataset.grade, row.querySelector('.fbu-input').value);
+  });
+  unitRows.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !e.target.classList.contains('fbu-input')) return;
+    e.preventDefault();
+    const row = e.target.closest('.fbu-row');
+    saveFbUnit(row.dataset.grade, e.target.value);
   });
 });
 

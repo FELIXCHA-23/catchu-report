@@ -14,7 +14,7 @@
 
   // 서버로 동기화하는 항목. 배열은 항목마다 id로, 객체는 키마다 한 줄로 저장함.
   const ARRAYS = [['students'], ['rounds'], ['results'], ['retests'], ['reportLog'], ['textbook', 'results'], ['examUploads'], ['printJobs']];
-  const MAPS = [['teacherNotes'], ['gradeOverrides'], ['difficultyOverrides'], ['reportHidden'], ['studentDone'], ['studentMemo'], ['studentMemoRetest'], ['mergedRoundIds'], ['printHost'],
+  const MAPS = [['feedbackUnits'], ['teacherNotes'], ['gradeOverrides'], ['difficultyOverrides'], ['reportHidden'], ['studentDone'], ['studentMemo'], ['studentMemoRetest'], ['mergedRoundIds'], ['printHost'],
     ['textbook', 'notes'], ['textbook', 'hidden'], ['textbook', 'ai']];
 
   // 출력 요청·출력 담당 PC 상태는 자주 바뀌므로 "다른 선생님이 바꿨어요" 안내를 띄우지 않음
@@ -1188,7 +1188,7 @@ body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{disp
   // 진짜 보호는 서버(observer-setup.sql의 접근 규칙)가 하고, 이건 실수로 눌러 보는 것을 막아 주는 안전장치.
   const OBS_ALLOW = '#pdfExportBtn,#tbPdfBtn,.fb-copy,#fbCopyAllBtn,#kmmsLogoutBtn,.tab-btn,#kmmsChip';
   const OBS_BLOCK_TEXT = /삭제|지우기|올리기|교체|업로드|저장|등록|수정|초기화|일괄|불러오기|추가|전체 취소|완료|출력|인쇄|보내기/;
-  const OBS_BLOCK_SEL = '#scoreGridWrap,#quickWrongInput,#teacherNoteInput,.phrase-chip,#gradeOverrideSel,#difficultyOverrideSel,#scoreRoundWeekSel,[data-exam-upload],[data-del-retest],input[type=file]';
+  const OBS_BLOCK_SEL = '.fbu-save,.fbu-input,#scoreGridWrap,#quickWrongInput,#teacherNoteInput,.phrase-chip,#gradeOverrideSel,#difficultyOverrideSel,#scoreRoundWeekSel,[data-exam-upload],[data-del-retest],input[type=file]';
   function observerGuard(e) {
     if (!isObserver()) return;
     const t = e.target;
