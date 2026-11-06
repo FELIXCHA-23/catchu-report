@@ -537,8 +537,8 @@ let lastScoredStudentId = null;
 
 // 보고서 탭의 "기간" 드롭다운 기본값 — 이번 배포 기준 보고서 발행 기간(8-3주차~9-3주차)을 고정으로 기본 설정함.
 // 다음 달 배치에는 이 두 날짜만 그때 기간의 시작/끝 회차 날짜로 바꿔주면 됨.
-const DEFAULT_REPORT_FROM_DATE = '2026-08-21'; // 8-3주차
-const DEFAULT_REPORT_TO_DATE = '2026-09-18'; // 9-3주차
+const DEFAULT_REPORT_FROM_DATE = '2026-09-28'; // 10-1주차가 시작되는 월요일 (보고서 기본 기간의 시작)
+const DEFAULT_REPORT_TO_DATE = '9999-12-31';   // 최신 주차까지
 // 보고서 탭에서 마지막으로 기간을 세팅해준 학생 — 같은 학생이면 선생님이 고른 기간을 유지하고,
 // 다른 학생으로 바뀌면 항상 위 기본 기간으로 다시 리셋되게 함
 let lastReportRangeStudentId = undefined;
@@ -2564,7 +2564,7 @@ function populateResetPanelDateSel() {
   fromSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
   toSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
   // 처음 설정: 시작은 10-1주차(그 이후 첫 주차), 끝은 가장 늦은 주차. 고른 값이 있으면 그대로 유지
-  const startDate = [...wr.map.entries()].filter(([k]) => { const i = k.indexOf('|'); return weekAtOrAfterStart(k.slice(0, i), k.slice(i + 1)); }).map(([, d]) => d).sort()[0];
+  const startDate = defaultFromWeekDate(wr);
   fromSel.value = dates.includes(prevFrom) ? prevFrom : (startDate || dates[0] || '');
   toSel.value = dates.includes(prevTo) ? prevTo : (dates[dates.length - 1] || '');
 }
@@ -2596,6 +2596,10 @@ function weekAtOrAfterStart(year, label) {
   if (!m) return false;
   const v = (y, mo, w) => y * 10000 + mo * 100 + w;
   return v(+year || SCORE_WEEK_START.year, +m[1], +m[2]) >= v(SCORE_WEEK_START.year, SCORE_WEEK_START.month, SCORE_WEEK_START.week);
+}
+// 기간 드롭다운("OO부터 OO까지")의 시작 기본값: 10-1주차(없으면 그 이후 첫 주차). 끝 기본값은 가장 최근 주차.
+function defaultFromWeekDate(wr) {
+  return [...wr.map.entries()].filter(([k]) => { const i = k.indexOf('|'); return weekAtOrAfterStart(k.slice(0, i), k.slice(i + 1)); }).map(([, d]) => d).sort()[0] || '';
 }
 function scoreRoundGroups(grade) {
   const rounds = scopedRounds().filter(r => r.grade === grade);
@@ -3319,11 +3323,9 @@ function populateCollectCard() {
   if (pool.some(s => s.id === prevS)) sSel.value = prevS;
   const wr = weekRangeOptions();
   fSel.innerHTML = wr.html || '<option value="">회차가 없어요</option>'; tSel.innerHTML = wr.html || '<option value="">회차가 없어요</option>';
-  // 기간 기본값: 이 학생의 오답이 있는 첫 주차 ~ 마지막 주차 (이미 고른 값이 있으면 유지)
-  const wmap = weekStartMap();
-  const mineDates = state.results.filter(r => r.studentId === sSel.value && r.wrong.length).map(r => scopedRounds().find(x => x.id === r.roundId)).filter(Boolean).map(r => roundWeekDate(r, wmap)).sort();
-  fSel.value = wr.dates.includes(prevF) ? prevF : (mineDates[0] || wr.dates[0] || '');
-  tSel.value = wr.dates.includes(prevT) ? prevT : (mineDates[mineDates.length - 1] || wr.dates[wr.dates.length - 1] || '');
+  // 기간 기본값: 10-1주차 ~ 최신 주차 (이미 고른 값이 있으면 유지)
+  fSel.value = wr.dates.includes(prevF) ? prevF : (defaultFromWeekDate(wr) || wr.dates[0] || '');
+  tSel.value = wr.dates.includes(prevT) ? prevT : (wr.dates[wr.dates.length - 1] || '');
   updateCollectInfo();
 }
 function updateCollectInfo() {
@@ -3463,9 +3465,10 @@ function renderRetestRank() {
   const prevF = fSel.value, prevT = tSel.value;
   const wopts = weeks.map(w => `<option value="${w.d}">${escapeHtml(w.label)} (${shortDate(w.d)})</option>`).join('');
   fSel.innerHTML = wopts; tSel.innerHTML = wopts;
-  const thisWeekPick = weeks.find(w => w.label === currentWeekLabel() && w.d.slice(0, 4) === currentWeekYear());   // 주차 범위도 처음엔 이번 주
-  fSel.value = weeks.some(w => w.d === prevF) ? prevF : (thisWeekPick ? thisWeekPick.d : (weeks[0] ? weeks[0].d : ''));
-  tSel.value = weeks.some(w => w.d === prevT) ? prevT : (thisWeekPick ? thisWeekPick.d : (weeks.length ? weeks[weeks.length - 1].d : ''));
+  // 주차 범위 처음 값: 10-1주차 ~ 최신 주차
+  const startWeek = weeks.find(w => weekAtOrAfterStart(w.d.slice(0, 4), w.label));
+  fSel.value = weeks.some(w => w.d === prevF) ? prevF : (startWeek ? startWeek.d : (weeks[0] ? weeks[0].d : ''));
+  tSel.value = weeks.some(w => w.d === prevT) ? prevT : (weeks.length ? weeks[weeks.length - 1].d : '');
   const teacher = getCurrentTeacher();
   mineWrap.style.display = teacher ? '' : 'none';
   const onlyMine = !!teacher && mineBox.checked;
@@ -3617,7 +3620,7 @@ function populateRetestRangeSel() {
   const prevFrom = fromSel.value, prevTo = toSel.value;
   const opts = wr.html || '<option value="">회차가 없어요</option>';
   fromSel.innerHTML = opts; toSel.innerHTML = opts;
-  fromSel.value = dates.includes(prevFrom) ? prevFrom : (dates[0] || '');
+  fromSel.value = dates.includes(prevFrom) ? prevFrom : (defaultFromWeekDate(wr) || dates[0] || '');   // 처음엔 10-1주차 ~ 최신 주차
   toSel.value = dates.includes(prevTo) ? prevTo : (dates[dates.length - 1] || '');
 }
 
