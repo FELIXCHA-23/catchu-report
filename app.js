@@ -4606,7 +4606,7 @@ function renderReportTab() {
   }).join('');
 
   // 또래 대비 보완 문항 (다른 학생들은 많이 맞힌 문제를 이 학생이 틀린 것) — 전체 인원수는 밝히지 않고 정답률(%)만 보여줌
-  const weakSection = buildWeakSection(computeWeakQuestions(studentId, points));
+  const weakSection = buildWeakSection(computeWeakQuestions(studentId, points), student);
 
   out.innerHTML = `
     <div class="sample-flag no-print">${studentId === EXAMPLE_STUDENT_ID
@@ -5964,24 +5964,25 @@ function computeWeakQuestions(studentId, points) {
   items.sort((a, b) => b.peerPct - a.peerPct || b.round.date.localeCompare(a.round.date) || a.q - b.q);
   return items.slice(0, WEAK_MAX_ITEMS);
 }
-function buildWeakSection(items) {
+function buildWeakSection(items, student) {
   if (!items.length) return '';
+  const call = fbCallName(student && student.name) || '우리 아이';   // 성을 뺀 호칭 (예: 황시원 → 시원이)
   const types = [...new Set(items.map(it => it.typeName).filter(Boolean))];
   const cards = items.map(it => `
       <div class="weak-item" style="display:grid; grid-template-columns:minmax(150px,210px) 1fr; gap:16px; align-items:start; padding:14px 0; border-top:1px solid var(--line);">
         <div>
           <div style="font-weight:700;">${escapeHtml(roundLabel(it.round))} · ${it.q}번</div>
           ${it.typeName ? `<div class="type-unit" style="margin-top:2px;">${escapeHtml(it.typeName)}</div>` : ''}
-          <div style="margin-top:8px; font-size:13px;">전체 학생의 <b class="tnum">${it.peerPct}%</b>가<br>맞힌 문제예요</div>
+          <div style="margin-top:8px; font-size:13px;">재원생 정답률 <b class="tnum">${it.peerPct}%</b></div>
           ${buildBarRow(it.peerPct, 'var(--data)')}
-          <div style="margin-top:6px;"><span class="badge watch"><span class="dot"></span>우리 아이는 오답</span></div>
+          <div style="margin-top:6px;"><span class="badge watch"><span class="dot"></span>${escapeHtml(call)}의 오답</span></div>
         </div>
         <div class="weak-img" data-wr="${escapeHtml(it.round.id)}" data-wq="${it.q}"><span class="field-hint no-print">문제를 불러오는 중…</span></div>
       </div>`).join('');
   return `
     <div class="card" data-rkey="weak">
       <h2>보완이 필요한 문항</h2>
-      <p class="card-sub">다른 학생들은 대부분 맞혔는데 우리 아이가 놓친 문항이에요. 같은 유형이 다시 나오면 틀리지 않도록 우선 보완해요.</p>
+      <p class="card-sub">${escapeHtml(call)}의 오답 중, 재원생들의 정답률이 높은 문항들입니다.</p>
       ${types.length ? `<p class="comment" style="margin:0 0 6px;">특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.</p>` : ''}
       ${cards}
     </div>`;
@@ -6012,7 +6013,7 @@ async function loadWeakImages(out) {
     if (url) {
       box.innerHTML = '';
       const img = new Image(); img.src = url; img.alt = `${q}번 문제`;
-      img.style.cssText = 'max-width:100%; height:auto; display:block; border:1px solid var(--line);';
+      img.style.cssText = 'max-width:100%; width:360px; height:auto; display:block; border:1px solid var(--line);';   // 문제 그림은 작게 (카드 폭의 1/3 정도)
       box.appendChild(img);
       await (img.decode ? img.decode().catch(() => {}) : Promise.resolve());
     } else {
