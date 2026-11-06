@@ -4914,12 +4914,13 @@ function pdfSplittableChildren(el) {
     const chunkSize = 6;
     const chunks = [];
     for (let i = 0; i < items.length; i += chunkSize) {
-      const wrap = document.createElement('div');
+      const doc = el.ownerDocument;   // 아이폰용 숨은 창 안에서도 같은 문서에 붙여야 함
+      const wrap = doc.createElement('div');
       wrap.className = 'type-grid';
       wrap.style.cssText = `position:fixed; left:-99999px; top:0; width:${width}px;`;
       wrap.dataset.pdfTemp = '1';
       items.slice(i, i + chunkSize).forEach(item => wrap.appendChild(item.cloneNode(true)));
-      document.body.appendChild(wrap);
+      doc.body.appendChild(wrap);
       chunks.push(wrap);
     }
     return chunks;
@@ -5149,6 +5150,24 @@ function pdfOverlay(msg, blob, name) {
     row.appendChild(sb); row.appendChild(cb); box.appendChild(row);
   }
 }
+async function pdfLiteFrame(target) {
+  const fr = document.createElement('iframe');
+  fr.style.cssText = 'position:fixed; left:-10000px; top:0; width:900px; height:1400px; border:0; visibility:hidden;';
+  document.body.appendChild(fr);
+  const d = fr.contentDocument;
+  const heads = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(n => n.outerHTML).join('');
+  const bodyCls = (document.body.className || '').replace(/\bexporting-pdf\b/g, '') + ' exporting-pdf';
+  d.open();
+  d.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${location.href}">${heads}</head><body class="${bodyCls}"><div id="reportOutput">${target.innerHTML}</div></body></html>`);
+  d.close();
+  fr.style.visibility = 'visible';
+  // 스타일·글꼴·그림이 다 불러와질 때까지 기다림
+  await Promise.all(Array.from(d.querySelectorAll('link[rel="stylesheet"]')).map(l => (l.sheet ? null : new Promise(r => { l.addEventListener('load', r); l.addEventListener('error', r); setTimeout(r, 4000); }))));
+  try { await Promise.race([d.fonts.ready, new Promise(r => setTimeout(r, 3000))]); } catch (e) {}
+  await Promise.all(Array.from(d.images).map(im => (im.complete ? null : new Promise(r => { im.addEventListener('load', r); im.addEventListener('error', r); setTimeout(r, 4000); }))));
+  await new Promise(r => setTimeout(r, 200));
+  return fr;
+}
 function pdfProgress(step) {
   try { if (step) sessionStorage.setItem('pdfProgress', step); else sessionStorage.removeItem('pdfProgress'); } catch (e) {}
 }
@@ -5165,7 +5184,8 @@ document.addEventListener('DOMContentLoaded', () => {
 async function exportReportPDF() {
   const btn = document.getElementById('pdfExportBtn');
   const status = document.getElementById('pdfExportStatus');
-  const target = document.getElementById('reportOutput');
+  let target = document.getElementById('reportOutput');
+  let liteFrame = null;
   if (!target || !target.children.length) { status.textContent = '먼저 보고서를 생성하세요.'; return; }
   if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
     status.style.color = 'var(--critical)';
@@ -5181,9 +5201,16 @@ async function exportReportPDF() {
   btn.disabled = true;
   status.style.color = 'var(--muted)';
   status.textContent = 'PDF 생성 중이에요...';
-  document.body.classList.add('exporting-pdf');
+  const lite = IS_IOS || window.__PDF_LITE;
+  if (!lite) document.body.classList.add('exporting-pdf');
   try {
     try { await weakImgPending; } catch (e) { /* 문제 그림을 못 불러와도 보고서는 만듦 */ }   // 보완 문항의 문제 그림이 다 뜬 뒤에 캡처
+    if (lite) {
+      // 아이폰: 앱 전체 화면을 매번 복사해서 찍으면 메모리가 모자라 사파리가 꺼지므로, 보고서만 담은 가벼운 숨은 창(너비 900)에서 찍음
+      pdfProgress('보고서 준비 단계');
+      liteFrame = await pdfLiteFrame(target);
+      target = liteFrame.contentDocument.getElementById('reportOutput');
+    }
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4', true);
     const marginX = 10, marginY = 10, gap = 4;
@@ -5313,6 +5340,7 @@ async function exportReportPDF() {
     if (IS_IOS) { pdfProgress(''); pdfOverlay('PDF 생성 실패: ' + (err && err.message ? err.message : err)); }
   } finally {
     document.body.classList.remove('exporting-pdf');
+    if (liteFrame) liteFrame.remove();
     btn.disabled = false;
   }
 }
