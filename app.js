@@ -4759,6 +4759,7 @@ function renderReportTab() {
 
   setupReportPartToggles(out, studentId);
   weakImgPending = loadWeakImages(out).catch(e => console.warn(e));
+  repairRoundDifficulties(points.map(p => p.roundId));
 
   const gradeOverrideSel = document.getElementById('gradeOverrideSel');
   if (gradeOverrideSel) {
@@ -6172,6 +6173,37 @@ function buildWeakSection(items, student) {
     </div>`;
 }
 // 보고서 안의 문제 그림 자리(.weak-img)를 올라간 본시험지 PDF에서 뽑은 그림으로 채움 (한 번 뽑은 건 기억해 둠)
+// 시험지 난이도가 잘못 저장된 회차(1~6 밖의 값이거나 문항의 절반도 안 채워짐)를, 올라간 본시험지 PDF에 문항마다 인쇄된 "정답률"로 다시 매김
+// (95%↑ 하 · 85~95 중하 · 70~85 중 · 60~70 중상 · 50~60 상 · 50 미만 최상). 인쇄된 정답률을 못 읽으면 그대로 둠
+const diffRepairTried = new Set();
+function roundDifficultyOk(round) {
+  const m = round.difficulty;
+  if (!m || typeof m !== 'object') return false;
+  let n = 0;
+  for (let q = 1; q <= (round.total || 30); q++) { const d = Number(m[q] ?? m[String(q)]); if (d >= 1 && d <= 6) n++; }
+  return n >= Math.ceil((round.total || 30) / 2);
+}
+async function repairRoundDifficulties(roundIds) {
+  if (!(window.KMMS && window.KMMS.ready && window.RETEST)) return;
+  let changed = false;
+  for (const id of new Set(roundIds)) {
+    const round = state.rounds.find(r => r.id === id);
+    if (!round || diffRepairTried.has(id) || !round.examPath || isElementaryGrade(round.grade) || roundDifficultyOk(round)) continue;
+    diffRepairTried.add(id);
+    try {
+      const buf = await window.KMMS.fetchBuf(round.examPath);
+      const info = buf ? await window.RETEST.describePaper(buf.slice(0)) : null;
+      const qs = info ? Object.keys(info.rates || {}).map(Number).filter(q => q >= 1 && q <= (round.total || 30)) : [];
+      if (qs.length >= Math.ceil((round.total || 30) / 2)) {
+        const map = {};
+        qs.forEach(q => { map[q] = difficultyTierByAccuracy(info.rates[q]).n; });
+        round.difficulty = map;
+        changed = true;
+      }
+    } catch (e) { console.warn('난이도를 시험지 정답률에서 읽지 못했어요', e); }
+  }
+  if (changed) { saveState(); renderReportTab(); }
+}
 const weakImgCache = new Map();   // 회차id|번호 → 그림 주소('' = 못 찾음)
 const weakBufCache = new Map();   // 회차id → 시험지 파일(ArrayBuffer) 또는 null
 let weakImgPending = Promise.resolve();

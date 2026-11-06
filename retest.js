@@ -538,6 +538,7 @@
   async function describePaper(paperBuf) {
     const pdf = await openPdf(paperBuf);
     const types = {};
+    const rates = {};   // 문항 번호 → 시험지에 인쇄된 정답률(%)
     let title = '', range = '';
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p);
@@ -567,12 +568,14 @@
         if (!pipes.length) return;
         const first = pipes.sort((a, b) => a.top - b.top)[0];
         const line = items.filter(it => Math.abs(it.top - first.top) < 4 && it.x >= first.x - 1 && (m.x < half ? it.x < half : true)).sort((a, b) => a.x - b.x).map(it => it.str).join(' ');
+        const rm = /정답률\s*(\d{1,3}(?:\.\d+)?)\s*%/.exec(line);
+        if (rm && rates[num] === undefined) rates[num] = parseFloat(rm[1]);
         const mm = /^\|\s*(.*?)\s*(?:\||정답률|$)/.exec(line);
         const name = (mm ? mm[1] : '').replace(/\s+/g, ' ').trim();
         if (name) types[num] = name;
       });
     }
-    return { title, range, types };
+    return { title, range, types, rates };
   }
 
   // 시험지 PDF에서 한 문제를 그림으로 뽑음 (유형명 머리글 포함, 번호는 그대로) — 오답 순위에서 문항을 눌러 볼 때 씀. 못 찾으면 null
