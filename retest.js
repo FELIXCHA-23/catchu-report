@@ -513,6 +513,26 @@
     return { blob: pdf.output('blob'), pageCount: pages.length, problemPages: totalProblemPages, answerPages: hasAns ? 1 : 0, found, missing, answersFound, previews: pages };
   }
 
+  // PDF 글자 조각들을 한 줄 글로 이음. 조각 사이에 공백을 무조건 넣으면 "함 수 의 증 가"처럼 글자마다 띄어지므로,
+  // 실제 공백 조각이 있거나 조각 사이가 눈에 띄게 벌어졌을 때만 띄움. 한글·영문·숫자·기본 기호 말고 PDF에 섞인 특수 문자는 공백으로 바꿈.
+  function cleanPdfText(s) {
+    return String(s || '').replace(/[^ -~·‐-―①-⑳ㄱ-ㆎ가-힣～]/g, ' ');
+  }
+  function joinPdfItems(its) {
+    const a = its.slice().sort((p, q) => p.x - q.x);
+    let out = '';
+    a.forEach((it, i) => {
+      const s = cleanPdfText(it.str);
+      if (i > 0) {
+        const p = a[i - 1], gap = it.x - (p.x + (p.w || 0));
+        // 공백 조각은 앞 단계에서 버려지므로 실제 간격으로 판단: 글자끼리는 붙거나 겹치고(≤0), 띄어쓰기는 글자 크기의 약 15% 벌어짐
+        if (gap > (it.size || 10) * 0.08 && !/\s$/.test(out) && !/^\s/.test(s)) out += ' ';
+      }
+      out += s;
+    });
+    return out.replace(/\s+/g, ' ').trim();
+  }
+
   // 재시험지(또는 본시험지) PDF에서 "어떤 시험인지" 알 수 있는 정보를 읽음: 제목 · 범위(부제) · 문항 번호별 유형명.
   // 문제마다 번호표 위에 "| 유형명 | 정답률 64%" 줄이 있으므로, 그 유형명을 번호대로 모아 둠 (본시험지의 문항별 유형과 맞춰 볼 때 씀)
   async function describePaper(paperBuf) {
@@ -536,7 +556,7 @@
         const lines = [];
         head.forEach(it => { const l = lines.find(l => Math.abs(l.top - it.top) < 4); if (l) l.items.push(it); else lines.push({ top: it.top, items: [it] }); });
         lines.sort((a, b) => a.top - b.top);
-        const txt = l => l ? l.items.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').replace(/\s+/g, ' ').trim() : '';
+        const txt = l => l ? joinPdfItems(l.items) : '';
         title = txt(lines[0]); range = txt(lines[1]);
       }
       const nearColLeft = x => (x >= 14 && x <= 70) || (x >= half + 2 && x <= half + 50);

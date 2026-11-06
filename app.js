@@ -123,11 +123,16 @@ function splitMineAndOthers(students) {
   if (!t) return { mine: scoped, others: [], t };
   return { mine: scoped.filter(s => s.teacher === t), others: scoped.filter(s => s.teacher !== t), t };
 }
+// 학생 드롭다운: 선생님별로 묶어서 보여줌. 로그인한(담당) 선생님 반이 맨 위, 그다음은 선생님 순서대로, 담당이 없는 학생은 맨 아래.
+// 한 선생님 반 학생만 있으면 묶음 없이 그냥 목록으로 보여줌. 묶음 안의 순서는 넘겨받은 순서 그대로(예: 채점 완료 학생이 위).
 function groupedOptions(mine, others, t, optFn) {
-  if (mine.length && others.length) {
-    return `<optgroup label="내 반 · ${escapeHtml(t)}">${mine.map(optFn).join('')}</optgroup><optgroup label="다른 반">${others.map(optFn).join('')}</optgroup>`;
-  }
-  return mine.concat(others).map(optFn).join('');
+  const all = mine.concat(others);
+  const byT = new Map();
+  all.forEach(s => { const k = s.teacher || ''; if (!byT.has(k)) byT.set(k, []); byT.get(k).push(s); });
+  if (byT.size <= 1) return all.map(optFn).join('');
+  const rank = k => { const i = TEACHER_OPTIONS.indexOf(k); return k === '' ? 999 : (i < 0 ? 500 : i); };
+  const keys = [...byT.keys()].sort((a, b) => (t && a === t ? -1 : t && b === t ? 1 : rank(a) - rank(b)));
+  return keys.map(k => `<optgroup label="${k ? escapeHtml(k) + ' 선생님 반' + (k === t ? ' (내 반)' : '') : '담당 미지정'}">${byT.get(k).map(optFn).join('')}</optgroup>`).join('');
 }
 
 // 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
@@ -3308,7 +3313,7 @@ function populateCollectCard() {
   const pool = state.students.filter(inStudentScope).filter(s => withWrong.has(s.id) && (colTeacherPick === 'observer' || s.teacher === colTeacherPick)).sort(byName);
   const prevS = sSel.value, prevF = fSel.value, prevT = tSel.value;
   sSel.innerHTML = pool.length
-    ? pool.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}${colTeacherPick === 'observer' && s.teacher ? ' · ' + escapeHtml(s.teacher) : ''}</option>`).join('')
+    ? groupedOptions(pool, [], colTeacherPick === 'observer' ? getCurrentTeacher() : '', s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`)   // 전체 보기(observer)일 땐 선생님별로 묶어서
     : '<option value="">이 선생님 반에는 오답이 있는 학생이 없어요</option>';
   if (pool.some(s => s.id === prevS)) sSel.value = prevS;
   const wr = weekRangeOptions();
