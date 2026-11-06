@@ -95,13 +95,17 @@ function inStudentScope(st) {
   if (st.hidden && !(sc === 'all' && studentsShowHidden)) return false;
   if (sc === 'all') return true;
   if (sc === 'elem') return !isEntranceStudent(st) && isElementaryGrade(st.examGrade || st.grade);
-  return sc === 'entrance' ? isEntranceStudent(st) : !isEntranceStudent(st);
+  if (sc === 'entrance') return isEntranceStudent(st);
+  // 캐치유테스트(일반): 초등 학생은 "캐치유테스트 초등"에서 따로 다루므로 여기선 뺌
+  return !isEntranceStudent(st) && !isElementaryGrade(st.examGrade || st.grade);
 }
 function inRoundScope(r) {
   const sc = appScope();
   if (sc === 'all') return true;
   if (sc === 'elem') return !isEntranceRound(r) && isElementaryGrade(r.grade);
-  return sc === 'entrance' ? isEntranceRound(r) : !isEntranceRound(r);
+  if (sc === 'entrance') return isEntranceRound(r);
+  // 캐치유테스트(일반): 초등 시험지는 "캐치유테스트 초등"에서 따로 다루므로 여기선 뺌
+  return !isEntranceRound(r) && !isElementaryGrade(r.grade);
 }
 // retestOnly: 본시험지 없이 재시험지만 먼저 올려서 만든 임시 회차 — 업로드 현황판·재시험지 올리기에서만 쓰고, 채점·보고서에는 나오지 않음
 function scopedRoundsAll() { return state.rounds.filter(inRoundScope); }
@@ -2573,6 +2577,15 @@ function populateReportStudentSel() {
 }
 
 // 학년 안에서 주차별로 회차를 묶음 (주차는 직접 고른 값 > 시험지 이름에 적힌 값 > 날짜 순으로 정해짐)
+// 채점 입력의 주차 목록은 10-1주차부터 시작 (그 이전 주차는 목록에 안 나옴)
+const SCORE_WEEK_START = { year: 2026, month: 10, week: 1 };
+function scoreWeekVisible(g) {
+  const m = String(g.label || '').match(/^(\d{1,2})-(\d)주차$/);
+  if (!m) return true;   // 입학테스트의 날짜형 이름은 그대로
+  const year = +String(g.key || '').slice(0, 4) || SCORE_WEEK_START.year;
+  const v = (y, mo, w) => y * 10000 + mo * 100 + w;
+  return v(year, +m[1], +m[2]) >= v(SCORE_WEEK_START.year, SCORE_WEEK_START.month, SCORE_WEEK_START.week);
+}
 function scoreRoundGroups(grade) {
   const rounds = scopedRounds().filter(r => r.grade === grade);
   const by = new Map();
@@ -2583,7 +2596,7 @@ function scoreRoundGroups(grade) {
   });
   const groups = [...by.values()];
   groups.forEach(g => { g.dates.sort(); g.date = g.dates[g.dates.length - 1]; g.first = g.dates[0]; });
-  return groups.sort((x, y) => x.first.localeCompare(y.first));
+  return groups.filter(scoreWeekVisible).sort((x, y) => x.first.localeCompare(y.first));
 }
 
 // 담당 학생이 아직 없는 학년이라도 초등 학년은 항상 다 열어두는 선생님 — 신입생 입학테스트를
@@ -2602,7 +2615,10 @@ function populateScoreGradeSel() {
   // (시험 응시 학년이 따로 설정된 학생은 examGrade 기준으로 매칭 — 위 채점 대상 매칭 로직과 동일)
   const myStudents = filterByCurrentTeacher(state.students);
   let grades = roundGrades;
-  if (hasAllAccess()) {
+  if (appScope() === 'regular') {
+    // 캐치유테스트(일반)에는 초등 학년을 아예 안 보여줌 (초등은 캐치유테스트 초등 화면에서)
+    grades = Array.from(new Set([...grades, ...ALL_GRADES])).filter(g => !isElementaryGrade(g));
+  } else if (hasAllAccess()) {
     // 전체 권한 선생님은 학년 전부(초3~고3)를 항상 열어둠 — 시험지가 아직 없는 학년도 미리 보여야 함
     grades = Array.from(new Set([...grades, ...ALL_GRADES]));
   } else if (ELEMENTARY_ALL_ACCESS_TEACHERS.includes(getCurrentTeacher())) {
