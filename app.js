@@ -4936,6 +4936,7 @@ async function pdfPlaceElement(pdf, el, ctx) {
   if (imgH > ctx.pageContentH) {
     const kids = pdfSplittableChildren(el);
     if (kids.length > 1) {
+      canvas.width = canvas.height = 0;   // 쪼개서 다시 찍을 거라 이 큰 그림은 바로 메모리에서 내림(폰 메모리 절약)
       for (const kid of kids) {
         await pdfPlaceElement(pdf, kid, ctx);
         if (kid.dataset && kid.dataset.pdfTemp === '1') kid.remove();
@@ -4946,7 +4947,8 @@ async function pdfPlaceElement(pdf, el, ctx) {
     pdfFlushPage(pdf, ctx, true);
     if (ctx.pageHasContent) { pdf.addPage(); ctx.y = ctx.marginY; ctx.pageHasContent = false; }
     let heightLeft = imgH, position = ctx.marginY;
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const imgData = canvas.toDataURL('image/jpeg', JPEG_Q);
+    canvas.width = canvas.height = 0;
     pdf.addImage(imgData, 'JPEG', ctx.marginX, position, ctx.contentWidth, imgH, undefined, 'FAST');
     heightLeft -= ctx.pageContentH;
     while (heightLeft > 0) {
@@ -4967,7 +4969,9 @@ async function pdfPlaceElement(pdf, el, ctx) {
     ctx.pageHasContent = false;
   }
   // 바로 그리지 않고 페이지에 모아뒀다가, 페이지가 다 찼을 때 남는 아래 여백을 요소 사이 간격에 나눠서 그림
-  (ctx.pageItems = ctx.pageItems || []).push({ imgData: canvas.toDataURL('image/jpeg', 0.95), y: ctx.y, h: imgH });
+  const pageImg = canvas.toDataURL('image/jpeg', JPEG_Q);
+  canvas.width = canvas.height = 0;
+  (ctx.pageItems = ctx.pageItems || []).push({ imgData: pageImg, y: ctx.y, h: imgH });
   ctx.y += imgH + ctx.gap;
   ctx.pageHasContent = true;
 }
@@ -5034,7 +5038,8 @@ async function pdfAddCoverPage(pdf, student, points) {
   document.body.appendChild(wrap);
   try {
     const canvas = await html2canvas(wrap.firstElementChild, { scale: 2.5, backgroundColor: '#ffffff', useCORS: true });
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const imgData = canvas.toDataURL('image/jpeg', JPEG_Q);
+    canvas.width = canvas.height = 0;
     pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
   } finally {
     document.body.removeChild(wrap);
@@ -5109,6 +5114,53 @@ function logReportPdf(data, fromId, toId) {
 }
 
 const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const JPEG_Q = IS_IOS ? 0.82 : 0.95;   // 아이폰은 메모리가 작아서 그림 용량을 조금 줄임
+
+// 아이폰: 진행 상황·완성 안내를 화면 위에 따로 띄움(보고서 화면이 다시 그려져도 안 사라지게). 만드는 중 사파리가 페이지를 다시 불러오면 어디서 끊겼는지 알 수 있게 기록해 둠
+function pdfOverlay(msg, blob, name) {
+  let box = document.getElementById('pdfOverlay');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'pdfOverlay';
+    box.className = 'no-print';
+    box.style.cssText = 'position:fixed; left:12px; right:12px; bottom:70px; z-index:99999; background:#111; color:#fff; padding:14px 16px; border-radius:10px; font-size:15px; line-height:1.5; box-shadow:0 4px 20px rgba(0,0,0,.4);';
+    document.body.appendChild(box);
+  }
+  box.textContent = '';
+  const t = document.createElement('div'); t.textContent = msg; box.appendChild(t);
+  if (blob) {
+    const row = document.createElement('div'); row.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
+    const sb = document.createElement('button');
+    sb.type = 'button'; sb.textContent = '📥 PDF 저장 · 공유';
+    sb.style.cssText = 'flex:1; padding:12px; font-size:16px; font-weight:700; border:0; border-radius:8px; background:#c8102e; color:#fff;';
+    sb.addEventListener('click', async () => {
+      const file = new File([blob], name, { type: 'application/pdf' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, '_blank');
+      if (!w) { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+    });
+    const cb = document.createElement('button');
+    cb.type = 'button'; cb.textContent = '닫기';
+    cb.style.cssText = 'padding:12px 16px; font-size:16px; border:0; border-radius:8px; background:#444; color:#fff;';
+    cb.addEventListener('click', () => box.remove());
+    row.appendChild(sb); row.appendChild(cb); box.appendChild(row);
+  }
+}
+function pdfProgress(step) {
+  try { if (step) sessionStorage.setItem('pdfProgress', step); else sessionStorage.removeItem('pdfProgress'); } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', () => {
+  let p = null;
+  try { p = sessionStorage.getItem('pdfProgress'); } catch (e) {}
+  if (p) {
+    pdfProgress('');
+    setTimeout(() => pdfOverlay('PDF를 만드는 중에 화면이 다시 불러와졌어요 (' + p + '에서 멈춤). 폰 메모리가 모자랐을 수 있어요.'), 800);
+    setTimeout(() => { const b = document.getElementById('pdfOverlay'); if (b) b.remove(); }, 20000);
+  }
+});
 
 async function exportReportPDF() {
   const btn = document.getElementById('pdfExportBtn');
@@ -5146,6 +5198,7 @@ async function exportReportPDF() {
     // "겉표지 포함"을 끄면 겉표지와 뒷면 빈 페이지 없이 본문부터 바로 시작함
     const includeCover = !((state.reportHidden[studentId] || []).includes('cover'));
     if (includeCover) {
+      if (IS_IOS) { pdfProgress('겉표지 만드는 단계'); pdfOverlay('PDF 만드는 중이에요… (겉표지)'); await new Promise(r => setTimeout(r, 60)); }
       await pdfAddCoverPage(pdf, data.student, data.points);
       pdf.addPage();
       // 겉표지 뒷면이 비도록 빈 페이지를 하나 더 끼워 넣음 — 양면 인쇄해도 겉표지는 단면으로 나오고,
@@ -5201,6 +5254,11 @@ async function exportReportPDF() {
 
     try {
       for (let i = 0; i < blocks.length; i++) {
+        if (IS_IOS) {
+          pdfProgress(`${i + 1}/${blocks.length}번째 칸`);
+          pdfOverlay(`PDF 만드는 중이에요… (${i + 1}/${blocks.length}) 화면을 끄거나 다른 앱으로 가지 마세요.`);
+          await new Promise(r => setTimeout(r, 60));   // 메모리 정리할 틈
+        }
         await pdfPlaceElement(pdf, blocks[i], ctx);
         // 선생님 의견 바로 다음 블록(대표 강점·취약 유형)은 여백이 남더라도 항상 새 페이지에서 시작하게 함 —
         // "예상등급~전체 정답률 추이~선생님 의견"까지가 한 페이지, 그다음부터 새 페이지로 딱 나뉘도록
@@ -5238,25 +5296,11 @@ async function exportReportPDF() {
     status.style.color = 'var(--good)';
     if (IS_IOS) {
       // 아이폰·아이패드 사파리: 오래 걸린 뒤 자동 저장은 막히는 일이 많아서, 다 만든 뒤 "저장" 버튼을 새로 눌러 저장·공유하게 함
+      pdfProgress('PDF 파일 합치는 단계');
       const blob = pdf.output('blob');
-      status.innerHTML = 'PDF를 만들었어요. 아래 버튼을 눌러 저장하세요. ';
-      const sb = document.createElement('button');
-      sb.type = 'button'; sb.className = 'btn primary'; sb.textContent = '📥 PDF 저장 · 공유';
-      sb.addEventListener('click', async () => {
-        const file = new File([blob], pdfName, { type: 'application/pdf' });
-        try {
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: pdfName });   // 공유 창 → "파일에 저장"
-            return;
-          }
-        } catch (e) {
-          if (e && e.name === 'AbortError') return;   // 사용자가 공유 창을 닫음
-        }
-        const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank');   // 공유가 안 되면 새 탭에서 열기(거기서 공유 버튼으로 저장)
-        if (!w) { const a = document.createElement('a'); a.href = url; a.download = pdfName; document.body.appendChild(a); a.click(); a.remove(); }
-      });
-      status.appendChild(sb);
+      pdfProgress('');
+      status.textContent = 'PDF를 만들었어요. 화면 아래 버튼으로 저장하세요.';
+      pdfOverlay('PDF를 다 만들었어요. 아래 버튼을 누르세요.', blob, pdfName);
     } else {
       pdf.save(pdfName);
       status.textContent = 'PDF를 저장했어요.';
@@ -5266,6 +5310,7 @@ async function exportReportPDF() {
     console.error(err);
     status.style.color = 'var(--critical)';
     status.textContent = 'PDF 생성 실패: ' + err.message;
+    if (IS_IOS) { pdfProgress(''); pdfOverlay('PDF 생성 실패: ' + (err && err.message ? err.message : err)); }
   } finally {
     document.body.classList.remove('exporting-pdf');
     btn.disabled = false;
