@@ -88,6 +88,32 @@
     return found;
   }
 
+  // 빠른정답 표의 가로줄 위치(pt, 위→아래)를 찾음: 쪽을 그림으로 그려서, 표 너비의 대부분을 가로로 가로지르는 가는 줄을 찾음
+  async function findTableRules(page, vp, marks, colGap, rows) {
+    const S = 2;
+    const v2 = page.getViewport({ scale: S });
+    const cv = document.createElement('canvas'); cv.width = Math.ceil(v2.width); cv.height = Math.ceil(v2.height);
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport: v2 }).promise;
+    const minX = Math.min(...marks.map(m => m.x)), maxX = Math.max(...marks.map(m => m.x));
+    const x0 = Math.max(0, minX - 2), x1 = Math.min(vp.width, maxX + colGap - 10);
+    const yMin = Math.max(0, rows[0].y - 60), yMax = Math.min(vp.height, rows[rows.length - 1].y + 60);
+    const px0 = Math.floor(x0 * S), px1 = Math.ceil(x1 * S), py0 = Math.floor(yMin * S), py1 = Math.ceil(yMax * S);
+    const W = px1 - px0, H = py1 - py0;
+    if (W < 20 || H < 20) return [];
+    const data = ctx.getImageData(px0, py0, W, H).data;
+    const hits = [];
+    for (let y = 0; y < H; y++) {
+      let dark = 0, n = 0;
+      for (let x = 0; x < W; x += 2) { const i = (y * W + x) * 4; n++; if (data[i] < 215 || data[i + 1] < 215 || data[i + 2] < 215) dark++; }
+      if (dark / n > 0.8) hits.push(yMin + y / S);
+    }
+    // 붙어 있는 줄(굵은 줄은 여러 픽셀)은 하나로 묶어 가운데 위치를 씀
+    const lines = [];
+    hits.forEach(y => { const l = lines[lines.length - 1]; if (l && y - l.end < 1.2) { l.end = y; } else lines.push({ start: y, end: y }); });
+    return lines.map(l => (l.start + l.end) / 2);
+  }
+
   // 빠른정답: 번호표(두 자리 숫자)가 표 모양으로 늘어서 있음. 각 번호의 칸 = 번호 오른쪽 ~ 다음 열 번호 앞, 위아래는 이웃 행과의 가운데까지.
   async function scanAnswers(pdf, pageNo) {
     pageNo = pageNo || 1;
@@ -117,14 +143,22 @@
     rows.sort((a, b) => a.y - b.y);
     const colXs = Array.from(new Set(marks.map(m => Math.round(m.x / 8) * 8))).sort((a, b) => a - b);
     const colGap = colXs.length > 1 ? (colXs[colXs.length - 1] - colXs[0]) / (colXs.length - 1) : 80;
+    // 분수(1/10, 75/4)처럼 키가 큰 정답은 칸(줄)이 더 높고 글자 위치만으로는 높이를 알 수 없어서,
+    // 표의 가로줄을 직접 찾아 "줄과 줄 사이"를 한 칸으로 씀. 못 찾으면 예전처럼 이웃 줄과의 거리로 짐작함
+    let rules = [];
+    try { rules = await findTableRules(page, vp, marks, colGap, rows); } catch (e) { console.warn('표 가로줄을 못 찾았어요', e && e.message); }
     rows.forEach((r, ri) => {
       const prev = rows[ri - 1], next = rows[ri + 1];
       // 이웃 줄과의 가운데까지 자르되, 표의 가로줄이 같이 잘려 들어오지 않게 조금 덜 자름
-      const up = (prev ? (r.y - prev.y) / 2 : (next ? (next.y - r.y) / 2 : 14)) * 0.82;
-      const down = (next ? (next.y - r.y) / 2 : (prev ? (r.y - prev.y) / 2 : 14)) * 0.82;
+      let up = (prev ? (r.y - prev.y) / 2 : (next ? (next.y - r.y) / 2 : 14)) * 0.82;
+      let down = (next ? (next.y - r.y) / 2 : (prev ? (r.y - prev.y) / 2 : 14)) * 0.82;
+      const above = rules.filter(y => y < r.y - 3).pop(), below = rules.find(y => y > r.y + 3);
+      if (above != null && below != null && below - above > 12 && below - above < 100) {   // 줄과 줄 사이 (줄 자체는 빼려고 1.5pt 안쪽)
+        up = r.y - (above + 1.5); down = (below - 1.5) - r.y;
+      }
       r.items.sort((a, b) => a.x - b.x).forEach((m, ci, arr) => {
         if (found[m.num]) return;
-        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 4, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6,
+        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 2.5, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6,
           mark: { left: m.x - 1, right: m.x + m.w + 1.5, top: m.base - m.size * 0.85, bottom: m.base + m.size * 0.25, base: m.base, size: m.size } };
       });
     });
@@ -177,6 +211,15 @@
       const tc = await page.getTextContent();
       if (!tc.items.some(it => /정답/.test(it.str))) continue;
       if (tc.items.some(it => it.str.trim() === '해설')) continue;   // 해설 쪽은 빠른정답 표가 아님
+      const spots = await scanAnswers(pdf, p);
+      if (Object.keys(spots).length >= 5) return { page: p, spots };
+    }
+    // 빠른정답 표가 맨 뒤가 아니라 문제 쪽 바로 뒤(해설 쪽보다 앞)에 있는 시험지도 있음 — 그 앞쪽에서 "빠른정답" 제목이 있는 쪽을 찾음
+    for (let p = Math.max(pdf.numPages - 4, 0); p >= 1; p--) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      if (!tc.items.some(it => /빠른\s*정답/.test(it.str))) continue;
+      if (tc.items.some(it => it.str.trim() === '해설')) continue;
       const spots = await scanAnswers(pdf, p);
       if (Object.keys(spots).length >= 5) return { page: p, spots };
     }
@@ -450,13 +493,15 @@
       drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
       // 빠른정답은 작게, 왼쪽 위부터 가로로 1번, 2번, 3번… 쭉 채우고 한 줄이 차면 다음 줄에서 이어서 씀
       const N = acs.length, cols = N > 12 ? 4 : 3;
-      const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols, rowH = 92;
+      const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols, rowH = 100;
+      // 모든 정답을 같은 배율로 붙여서 번호·글자 크기가 칸마다 달라지지 않게 함 (분수처럼 키가 큰 칸에 맞춰 전체가 같이 줄어듦)
+      const sAns = Math.min(1.0, ...acs.map(a => Math.min(cw / a.img.width, (rowH - 30) / a.img.height)));
       acs.forEach((a, i) => {
         const c = i % cols, r = Math.floor(i / cols);
         const x = L + c * (cw + gapX), y = TOP + 10 + r * rowH;
         if (y + rowH > BOT) return;
         ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
-        fitImage(ctx, a.img, x, y + 2, cw, rowH - 34, 1.0);
+        ctx.drawImage(a.img, x, y + 2, a.img.width * sAns, a.img.height * sAns);
       });
       drawFooter(ctx, `빠른 정답 ${opts.studentName || ''} · ${pages.length + 1}/${totalPages}`);
       pages.push(cv);
