@@ -144,6 +144,7 @@
     <button class="tab-btn" data-tab="retest">재시험</button>
     <button class="tab-btn" data-tab="report">보고서</button>
     <button class="tab-btn" data-tab="collect">오답 모음</button>
+    <button class="tab-btn" data-tab="feedback">피드백 문자</button>
     <button class="tab-btn" data-tab="example" style="margin-left:auto;">예시보고서</button>
     <button class="tab-btn" data-tab="rounds">시험지</button>
     <button class="tab-btn" data-tab="data">데이터 관리</button>
@@ -482,6 +483,24 @@
     </div>
   </section>
 
+  <!-- 학부모 피드백 문자 -->
+  <section class="tab-panel" id="panel-feedback">
+    <div class="card">
+      <h2>학부모 피드백 문자</h2>
+      <p class="card-sub">채점한 결과로 학부모님께 보낼 문자를 자동으로 만들어요. 주차를 고르고 학생 카드의 <b>복사</b>를 눌러 붙여넣기 하세요. 재시험 결과는 기본으로 전부 맞힌 것으로 들어가 있고, 칸에서 바꿀 수 있어요.</p>
+      <div class="inline-form">
+        <select id="fbWeek"></select>
+        <select id="fbSender" title="문자 양식">
+          <option value="auto">보내는 사람: 담임 (학생 담당 선생님)</option>
+          <option value="principal">보내는 사람: 원장 (차성빈)</option>
+        </select>
+        <button type="button" class="btn ghost" id="fbCopyAllBtn">이 주 문자 전부 복사</button>
+      </div>
+      <div id="fbInfo" class="field-hint" style="margin-top:8px;"></div>
+    </div>
+    <div id="fbList"></div>
+  </section>
+
   <!-- 보고서 -->
   <section class="tab-panel" id="panel-report">
    <div class="report-layout">
@@ -550,7 +569,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=17"></script>
-<script src="app.js?v=247"></script>
+<script src="app.js?v=248"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

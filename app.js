@@ -783,6 +783,7 @@ function switchTab(name) {
   if (name === 'report') renderReportTab();
   if (name === 'entstatus') { try { renderEntranceStatus(); } catch (e) { console.warn(e); } }
   if (name === 'collect') { try { populateCollectCard(); } catch (e) { console.warn(e); } }
+  if (name === 'feedback') { try { renderFeedbackTab(); } catch (e) { console.warn(e); } }
   if (name === 'example') openExampleReport();
 }
 
@@ -5704,4 +5705,152 @@ document.addEventListener('DOMContentLoaded', () => {
     renderPrintHostCard();
   });
   setInterval(() => { try { renderPrintHostCard(); } catch (e) {} }, 5000);
+});
+
+/* ===== 피드백 문자 탭: 채점 결과로 학부모 문자를 자동으로 만들어 복사·붙여넣기 ===== */
+// 선생님마다 쓰던 양식이 조금씩 달라서 양식을 따로 둠 (소개 문구·주차 표기·재시험 줄·📌 줄)
+const FB_PIN_RETEST = '오답 문항은 추후 개별 오답노트로 제작하여 확실히 내 것으로 만들 때까지 반복 RE-TEST 진행됩니다!';
+const FB_PIN_DONE_ALL = '재시험 오답을 포함하여 오늘 틀린 모든 문항은 1:1 풀이 지도 후 완전 학습으로 마무리했습니다!';
+const FB_PIN_ALL_RIGHT = '이번 TEST에서 모든 문항을 맞혔습니다! 앞으로도 꾸준히 관리하도록 하겠습니다.';
+const FB_STYLES = {
+  '차성빈': {
+    intro: '캐슬수학원장 차성빈', week: 'dash',
+    retest: (w, k) => `틀린 ${w}문항 중 ${k}문항 맞음`,
+    pinsDone: (n, w, k) => [FB_PIN_RETEST, k >= w
+      ? `${n}는 오늘 재시험에서 틀린 문항을 전부 맞혔습니다! 끝까지 추적관리 하도록 하겠습니다. 감사합니다.`
+      : `${n}는 재시험에서 아직 맞히지 못한 문항이 있어, 확실히 맞힐 때까지 끝까지 추적관리 하도록 하겠습니다. 감사합니다.`],
+    pinsNone: n => [`${n}는 이번 TEST에서 모든 문항을 맞혔습니다! 앞으로도 꾸준히 추적관리 하도록 하겠습니다. 감사합니다.`],
+  },
+  '목윤재': { intro: '캐슬수학 담임 Dave', week: 'spaced', retest: (w, k) => `오답 ${w}문항 중 ${k}문항 정답`, pinsDone: () => [FB_PIN_DONE_ALL, FB_PIN_RETEST], pinsNone: () => [FB_PIN_ALL_RIGHT] },
+  '문태민': { intro: '캐슬수학 담임 LUCAS', week: 'tight', retest: (w, k) => `오답 ${w}문항 중 ${k}문항 정답`, pinsDone: () => [FB_PIN_DONE_ALL, FB_PIN_RETEST], pinsNone: () => [FB_PIN_ALL_RIGHT] },
+  '방희진': { intro: '캐슬수학 담임 CELINA(희진T)', week: 'tight', retest: (w, k) => `${w}문항 중 ${k}문항`, pinsDone: () => ['오늘 틀린 모든 문항은 1:1 풀이 지도 후 완전 학습으로 마무리했습니다!', FB_PIN_RETEST], pinsNone: () => [FB_PIN_ALL_RIGHT] },
+};
+const fbRetestOk = new Map();   // 학생|회차 → 재시험에서 맞힌 개수 (칸에서 바꾼 값, 이 화면에서만 기억)
+const fbUnitEdit = new Map();   // 학생|회차 → 직접 고친 단원명
+
+// "황시원" → "시원이" (성 빼고, 받침 있으면 '이'). 동명이인 숫자는 뗌. 두 글자 이름은 그대로
+function fbCallName(full) {
+  let n = String(full || '').replace(/[0-9\s]/g, '');
+  if (n.length >= 3) n = n.slice(1);
+  const c = n.charCodeAt(n.length - 1);
+  const batchim = c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 !== 0;
+  return batchim ? n + '이' : n;
+}
+function fbWeekText(label, kind) {
+  const m = String(label || '').match(/^(\d{1,2})-(\d)주차$/);
+  if (!m) return label || '';
+  return kind === 'dash' ? `${m[1]}-${m[2]}주차` : kind === 'spaced' ? `${m[1]}월 ${m[2]}주차` : `${m[1]}월${m[2]}주차`;
+}
+// 단원명: 시험지 이름의 " - " 뒤(예: "유리함수의 그래프 ~ 무리함수의 그래프") > 유형들의 대단원 첫~끝 > 비워 두면 "N월N주차 캐치유 TEST"
+function fbUnitName(round) {
+  const t = String(round.title || ''), i = t.indexOf(' - ');
+  if (i >= 0) { const u = t.slice(i + 3).trim(); if (u) return u; }
+  const big = [];
+  (round.types || []).forEach(ty => { const p = String(ty.unit || '').split(' - ').map(s => s.trim()); if (p[0] && !big.includes(p[0])) big.push(p[0]); });
+  if (big.length) return big.length > 1 ? `${big[0]} ~ ${big[big.length - 1]}` : big[0];
+  return '';
+}
+function fbMessage(o) {
+  const stl = FB_STYLES[o.teacher] || FB_STYLES['문태민'];
+  const n = fbCallName(o.student.name);
+  const wk = fbWeekText(roundWeekLabel(o.round), stl.week);
+  const unit = o.unit || `${wk} 캐치유 TEST`;
+  const lines = [`안녕하세요, ${stl.intro}입니다☺️`, `${n}의 ${wk} 클리닉 피드백 전송드립니다!`, '', `- 단원명 : ${unit}`, `✔️ TEST 결과 : ${o.total}문항 중 ${o.total - o.wrong}문항`];
+  if (o.wrong > 0) {
+    lines.push(`✔️ 재시험 결과 : ${stl.retest(o.wrong, o.retestOk)}`, '');
+    stl.pinsDone(n, o.wrong, o.retestOk).forEach(p => lines.push('📌 ' + p));
+  } else {
+    lines.push('');
+    stl.pinsNone(n).forEach(p => lines.push('📌 ' + p));
+  }
+  return lines.join('\n');
+}
+function fbItems() {
+  const wk = document.getElementById('fbWeek').value;
+  const sender = document.getElementById('fbSender').value;
+  const wmap = weekStartMap();
+  const visible = new Set(state.students.filter(inStudentScope).map(s => s.id));
+  const sp = splitMineAndOthers(state.students);
+  const order = new Map(sp.mine.concat(sp.others).map((s, i) => [s.id, i]));
+  const rounds = scopedRounds();
+  return state.results
+    .filter(r => visible.has(r.studentId))
+    .map(r => ({ r, round: rounds.find(x => x.id === r.roundId), student: state.students.find(s => s.id === r.studentId) }))
+    .filter(x => x.round && x.student && roundWeekDate(x.round, wmap) === wk)
+    .sort((a, b) => (order.get(a.student.id) ?? 9999) - (order.get(b.student.id) ?? 9999))
+    .map(x => {
+      const key = x.student.id + '|' + x.round.id;
+      const wrong = new Set(x.r.wrong).size, total = x.round.total || 30;
+      const retestOk = Math.min(wrong, fbRetestOk.has(key) ? fbRetestOk.get(key) : wrong);
+      const unit = fbUnitEdit.has(key) ? fbUnitEdit.get(key) : fbUnitName(x.round);
+      const teacher = sender === 'principal' ? '차성빈' : (x.student.teacher || '');
+      return { key, student: x.student, round: x.round, wrong, total, retestOk, unit, teacher, text: fbMessage({ student: x.student, round: x.round, wrong, total, retestOk, unit, teacher }) };
+    });
+}
+function renderFeedbackTab() {
+  const wSel = document.getElementById('fbWeek');
+  if (!wSel) return;
+  const prev = wSel.value;
+  const wr = weekRangeOptions();
+  wSel.innerHTML = wr.html || '<option value="">회차가 없어요</option>';
+  if (wr.dates.includes(prev)) wSel.value = prev;
+  else {
+    // 기본: 채점 결과가 있는 가장 최근 주차 (매주 열면 이번 주가 바로 나옴)
+    const wmap = weekStartMap(), rounds = scopedRounds();
+    const have = new Set(state.results.map(r => { const rd = rounds.find(x => x.id === r.roundId); return rd ? roundWeekDate(rd, wmap) : ''; }).filter(Boolean));
+    const last = wr.dates.filter(d => have.has(d)).pop();
+    wSel.value = last || wr.dates[wr.dates.length - 1] || '';
+  }
+  paintFeedbackList();
+}
+function paintFeedbackList() {
+  const list = document.getElementById('fbList'), info = document.getElementById('fbInfo');
+  const items = fbItems();
+  info.textContent = items.length ? `${items.length}명 · 학생마다 담당 선생님 양식으로 만들었어요. 단원명·재시험 맞힌 개수는 칸에서 고칠 수 있어요.` : '이 주차에 채점된 학생이 없어요.';
+  list.innerHTML = items.map(it => `<div class="card fb-card" data-fb-key="${escapeHtml(it.key)}">
+    <div class="inline-form" style="align-items:center;">
+      <b>${escapeHtml(it.student.name)}</b><span class="field-hint">${escapeHtml(it.student.class || '')} · ${escapeHtml(it.student.teacher || '담당 없음')} · ${escapeHtml(roundLabel(it.round))}</span>
+      <span class="field-hint" style="margin-left:auto;">TEST ${it.total - it.wrong}/${it.total}</span>
+    </div>
+    <div class="inline-form" style="margin-top:6px;">
+      <label class="field-hint">단원명 <input type="text" class="fb-unit" value="${escapeHtml(it.unit)}" placeholder="${escapeHtml(fbWeekText(roundWeekLabel(it.round), 'tight') + ' 캐치유 TEST')}" style="min-width:260px;"></label>
+      ${it.wrong ? `<label class="field-hint">재시험 맞힌 문항 <input type="number" class="fb-ok" min="0" max="${it.wrong}" value="${it.retestOk}" style="width:64px;"> / ${it.wrong}</label>` : '<span class="field-hint">오답이 없어서 재시험 줄은 빠져요</span>'}
+    </div>
+    <textarea class="fb-text" rows="${it.wrong ? 11 : 9}" style="width:100%;margin-top:8px;font-family:inherit;">${escapeHtml(it.text)}</textarea>
+    <div style="margin-top:6px;"><button type="button" class="btn primary fb-copy">복사</button> <span class="field-hint fb-done"></span></div>
+  </div>`).join('');
+}
+async function fbCopy(text, doneEl) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch (e2) { /* 복사 실패 */ }
+    ta.remove();
+  }
+  if (doneEl) { doneEl.textContent = ok ? '복사했어요! 문자에 붙여넣기 하세요' : '복사하지 못했어요. 글을 직접 선택해서 복사해 주세요'; setTimeout(() => { doneEl.textContent = ''; }, 3500); }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const list = document.getElementById('fbList');
+  if (!list) return;
+  ['fbWeek', 'fbSender'].forEach(id => document.getElementById(id).addEventListener('change', paintFeedbackList));
+  list.addEventListener('input', e => {
+    const card = e.target.closest('.fb-card');
+    if (!card || e.target.classList.contains('fb-text')) return;
+    const key = card.dataset.fbKey;
+    if (e.target.classList.contains('fb-unit')) fbUnitEdit.set(key, e.target.value.trim());
+    if (e.target.classList.contains('fb-ok')) fbRetestOk.set(key, Math.max(0, parseInt(e.target.value, 10) || 0));
+    const it = fbItems().find(x => x.key === key);
+    if (it) card.querySelector('.fb-text').value = it.text;   // 단원명·재시험 칸을 바꾸면 문자가 새로 만들어짐
+  });
+  list.addEventListener('click', e => {
+    const b = e.target.closest('.fb-copy');
+    if (!b) return;
+    const card = b.closest('.fb-card');
+    fbCopy(card.querySelector('.fb-text').value, card.querySelector('.fb-done'));
+  });
+  document.getElementById('fbCopyAllBtn').addEventListener('click', () => {
+    const t = [...list.querySelectorAll('.fb-text')].map(x => x.value).join('\n\n――――――――――\n\n');
+    fbCopy(t, document.getElementById('fbInfo'));
+  });
 });
