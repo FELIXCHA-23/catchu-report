@@ -6154,8 +6154,8 @@ function buildWeakSection(items, student) {
   const call = fbCallName(student && student.name) || '우리 아이';   // 성을 뺀 호칭 (예: 황시원 → 시원이)
   const types = [...new Set(items.map(it => it.typeName).filter(Boolean))];
   const cards = items.map(it => `
-      <div class="weak-item" style="padding:10px 0 0; border-top:1px solid var(--line); min-width:0;">
-        <div style="margin-bottom:8px;">
+      <div class="weak-item" style="display:grid; grid-template-columns:minmax(130px,190px) 1fr; gap:16px; align-items:start; padding:12px 0; border-top:1px solid var(--line);">
+        <div>
           <div style="font-weight:700;">${escapeHtml(roundLabel(it.round))} · ${it.q}번</div>
           ${it.typeName ? `<div class="type-unit" style="margin-top:2px;">${escapeHtml(it.typeName)}</div>` : ''}
           <div style="margin-top:8px; font-size:13px;">재원생 정답률 <b class="tnum">${it.peerPct}%</b></div>
@@ -6167,9 +6167,9 @@ function buildWeakSection(items, student) {
   return `
     <div class="card" data-rkey="weak">
       <h2>보완이 필요한 문항</h2>
-      <p class="card-sub">${escapeHtml(call)}의 오답 중, 재원생들의 정답률이 높은 문항들입니다.</p>
-      ${types.length ? `<p class="comment" style="margin:0 0 6px;">특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.</p>` : ''}
-      <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0 20px;">${cards}</div>
+      <p class="card-sub" style="font-size:13px;">${escapeHtml(call)}의 오답 중, 재원생들의 정답률이 높은 문항들입니다.</p>
+      ${types.length ? `<p class="comment" style="margin:0 0 6px; font-size:13px; line-height:1.55;">특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.</p>` : ''}
+      ${cards}
     </div>`;
 }
 // 보고서 안의 문제 그림 자리(.weak-img)를 올라간 본시험지 PDF에서 뽑은 그림으로 채움 (한 번 뽑은 건 기억해 둠)
@@ -6229,7 +6229,7 @@ async function loadWeakImages(out) {
     if (url) {
       box.innerHTML = '';
       const img = new Image(); img.src = url; img.alt = `${q}번 문제`;
-      img.style.cssText = 'max-width:100%; width:100%; max-height:230px; object-fit:contain; object-position:left top; height:auto; display:block; border:1px solid var(--line);';   // 2열로 나란히, 문제 그림은 작게
+      img.style.cssText = 'max-width:100%; width:340px; height:auto; display:block; border:1px solid var(--line);';   // 원래 비율 그대로(안 잘리고 안 찌그러지게), 너비만 적당히
       box.appendChild(img);
       await (img.decode ? img.decode().catch(() => {}) : Promise.resolve());
     } else {
