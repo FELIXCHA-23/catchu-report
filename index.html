@@ -465,6 +465,7 @@
       <h2>학생별 오답 모음</h2>
       <p class="card-sub">한 학생이 틀린 문항만 여러 회차에서 모아, 1번부터 차례로 재시험지 한 부로 만들어요. 회차는 몇 주차부터 몇 주차까지 고를 수 있고, 재시험지가 올라가 있는 회차만 들어가요.</p>
       <div class="inline-form">
+        <select id="colTeacher" title="담당 선생님 — 고르면 그 선생님 반 학생만 오른쪽에 나와요"></select>
         <select id="colStudent"></select>
         <select id="colFrom"></select><span class="field-hint">부터</span>
         <select id="colTo"></select><span class="field-hint">까지</span>
@@ -569,7 +570,7 @@
 <div id="toast" class="toast"></div>
 
 <script src="retest.js?v=17"></script>
-<script src="app.js?v=253"></script>
+<script src="app.js?v=254"></script>
 <script src="textbook.js?v=16"></script>
 <script src="roster-import.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

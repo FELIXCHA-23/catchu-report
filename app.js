@@ -3281,18 +3281,24 @@ function collectItemsFor(studentId) {
     .filter(x => x.round && (!lo || !hi || (roundWeekDate(x.round, wmap) >= lo && roundWeekDate(x.round, wmap) <= hi)))
     .sort((x, y) => roundWeekDate(x.round, wmap).localeCompare(roundWeekDate(y.round, wmap)) || x.round.date.localeCompare(y.round.date));
 }
+let colTeacherPick = '';   // 오답 모음 탭에서 고른 담당 선생님 (비어 있으면 처음 열 때 로그인한 선생님으로 자동 지정)
 function populateCollectCard() {
   const sSel = document.getElementById('colStudent'), fSel = document.getElementById('colFrom'), tSel = document.getElementById('colTo');
   if (!sSel) return;
   const withWrong = new Set(state.results.filter(r => r.wrong.length).map(r => r.studentId));
   const byName = (x, y) => x.name.localeCompare(y.name, 'ko');
-  const sp = splitMineAndOthers(state.students.filter(s => withWrong.has(s.id)));
-  const mine = sp.mine.slice().sort(byName), others = sp.others.slice().sort(byName);
+  // 선생님 선택칸: 처음엔 로그인한 선생님이 자동으로 골라지고(observer 계정·담당 없음은 observer=전체), 바꾸면 그 선생님 반 학생만 나옴
+  const teacherSel = document.getElementById('colTeacher');
+  const teacherOpts = [...TEACHER_OPTIONS, 'observer'];
+  if (!teacherOpts.includes(colTeacherPick)) { const me = getCurrentTeacher(); colTeacherPick = teacherOpts.includes(me) ? me : 'observer'; }
+  teacherSel.innerHTML = teacherOpts.map(t => `<option value="${t}">${t === 'observer' ? 'observer (전체 학생)' : escapeHtml(t) + ' 선생님 반'}</option>`).join('');
+  teacherSel.value = colTeacherPick;
+  const pool = state.students.filter(inStudentScope).filter(s => withWrong.has(s.id) && (colTeacherPick === 'observer' || s.teacher === colTeacherPick)).sort(byName);
   const prevS = sSel.value, prevF = fSel.value, prevT = tSel.value;
-  sSel.innerHTML = mine.length + others.length
-    ? groupedOptions(mine, others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`)
-    : '<option value="">오답이 있는 학생이 없어요</option>';
-  if (mine.concat(others).some(s => s.id === prevS)) sSel.value = prevS;
+  sSel.innerHTML = pool.length
+    ? pool.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}${colTeacherPick === 'observer' && s.teacher ? ' · ' + escapeHtml(s.teacher) : ''}</option>`).join('')
+    : '<option value="">이 선생님 반에는 오답이 있는 학생이 없어요</option>';
+  if (pool.some(s => s.id === prevS)) sSel.value = prevS;
   const wr = weekRangeOptions();
   fSel.innerHTML = wr.html || '<option value="">회차가 없어요</option>'; tSel.innerHTML = wr.html || '<option value="">회차가 없어요</option>';
   // 기간 기본값: 이 학생의 오답이 있는 첫 주차 ~ 마지막 주차 (이미 고른 값이 있으면 유지)
@@ -3357,6 +3363,11 @@ let colUrl = '';
 document.addEventListener('DOMContentLoaded', () => {
   const s = document.getElementById('colStudent');
   if (!s) return;
+  document.getElementById('colTeacher').addEventListener('change', e => {
+    colTeacherPick = e.target.value;
+    document.getElementById('colFrom').value = ''; document.getElementById('colTo').value = ''; document.getElementById('colPrintWrap').innerHTML = '';
+    populateCollectCard();
+  });
   s.addEventListener('change', () => { document.getElementById('colFrom').value = ''; document.getElementById('colTo').value = ''; document.getElementById('colPrintWrap').innerHTML = ''; populateCollectCard(); });
   ['colFrom', 'colTo'].forEach(id => document.getElementById(id).addEventListener('change', () => { document.getElementById('colPrintWrap').innerHTML = ''; updateCollectInfo(); }));
   document.getElementById('colBuildBtn').addEventListener('click', buildCollect);
