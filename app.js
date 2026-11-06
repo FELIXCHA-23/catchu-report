@@ -4070,9 +4070,14 @@ function computeDifficultyBreakdown(windowed) {
     const diffMap = x.round.difficulty;
     if (!diffMap) return;
     const wrongSet = new Set(x.result.wrong);
+    // 난이도는 문항마다 1~6이어야 함. 1~6 밖의 값(예: 19)이 섞였거나 문항의 절반도 안 채워진 시험지는 잘못 저장된 값이라 계산에서 뺌
+    const valid = [];
     for (let q = 1; q <= x.round.total; q++) {
-      const d = Number(diffMap[q] ?? diffMap[String(q)]);   // 문자열·빈 값이 섞여도 NaN이 안 되게 숫자만 사용
-      if (!(d > 0)) continue;
+      const d = Number(diffMap[q] ?? diffMap[String(q)]);
+      if (d >= 1 && d <= 6) valid.push([q, d]);
+    }
+    if (valid.length < Math.ceil(x.round.total / 2)) return;
+    for (const [q, d] of valid) {
       sumAll += d; cntAll++;
       if (wrongSet.has(q)) { sumWrong += d; cntWrong++; } else { sumCorrect += d; cntCorrect++; }
     }
@@ -6119,7 +6124,7 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ===== 보고서: 또래 대비 보완 문항 — 다른 학생들은 많이 맞혔는데 이 학생만 틀린 문항을 골라 문제·정답률과 함께 보여줌 ===== */
 const WEAK_MIN_PEERS = 5;      // 비교할 다른 학생이 이보다 적으면 통계가 의미 없어서 항목을 만들지 않음
 const WEAK_MIN_PEER_PCT = 70;  // 다른 학생의 이 % 이상이 맞힌 문제를 틀렸을 때만 "특별한 약점"으로 봄
-const WEAK_MAX_ITEMS = 6;
+const WEAK_MAX_ITEMS = 4;
 function computeWeakQuestions(studentId, points) {
   if (!studentId || studentId === EXAMPLE_STUDENT_ID) return [];
   const items = [];
@@ -6148,8 +6153,8 @@ function buildWeakSection(items, student) {
   const call = fbCallName(student && student.name) || '우리 아이';   // 성을 뺀 호칭 (예: 황시원 → 시원이)
   const types = [...new Set(items.map(it => it.typeName).filter(Boolean))];
   const cards = items.map(it => `
-      <div class="weak-item" style="display:grid; grid-template-columns:minmax(150px,210px) 1fr; gap:16px; align-items:start; padding:14px 0; border-top:1px solid var(--line);">
-        <div>
+      <div class="weak-item" style="padding:10px 0 0; border-top:1px solid var(--line); min-width:0;">
+        <div style="margin-bottom:8px;">
           <div style="font-weight:700;">${escapeHtml(roundLabel(it.round))} · ${it.q}번</div>
           ${it.typeName ? `<div class="type-unit" style="margin-top:2px;">${escapeHtml(it.typeName)}</div>` : ''}
           <div style="margin-top:8px; font-size:13px;">재원생 정답률 <b class="tnum">${it.peerPct}%</b></div>
@@ -6163,7 +6168,7 @@ function buildWeakSection(items, student) {
       <h2>보완이 필요한 문항</h2>
       <p class="card-sub">${escapeHtml(call)}의 오답 중, 재원생들의 정답률이 높은 문항들입니다.</p>
       ${types.length ? `<p class="comment" style="margin:0 0 6px;">특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.</p>` : ''}
-      ${cards}
+      <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0 20px;">${cards}</div>
     </div>`;
 }
 // 보고서 안의 문제 그림 자리(.weak-img)를 올라간 본시험지 PDF에서 뽑은 그림으로 채움 (한 번 뽑은 건 기억해 둠)
@@ -6192,7 +6197,7 @@ async function loadWeakImages(out) {
     if (url) {
       box.innerHTML = '';
       const img = new Image(); img.src = url; img.alt = `${q}번 문제`;
-      img.style.cssText = 'max-width:100%; width:360px; height:auto; display:block; border:1px solid var(--line);';   // 문제 그림은 작게 (카드 폭의 1/3 정도)
+      img.style.cssText = 'max-width:100%; width:100%; max-height:230px; object-fit:contain; object-position:left top; height:auto; display:block; border:1px solid var(--line);';   // 2열로 나란히, 문제 그림은 작게
       box.appendChild(img);
       await (img.decode ? img.decode().catch(() => {}) : Promise.resolve());
     } else {
