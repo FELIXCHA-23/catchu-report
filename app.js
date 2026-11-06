@@ -2557,7 +2557,9 @@ function populateResetPanelDateSel() {
   const opts = wr.html;
   fromSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
   toSel.innerHTML = opts || '<option value="">회차가 없어요</option>';
-  fromSel.value = dates.includes(prevFrom) ? prevFrom : (dates[0] || '');
+  // 처음 설정: 시작은 10-1주차(그 이후 첫 주차), 끝은 가장 늦은 주차. 고른 값이 있으면 그대로 유지
+  const startDate = [...wr.map.entries()].filter(([k]) => { const i = k.indexOf('|'); return weekAtOrAfterStart(k.slice(0, i), k.slice(i + 1)); }).map(([, d]) => d).sort()[0];
+  fromSel.value = dates.includes(prevFrom) ? prevFrom : (startDate || dates[0] || '');
   toSel.value = dates.includes(prevTo) ? prevTo : (dates[dates.length - 1] || '');
 }
 
@@ -2581,14 +2583,13 @@ function populateReportStudentSel() {
 }
 
 // 학년 안에서 주차별로 회차를 묶음 (주차는 직접 고른 값 > 시험지 이름에 적힌 값 > 날짜 순으로 정해짐)
-// 채점 입력의 주차 목록은 10-1주차부터 시작 (그 이전 주차는 목록에 안 나옴)
+// "학생별 채점 현황"의 시작 주차 드롭다운 첫 설정은 10-1주차 (예전 주차도 드롭다운에는 그대로 있고, 처음 보이는 위치만 10-1주차부터)
 const SCORE_WEEK_START = { year: 2026, month: 10, week: 1 };
-function scoreWeekVisible(g) {
-  const m = String(g.label || '').match(/^(\d{1,2})-(\d)주차$/);
-  if (!m) return true;   // 입학테스트의 날짜형 이름은 그대로
-  const year = +String(g.key || '').slice(0, 4) || SCORE_WEEK_START.year;
+function weekAtOrAfterStart(year, label) {
+  const m = String(label || '').match(/^(\d{1,2})-(\d)주차$/);
+  if (!m) return false;
   const v = (y, mo, w) => y * 10000 + mo * 100 + w;
-  return v(year, +m[1], +m[2]) >= v(SCORE_WEEK_START.year, SCORE_WEEK_START.month, SCORE_WEEK_START.week);
+  return v(+year || SCORE_WEEK_START.year, +m[1], +m[2]) >= v(SCORE_WEEK_START.year, SCORE_WEEK_START.month, SCORE_WEEK_START.week);
 }
 function scoreRoundGroups(grade) {
   const rounds = scopedRounds().filter(r => r.grade === grade);
@@ -2600,7 +2601,7 @@ function scoreRoundGroups(grade) {
   });
   const groups = [...by.values()];
   groups.forEach(g => { g.dates.sort(); g.date = g.dates[g.dates.length - 1]; g.first = g.dates[0]; });
-  return groups.filter(scoreWeekVisible).sort((x, y) => x.first.localeCompare(y.first));
+  return groups.sort((x, y) => x.first.localeCompare(y.first));   // 예전 주차도 목록에 그대로 둠 (지우거나 숨기지 않음)
 }
 
 // 담당 학생이 아직 없는 학년이라도 초등 학년은 항상 다 열어두는 선생님 — 신입생 입학테스트를
