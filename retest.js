@@ -302,9 +302,12 @@
     if (!logoPromise) {
       logoPromise = new Promise(res => {
         const img = new Image();
-        img.onload = () => res(img);
-        img.onerror = () => res(null);
-        img.src = 'logo.png';
+        // 깨진 그림이면(크기 0) 로고 없이 만들고, 다음 번에 다시 불러봄 (깨진 채로 저장해 두면 재시험지가 계속 실패함)
+        const ok = () => (img.naturalWidth > 0 && img.naturalHeight > 0) ? res(img) : fail();
+        const fail = () => { logoPromise = null; res(null); };
+        img.onload = ok;
+        img.onerror = fail;
+        img.src = 'logo.png?r=' + Date.now();
       });
     }
     return logoPromise;
@@ -314,12 +317,14 @@
     const L = 90, R = PAGE_W - 90;
     ctx.fillStyle = '#111'; ctx.textBaseline = 'alphabetic';
     let tx = L;
+    let logoOk = !!o.logo;
     if (o.logo) {
       const lh = 78, lw = o.logo.width * (lh / o.logo.height);
       ctx.save();
-      ctx.drawImage(o.logo, L, 120 - lh + 14, lw, lh);
+      try { ctx.drawImage(o.logo, L, 120 - lh + 14, lw, lh); }
+      catch (e) { logoOk = false; logoPromise = null; console.warn('로고를 그리지 못했어요', e && e.message); }
       ctx.restore();
-      tx = L + lw + 16;
+      if (logoOk) tx = L + lw + 16;
     }
     ctx.font = `900 46px ${FONT}`; ctx.fillStyle = '#111'; ctx.fillText('KASTLE MATH', tx, 120);
     ctx.fillStyle = '#111'; ctx.font = `900 64px ${FONT}`; ctx.textAlign = 'center';
