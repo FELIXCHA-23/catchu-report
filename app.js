@@ -4071,8 +4071,8 @@ function computeDifficultyBreakdown(windowed) {
     if (!diffMap) return;
     const wrongSet = new Set(x.result.wrong);
     for (let q = 1; q <= x.round.total; q++) {
-      const d = diffMap[q] ?? diffMap[String(q)];
-      if (!d) continue;
+      const d = Number(diffMap[q] ?? diffMap[String(q)]);   // 문자열·빈 값이 섞여도 NaN이 안 되게 숫자만 사용
+      if (!(d > 0)) continue;
       sumAll += d; cntAll++;
       if (wrongSet.has(q)) { sumWrong += d; cntWrong++; } else { sumCorrect += d; cntCorrect++; }
     }
