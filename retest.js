@@ -153,12 +153,15 @@
         // 번호표와 같은 줄(번호표보다 작은 글자)
         const row = items.filter(it => it !== m && it.x > m.x + m.w - 1 && (col === 1 || it.x < half) && it.top < m.base - 1 && it.base > m.top + 2 && it.size < m.size);
         if (!row.some(it => /정답/.test(it.str))) return;
-        // 보기 번호(①~⑤)는 글자가 아니라 그림이라서 글자 위치로는 안 잡힘 — "정답" 글자 끝에서 오른쪽으로 넉넉히 잡음
-        const right = Math.max(...row.map(it => it.x + it.w)) + 90;
+        // 보기 번호(①~⑤)·분수(4/3) 같은 정답은 글자가 아니라 그림이라서 글자 위치로는 안 잡힘 —
+        // 오른쪽은 칸 끝까지(여백은 trim이 잘라 줌), 아래는 정답 밑 가로줄 바로 위까지(= 아래쪽 "해설" 글자 머리 위 12pt) 잡음.
+        // 정답이 분수처럼 키가 크면 번호줄 밑으로 내려오기 때문에, 예전처럼 번호 밑줄(base+1)에서 자르면 아랫부분이 잘림.
+        const colEnd = col === 0 ? half - 4 : vp.width - 24;
+        const below = items.filter(it => it.str === '해설' && it.top > m.base && (col === 1 ? it.x >= half : it.x < half)).sort((a, b) => a.top - b.top)[0];
+        const bottom = below ? Math.min(Math.max(below.top - 12, m.base + 1), m.base + 70) : m.base + 1;
         found[num] = {
-          // 아래 가로줄은 빼고 번호줄까지만 자름
-          page: p, top: Math.max(0, m.top - 3), bottom: m.base + 1,
-          left: m.x - 4, right: Math.min(right, col === 0 ? half - 4 : vp.width - 24),
+          page: p, top: Math.max(0, m.top - 3), bottom,
+          left: m.x - 4, right: colEnd,
           mark: { left: m.x - 1.5, right: m.x + m.w + 2, top: m.top - 1, bottom: m.base + 2, base: m.base, size: m.size },
         };
       });
