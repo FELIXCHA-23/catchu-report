@@ -5108,6 +5108,8 @@ function logReportPdf(data, fromId, toId) {
   renderReportArchive();
 }
 
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
 async function exportReportPDF() {
   const btn = document.getElementById('pdfExportBtn');
   const status = document.getElementById('pdfExportStatus');
@@ -5134,7 +5136,7 @@ async function exportReportPDF() {
     const pdf = new jsPDF('p', 'mm', 'a4', true);
     const marginX = 10, marginY = 10, gap = 4;
     const ctx = {
-      scale: 3, marginX, marginY, gap,
+      scale: IS_IOS ? 2 : 3, marginX, marginY, gap,
       contentWidth: 210 - marginX * 2,
       contentBottom: 297 - marginY,
       pageContentH: 297 - marginY * 2,
@@ -5230,11 +5232,35 @@ async function exportReportPDF() {
     const lastPoint = data.points[data.points.length - 1];
     const lastRound = lastPoint ? state.rounds.find(r => r.id === lastPoint.roundId) : null;
     const reportMonth = lastRound ? new Date(lastRound.date + 'T00:00:00').getMonth() + 1 : '';
-    pdf.save(isEntranceStudent(data.student)
+    const pdfName = isEntranceStudent(data.student)
       ? `캐슬수학입학테스트_${displayName(data.student.name)}.pdf`
-      : `${reportMonth ? reportMonth + '월' : ''}캐치유분석보고서_${displayName(data.student.name)}.pdf`);
+      : `${reportMonth ? reportMonth + '월' : ''}캐치유분석보고서_${displayName(data.student.name)}.pdf`;
     status.style.color = 'var(--good)';
-    status.textContent = 'PDF를 저장했어요.';
+    if (IS_IOS) {
+      // 아이폰·아이패드 사파리: 오래 걸린 뒤 자동 저장은 막히는 일이 많아서, 다 만든 뒤 "저장" 버튼을 새로 눌러 저장·공유하게 함
+      const blob = pdf.output('blob');
+      status.innerHTML = 'PDF를 만들었어요. 아래 버튼을 눌러 저장하세요. ';
+      const sb = document.createElement('button');
+      sb.type = 'button'; sb.className = 'btn primary'; sb.textContent = '📥 PDF 저장 · 공유';
+      sb.addEventListener('click', async () => {
+        const file = new File([blob], pdfName, { type: 'application/pdf' });
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: pdfName });   // 공유 창 → "파일에 저장"
+            return;
+          }
+        } catch (e) {
+          if (e && e.name === 'AbortError') return;   // 사용자가 공유 창을 닫음
+        }
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');   // 공유가 안 되면 새 탭에서 열기(거기서 공유 버튼으로 저장)
+        if (!w) { const a = document.createElement('a'); a.href = url; a.download = pdfName; document.body.appendChild(a); a.click(); a.remove(); }
+      });
+      status.appendChild(sb);
+    } else {
+      pdf.save(pdfName);
+      status.textContent = 'PDF를 저장했어요.';
+    }
     logReportPdf(data, fromRoundId, toRoundId);
   } catch (err) {
     console.error(err);
