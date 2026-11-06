@@ -1146,6 +1146,10 @@ function dateToWeekLabel(dateStr) {
   return `${fri.getMonth() + 1}-${Math.ceil(fri.getDate() / 7)}주차`;
 }
 
+// 오늘이 속한 주(월~일)의 주차 이름 — 11월 첫째 금요일 주간이면 "11-1주차". 날짜가 바뀌면 자동으로 다음 주차(11-2주차…)가 됨
+function currentWeekLabel() { return dateToWeekLabel(toISODate(new Date())); }
+function currentWeekYear() { return String(new Date().getFullYear()); }
+
 // 시험지 이름에 "9월3주차" / "9-3주차"처럼 적힌 주차를 읽음 (없으면 빈 문자열)
 function weekFromTitle(t) {
   const s = String(t || '');
@@ -2640,6 +2644,7 @@ function populateScoreGradeSel() {
 
 // 주차를 쭉 펼쳐 놓은 목록(몇월 몇주차) + 달력(날짜)로 회차를 고름. 실제 값은 숨은 입력(scoreRoundGroupSel)에 주차 키로 저장됨.
 // req: { key } 그 주차로 / { date } 그 날짜의 시험지로 — 그 날 시험이 없으면 알려주고 지금 선택을 유지함
+let scoreWeekUserPicked = false;   // 선생님이 채점 입력에서 주차를 직접 골랐는지 (고르기 전엔 이번 주가 자동 지정)
 function populateScoreRoundGroupSel(req) {
   const grade = document.getElementById('scoreGradeSel').value;
   const hidden = document.getElementById('scoreRoundGroupSel');
@@ -2664,6 +2669,12 @@ function populateScoreRoundGroupSel(req) {
       }
     }
     if (!use) use = hidden.value && groups.some(g => g.key === hidden.value) ? hidden.value : groups[groups.length - 1].key;
+    // 선생님이 주차를 직접 고르기 전에는 "이번 주" 주차가 우선 지정됨 (이번 주 시험지가 등록돼 있을 때)
+    if (req && (req.key || req.date)) scoreWeekUserPicked = true;
+    if (!scoreWeekUserPicked && !entrance) {
+      const thisWeek = groups.find(g => g.label === currentWeekLabel() && g.key.slice(0, 4) === currentWeekYear());
+      if (thisWeek) use = thisWeek.key;
+    }
   }
   hidden.value = use;
 
@@ -3432,7 +3443,9 @@ function renderRetestRank() {
   gSel.value = grades.includes(prevG) ? prevG : (cur && grades.includes(cur.grade) ? cur.grade : grades[grades.length - 1]);
   const list = rounds.filter(r => r.grade === gSel.value).sort((x, y) => y.date.localeCompare(x.date));
   rSel.innerHTML = '<option value="__range">주차 범위로 전체 보기</option>' + list.map(r => `<option value="${r.id}">${escapeHtml(roundLabel(r))} · ${shortDate(r.date)}${r.title ? ' · ' + escapeHtml(r.title.length > 18 ? r.title.slice(0, 18) + '…' : r.title) : ''}</option>`).join('');
-  rSel.value = prevR === '__range' ? '__range' : list.some(r => r.id === prevR) ? prevR : (cur && list.some(r => r.id === cur.id) ? cur.id : (list[0] ? list[0].id : ''));
+  // 처음 열 때는 "이번 주" 주차의 시험지가 우선 지정됨 (없으면 지금 재시험 채점 중인 시험지 → 가장 최근 시험지)
+  const thisWeekRound = list.find(r => roundWeekLabel(r) === currentWeekLabel() && (r.date || '').slice(0, 4) === currentWeekYear());
+  rSel.value = prevR === '__range' ? '__range' : list.some(r => r.id === prevR) ? prevR : (thisWeekRound ? thisWeekRound.id : (cur && list.some(r => r.id === cur.id) ? cur.id : (list[0] ? list[0].id : '')));
   const isRange = rSel.value === '__range';
   const round = isRange ? list[0] : list.find(r => r.id === rSel.value);
   // 주차 범위 선택칸: 이 학년 시험지가 있는 주차들
@@ -3443,8 +3456,9 @@ function renderRetestRank() {
   const prevF = fSel.value, prevT = tSel.value;
   const wopts = weeks.map(w => `<option value="${w.d}">${escapeHtml(w.label)} (${shortDate(w.d)})</option>`).join('');
   fSel.innerHTML = wopts; tSel.innerHTML = wopts;
-  fSel.value = weeks.some(w => w.d === prevF) ? prevF : (weeks[0] ? weeks[0].d : '');
-  tSel.value = weeks.some(w => w.d === prevT) ? prevT : (weeks.length ? weeks[weeks.length - 1].d : '');
+  const thisWeekPick = weeks.find(w => w.label === currentWeekLabel() && w.d.slice(0, 4) === currentWeekYear());   // 주차 범위도 처음엔 이번 주
+  fSel.value = weeks.some(w => w.d === prevF) ? prevF : (thisWeekPick ? thisWeekPick.d : (weeks[0] ? weeks[0].d : ''));
+  tSel.value = weeks.some(w => w.d === prevT) ? prevT : (thisWeekPick ? thisWeekPick.d : (weeks.length ? weeks[weeks.length - 1].d : ''));
   const teacher = getCurrentTeacher();
   mineWrap.style.display = teacher ? '' : 'none';
   const onlyMine = !!teacher && mineBox.checked;
@@ -5840,7 +5854,8 @@ function renderFeedbackTab() {
     const wmap = weekStartMap(), rounds = scopedRounds();
     const have = new Set(state.results.map(r => { const rd = rounds.find(x => x.id === r.roundId); return rd ? roundWeekDate(rd, wmap) : ''; }).filter(Boolean));
     const last = wr.dates.filter(d => have.has(d)).pop();
-    wSel.value = last || wr.dates[wr.dates.length - 1] || '';
+    const thisWeekDate = wr.map.get(currentWeekYear() + '|' + currentWeekLabel());   // 이번 주 시험이 있으면 그 주차가 우선
+    wSel.value = (thisWeekDate && wr.dates.includes(thisWeekDate)) ? thisWeekDate : (last || wr.dates[wr.dates.length - 1] || '');
   }
   paintFeedbackList();
 }
