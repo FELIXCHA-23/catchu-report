@@ -131,7 +131,7 @@
       document.body.appendChild(chip);
     }
     const who = staff.name || shownId(staff.email);
-    chip.innerHTML = `<span class="kc-stat">☁ ${esc(statusText)}</span><span class="kc-who">${esc(who)}${staff.role === 'admin' ? ' (관리자)' : ''}</span>` +
+    chip.innerHTML = `<span class="kc-stat">☁ ${esc(statusText)}</span><span class="kc-who">${esc(who)}${staff.role === 'admin' ? ' (관리자)' : staff.role === 'observer' ? ' (읽기 전용)' : ''}</span>` +
       (staff.role === 'admin' ? '<button type="button" id="kmmsAdminBtn">계정 관리</button>' : '') +
       '<button type="button" id="kmmsLogoutBtn">로그아웃</button>';
     chip.querySelector('#kmmsLogoutBtn').onclick = logout;
@@ -141,8 +141,12 @@
 
   /* ---------- 서버로 올리기 ---------- */
 
+  // observer(관찰자) 계정: 볼 수만 있고 채점·수정·삭제·업로드·출력은 전부 막음 (서버에서도 막아 둠 — observer-setup.sql)
+  function isObserver() { return !demoMode && !!staff && staff.role === 'observer'; }
+  function observerBlocked(what) { toast((what || '이 작업') + '은 observer(읽기 전용) 계정에서는 할 수 없어요.'); return false; }
+
   function schedulePush() {
-    if (!ready) return;
+    if (!ready || isObserver()) return;
     pendingChanges = true;
     setStatus('저장 중…');
     clearTimeout(pushTimer);
@@ -150,6 +154,7 @@
   }
 
   async function push() {
+    if (isObserver()) { pendingChanges = false; return; }
     if (!ready || pushing) { if (pushing) pushTimer = setTimeout(push, 500); return; }
     pushing = true;
     try {
@@ -420,6 +425,8 @@
 #kmmsGate .kg-msg.ok{color:#1e7a3c}
 body:not(.kmms-admin) .admin-only{display:none !important}
 body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:none !important}
+body.kmms-observer #scoreGridWrap,body.kmms-observer #quickWrongInput,body.kmms-observer #teacherNoteInput,body.kmms-observer .attitude-picker,body.kmms-observer #saveScoreBtn,body.kmms-observer #clearScoreBtn,body.kmms-observer #saveRetestBtn,body.kmms-observer #aiAnalyzeBtn,body.kmms-observer #aiCommentBtn,body.kmms-observer #addTypeRowBtn,body.kmms-observer #stuSubmitBtn,body.kmms-observer #applyClassTeacherBtn,body.kmms-observer #rsParseBtn,body.kmms-observer #entPickBtn,body.kmms-observer #seedBtn,body.kmms-observer #saveApiKeyBtn,body.kmms-observer #tbAddBtn,body.kmms-observer #tbClearBtn,body.kmms-observer #tbParseBtn,body.kmms-observer #exportBtn,body.kmms-observer #exportRoundsBtn{opacity:.45;pointer-events:none}
+body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{display:none !important}
 #kmmsChip{position:fixed;right:10px;bottom:10px;z-index:9000;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.96);border:1px solid #d9d4ca;border-radius:20px;padding:5px 10px;font-size:12px;color:#444;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 #kmmsChip button{border:1px solid #cfc9bd;background:#fff;border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer}
 #kmmsBanner{position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:9001;background:#222;color:#fff;border-radius:10px;padding:9px 14px;font-size:13px}
@@ -550,11 +557,14 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
       ready = true;
       closeGate();
       document.body.classList.toggle('kmms-admin', staff.role === 'admin'); // 관리자만 보이는 메뉴(백업·초기화 등)
+      document.body.classList.toggle('kmms-observer', isObserver());       // 읽기 전용(observer) 계정: 쓰기 버튼 막힘
+      if (isObserver()) { try { localStorage.removeItem(CURRENT_TEACHER_KEY); } catch (e) {} }   // 이 브라우저에 남은 다른 선생님 선택을 지워 전체 학생이 보이게 함
       setStatus('저장됨');
       // 담당 선생님은 로그인한 선생님으로 고정 (선택칸에서 바꿀 수 없음)
       if (typeof refreshTeacherSelects === 'function') refreshTeacherSelects();
       if (typeof renderAll === 'function') renderAll();
       pollTimer = setInterval(poll, POLL_MS);
+      if (isObserver()) { setStatus('읽기 전용'); return; }   // 관찰자는 출력 담당·재시험지 연결 복구·서버 쓰기 작업을 하지 않음
       clearInterval(window.__kmmsHostTimer); window.__kmmsHostTimer = setInterval(printHostTick, 6000);
       // 원장 PC는 열면 바로, 방희진 PC는 출력 담당이 아무도 없을 때(원장 PC가 꺼짐·체크 해제) 대신 자동으로 켜짐 — 15초마다 확인
       clearInterval(window.__kmmsAutoHostTimer); window.__kmmsAutoHostTimer = setInterval(() => { if (ready && !isPrintHost()) autoPrintHost().catch(() => {}); }, 15000);
@@ -594,7 +604,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
         <tr>
           <td>${esc(s.name || '(이름 없음)')}</td>
           <td>${esc(shownId(s.email))}</td>
-          <td>${s.role === 'admin' ? '관리자' : '선생님'}</td>
+          <td>${s.role === 'admin' ? '관리자' : s.role === 'observer' ? '읽기 전용' : '선생님'}</td>
           <td>${s.approved ? '승인됨' : '<b style="color:#c8102e">승인 대기</b>'}</td>
           <td>${s.user_id === session.user.id ? '(나)' : `
             <button data-a="${s.approved ? 'unapprove' : 'approve'}" data-id="${s.user_id}">${s.approved ? '승인 취소' : '승인'}</button>
@@ -645,6 +655,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
 
   // 분석을 요청하며 올린 시험지를 바로 보관함(requests/)에 저장하고 목록(examUploads)에 남김. 회차를 저장하면 그 회차에 연결됨.
   async function stageExam(file) {
+    if (isObserver()) { observerBlocked('시험지 업로드'); return null; }
     if (!ready || !file || !file.dataUrl) return null;
     try {
       const { blob, ext } = await toPdfBlob(file);
@@ -673,6 +684,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   async function uploadExam(round, file) {
     // file: { name, dataUrl } — 시험지 파일을 비공개 저장소에 올림 (사진은 PDF로 바꿔서)
     if (demoMode) { toast('체험(guest) 모드에서는 시험지를 올릴 수 없어요.'); return false; }
+    if (isObserver()) return observerBlocked('시험지 업로드');
     if (!ready || !round || !file || !file.dataUrl) return false;
     try {
       if (typeof confirmFileGrade === 'function' && !(await confirmFileGrade(round, file))) return false;
@@ -794,6 +806,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   const AUX_FIELDS = { retest: ['retestPath', 'retestName'], retestAns: ['retestAnsPath', 'retestAnsName'] };
   async function uploadAux(round, kind, file) {
     if (demoMode) { toast('체험(guest) 모드에서는 올릴 수 없어요.'); return false; }
+    if (isObserver()) return observerBlocked('업로드');
     const f = AUX_FIELDS[kind];
     if (!ready || !round || !f || !file || !file.dataUrl) return false;
     try {
@@ -834,6 +847,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   // 잘못 올린 본시험지(main) · 재시험지(retest) 파일을 지움 — 저장소 파일을 지우고 회차에서 연결을 끊음 (다시 올릴 수 있음)
   async function deleteFile(round, kind) {
     if (demoMode) { toast('체험(guest) 모드에서는 지울 수 없어요.'); return false; }
+    if (isObserver()) return observerBlocked('삭제');
     const f = kind === 'main' ? ['examPath', 'examName'] : AUX_FIELDS[kind];
     if (!ready || !round || !f || !round[f[0]]) return false;
     const path = round[f[0]];
@@ -1071,6 +1085,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
 
   async function sendPrint(canvases, opts) {
     if (demoMode) { toast('체험(guest) 모드에서는 보낼 수 없어요.'); return null; }
+    if (isObserver()) { observerBlocked('출력'); return null; }
     if (!ready || !canvases || !canvases.length) return null;
     const id = 'pj_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const paths = [];
@@ -1160,7 +1175,7 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
   function hookSave() {
     if (typeof saveState !== 'function' || saveState.__kmms) return;
     const orig = saveState;
-    const wrapped = function () { if (demoMode) return; orig.apply(this, arguments); schedulePush(); }; // 체험 모드는 저장도 서버 전송도 안 함
+    const wrapped = function () { if (demoMode) return; if (isObserver()) { if (ready) observerBlocked('저장·수정'); return; } orig.apply(this, arguments); schedulePush(); }; // 체험 모드는 저장도 서버 전송도 안 함
     wrapped.__kmms = true;
     saveState = wrapped; // eslint-disable-line no-global-assign
     if (typeof renderRounds === 'function') {
@@ -1169,7 +1184,25 @@ body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:non
     }
   }
 
+  // observer 계정의 쓰기 동작 막기 (화면 쪽). 눌러도 아무 일도 일어나지 않고 안내만 뜸.
+  // 진짜 보호는 서버(observer-setup.sql의 접근 규칙)가 하고, 이건 실수로 눌러 보는 것을 막아 주는 안전장치.
+  const OBS_ALLOW = '#pdfExportBtn,#tbPdfBtn,.fb-copy,#fbCopyAllBtn,#kmmsLogoutBtn,.tab-btn,#kmmsChip';
+  const OBS_BLOCK_TEXT = /삭제|지우기|올리기|교체|업로드|저장|등록|수정|초기화|일괄|불러오기|추가|전체 취소|완료|출력|인쇄|보내기/;
+  const OBS_BLOCK_SEL = '#scoreGridWrap,#quickWrongInput,#teacherNoteInput,.phrase-chip,#gradeOverrideSel,#difficultyOverrideSel,#scoreRoundWeekSel,[data-exam-upload],[data-del-retest],input[type=file]';
+  function observerGuard(e) {
+    if (!isObserver()) return;
+    const t = e.target;
+    if (!t || !t.closest || t.closest('#kmmsGate,#kmmsAdmin')) return;
+    if (t.closest(OBS_ALLOW)) return;
+    let block = e.type === 'submit' || !!t.closest(OBS_BLOCK_SEL);
+    if (!block && e.type === 'click') { const b = t.closest('button,a.btn,.icon-btn'); if (b && OBS_BLOCK_TEXT.test(b.textContent || '')) block = true; }
+    if (!block) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    if (e.type === 'click' || e.type === 'submit' || e.type === 'change') observerBlocked();
+  }
+
   function start() {
+    ['click', 'submit', 'change', 'input', 'keydown', 'dblclick', 'paste', 'drop'].forEach(ev => document.addEventListener(ev, observerGuard, true));
     if (!window.supabase || !window.supabase.createClient) {
       injectStyle();
       gate('<h1>연결 실패</h1><p class="kg-sub">서버 연결 도구를 불러오지 못했어요. 인터넷을 확인하고 새로고침해주세요.</p>');
