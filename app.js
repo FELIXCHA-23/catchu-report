@@ -4344,7 +4344,7 @@ function populateReportRoundSelects() {
 const REPORT_PART_NAMES = {
   masthead: '제목 영역', pillGrade: '예상 등급', pillRate: '정답률', pillCount: '채점 문항 수', pillDiff: '시험 난이도', pillDelta: '상승/최고 기록',
   trend: '전체 정답률 추이', note: '선생님 의견', sw: '대표 강점·취약 유형', extend: '추가 추이 그래프', types: '유형별 정답률',
-  retest: '재시험 결과', unit: '단원별 학습성과', term: '학기별 정답률', first3: '입학 후 먼저 채울 단원', diff: '난이도 분석', radar: '핵심역량', table: '회차별 상세 기록',
+  weak: '보완이 필요한 문항', retest: '재시험 결과', unit: '단원별 학습성과', term: '학기별 정답률', first3: '입학 후 먼저 채울 단원', diff: '난이도 분석', radar: '핵심역량', table: '회차별 상세 기록',
 };
 function updateReportPillColumns(out) {
   const row = out.querySelector('.pill-row');
@@ -4563,6 +4563,9 @@ function renderReportTab() {
     return `<option value="${v}"${Number(diffOverrideVal) === v ? ' selected' : ''}>${v.toFixed(1)} · ${lo === hi ? lo : lo + '~' + hi}</option>`;
   }).join('');
 
+  // 또래 대비 보완 문항 (다른 학생들은 많이 맞힌 문제를 이 학생이 틀린 것) — 전체 인원수는 밝히지 않고 정답률(%)만 보여줌
+  const weakSection = buildWeakSection(computeWeakQuestions(studentId, points));
+
   out.innerHTML = `
     <div class="sample-flag no-print">${studentId === EXAMPLE_STUDENT_ID
       ? '예시보고서 · 실제 학생이 아닌 가상의 예시(차캐슬)로 만든 보고서 형식 샘플이에요 · 어느 컴퓨터에서 열어도 항상 똑같이 보여요 · 학부모용 PDF에는 이 안내가 빠져요'
@@ -4668,6 +4671,7 @@ function renderReportTab() {
       <p class="card-sub">최근 정답률</p>
       <div class="type-grid">${typeCards}</div>
     </div>
+    ${weakSection}
     ${firstFocusSection}
     ${termSection}
     ${retestSection}
@@ -4698,6 +4702,7 @@ function renderReportTab() {
   }
 
   setupReportPartToggles(out, studentId);
+  weakImgPending = loadWeakImages(out).catch(e => console.warn(e));
 
   const gradeOverrideSel = document.getElementById('gradeOverrideSel');
   if (gradeOverrideSel) {
@@ -5073,6 +5078,7 @@ async function exportReportPDF() {
   status.textContent = 'PDF 생성 중이에요...';
   document.body.classList.add('exporting-pdf');
   try {
+    try { await weakImgPending; } catch (e) { /* 문제 그림을 못 불러와도 보고서는 만듦 */ }   // 보완 문항의 문제 그림이 다 뜬 뒤에 캡처
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4', true);
     const marginX = 10, marginY = 10, gap = 4;
@@ -5859,3 +5865,87 @@ document.addEventListener('DOMContentLoaded', () => {
     fbCopy(t, document.getElementById('fbInfo'));
   });
 });
+
+/* ===== 보고서: 또래 대비 보완 문항 — 다른 학생들은 많이 맞혔는데 이 학생만 틀린 문항을 골라 문제·정답률과 함께 보여줌 ===== */
+const WEAK_MIN_PEERS = 5;      // 비교할 다른 학생이 이보다 적으면 통계가 의미 없어서 항목을 만들지 않음
+const WEAK_MIN_PEER_PCT = 70;  // 다른 학생의 이 % 이상이 맞힌 문제를 틀렸을 때만 "특별한 약점"으로 봄
+const WEAK_MAX_ITEMS = 6;
+function computeWeakQuestions(studentId, points) {
+  if (!studentId || studentId === EXAMPLE_STUDENT_ID) return [];
+  const items = [];
+  points.forEach(p => {
+    const round = state.rounds.find(r => r.id === p.roundId);
+    if (!round || round.individual) return;
+    const mine = state.results.find(r => r.studentId === studentId && r.roundId === round.id);
+    if (!mine) return;
+    const peers = state.results.filter(r => r.roundId === round.id && r.studentId !== studentId);
+    if (peers.length < WEAK_MIN_PEERS) return;
+    new Set(mine.wrong).forEach(q => {
+      if (!(q >= 1 && q <= (round.total || 30))) return;
+      const wrongN = peers.filter(r => (r.wrong || []).includes(q)).length;
+      const peerPct = Math.round((peers.length - wrongN) / peers.length * 100);
+      if (peerPct < WEAK_MIN_PEER_PCT) return;
+      const t = typeForQuestion(round, q);
+      items.push({ round, q, peerPct, typeName: t ? t.name : '', unit: t ? (t.unit || '') : '' });
+    });
+  });
+  // 다른 학생들이 많이 맞힌 문제부터 (같으면 최근 시험지, 번호 순)
+  items.sort((a, b) => b.peerPct - a.peerPct || b.round.date.localeCompare(a.round.date) || a.q - b.q);
+  return items.slice(0, WEAK_MAX_ITEMS);
+}
+function buildWeakSection(items) {
+  if (!items.length) return '';
+  const types = [...new Set(items.map(it => it.typeName).filter(Boolean))];
+  const cards = items.map(it => `
+      <div class="weak-item" style="display:grid; grid-template-columns:minmax(150px,210px) 1fr; gap:16px; align-items:start; padding:14px 0; border-top:1px solid var(--line);">
+        <div>
+          <div style="font-weight:700;">${escapeHtml(roundLabel(it.round))} · ${it.q}번</div>
+          ${it.typeName ? `<div class="type-unit" style="margin-top:2px;">${escapeHtml(it.typeName)}</div>` : ''}
+          <div style="margin-top:8px; font-size:13px;">전체 학생의 <b class="tnum">${it.peerPct}%</b>가<br>맞힌 문제예요</div>
+          ${buildBarRow(it.peerPct, 'var(--data)')}
+          <div style="margin-top:6px;"><span class="badge watch"><span class="dot"></span>우리 아이는 오답</span></div>
+        </div>
+        <div class="weak-img" data-wr="${escapeHtml(it.round.id)}" data-wq="${it.q}"><span class="field-hint no-print">문제를 불러오는 중…</span></div>
+      </div>`).join('');
+  return `
+    <div class="card" data-rkey="weak">
+      <h2>보완이 필요한 문항</h2>
+      <p class="card-sub">다른 학생들은 대부분 맞혔는데 우리 아이가 놓친 문항이에요. 같은 유형이 다시 나오면 틀리지 않도록 우선 보완해요.</p>
+      ${types.length ? `<p class="comment" style="margin:0 0 6px;">특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.</p>` : ''}
+      ${cards}
+    </div>`;
+}
+// 보고서 안의 문제 그림 자리(.weak-img)를 올라간 본시험지 PDF에서 뽑은 그림으로 채움 (한 번 뽑은 건 기억해 둠)
+const weakImgCache = new Map();   // 회차id|번호 → 그림 주소('' = 못 찾음)
+const weakBufCache = new Map();   // 회차id → 시험지 파일(ArrayBuffer) 또는 null
+let weakImgPending = Promise.resolve();
+async function loadWeakImages(out) {
+  const boxes = Array.from(out.querySelectorAll('.weak-img'));
+  for (const box of boxes) {
+    const rid = box.dataset.wr, q = +box.dataset.wq, key = rid + '|' + q;
+    let url = weakImgCache.get(key);
+    if (url === undefined) {
+      url = '';
+      try {
+        const round = state.rounds.find(r => r.id === rid);
+        if (round && round.examPath && window.KMMS && window.KMMS.ready && window.RETEST) {
+          if (!weakBufCache.has(rid)) weakBufCache.set(rid, await window.KMMS.fetchBuf(round.examPath));
+          const buf = weakBufCache.get(rid);
+          const cv = buf ? await window.RETEST.renderProblem(buf.slice(0), q) : null;
+          if (cv) url = cv.toDataURL('image/jpeg', 0.92);
+        }
+      } catch (e) { console.warn('문제 그림을 못 불러왔어요', e); }
+      weakImgCache.set(key, url);
+    }
+    if (!box.isConnected) continue;   // 그 사이 보고서가 다시 그려졌으면 건너뜀
+    if (url) {
+      box.innerHTML = '';
+      const img = new Image(); img.src = url; img.alt = `${q}번 문제`;
+      img.style.cssText = 'max-width:100%; height:auto; display:block; border:1px solid var(--line);';
+      box.appendChild(img);
+      await (img.decode ? img.decode().catch(() => {}) : Promise.resolve());
+    } else {
+      box.replaceWith(Object.assign(document.createElement('div'), { className: 'field-hint no-print', textContent: '문제 그림이 없어요 (본시험지 파일이 없거나 문제를 찾지 못했어요)' }));
+    }
+  }
+}
