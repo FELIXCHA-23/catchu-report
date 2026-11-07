@@ -3258,6 +3258,7 @@ function saveCurrentScore(silent) {
 // 채점 입력에서 마지막으로 "새로" 채점한 학생을 재시험 탭에서 한 번 자동 선택해줬는지 추적 — 이걸 안 두면
 // 재시험 탭 안에서 선생님이 직접 다른 학생을 골라도, 탭을 오갈 때마다 다시 그 학생으로 튕겨버리게 됨
 let lastAppliedRetestStudentId = null;
+let lastAppliedScoreSelId = null;   // 재시험 탭에 마지막으로 맞춰준 "채점 입력 탭의 선택 학생"
 
 // 학생을 먼저 고르고, 그 학생이 오답을 가진 회차만 골라서 재시험을 채점하는 흐름 — 이름 가나다순 정렬로
 // 목록 순서가 매번 안정적이게 함. 채점 입력에서 새로 채점한 학생이 있으면(아직 여기서 안 반영했다면)
@@ -3274,6 +3275,14 @@ function populateRetestStudentSelect() {
   sel.innerHTML = students.length
     ? groupedOptions(mine, others, sp.t, s => `<option value="${s.id}">${escapeHtml(s.name)}${s.class ? ' · ' + escapeHtml(s.class) : ''}</option>`)
     : '<option value="">오답이 있는 학생이 없어요</option>';
+  // 채점 입력에서 지금 고른 학생이 있으면(바뀐 뒤 처음 열 때) 재시험도 그 학생이 먼저 뜸
+  const scoreSelId = (document.getElementById('scoreStudentSel') || {}).value || '';
+  if (scoreSelId && scoreSelId !== lastAppliedScoreSelId && students.some(s => s.id === scoreSelId)) {
+    sel.value = scoreSelId;
+    lastAppliedScoreSelId = scoreSelId;
+    lastAppliedRetestStudentId = lastScoredStudentId;
+    return;
+  }
   const freshFromScoring = lastScoredStudentId && lastScoredStudentId !== lastAppliedRetestStudentId && students.some(s => s.id === lastScoredStudentId);
   if (freshFromScoring) {
     sel.value = lastScoredStudentId;
