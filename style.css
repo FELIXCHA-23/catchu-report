@@ -505,7 +505,7 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 
 /* 입학테스트 화면은 주차 없이 날짜(달력)만 사용 */
 .view-entrance #scoreWeekWrap, .view-entrance #scoreWeekFixWrap { display: none; }
-.view-entrance #tabNav [data-tab="retest"] { display: none; }
+.view-entrance #tabNav [data-tab="retest"], .view-entrance #tabNav [data-tab="collect"], .view-entrance #tabNav [data-tab="feedback"] { display: none; }
 .view-entrance #scoreGradeSel, .view-entrance #scoreDateInput, .view-entrance #scoreDateHint { display: none; }
 /* 입학테스트 화면에는 시험지·데이터 관리 탭 버튼을 안 보임 (캐치유테스트에서 쓰는 탭. 시험지 보기·업로드는 내부적으로 그대로 동작) */
 .view-entrance #tabNav [data-tab="rounds"], .view-entrance #tabNav [data-tab="data"] { display: none; }
