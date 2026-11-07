@@ -2311,7 +2311,7 @@ function renderRounds() {
         <td>${shortDate(r.date)}</td>
         <td>${r.total}문항</td>
         <td>${diffBadge}</td>
-        <td>${renderTypesByUnit(r.types)}</td>
+        <td>${(r.types || []).length ? `<details class="types-fold"><summary style="cursor:pointer;color:var(--muted);font-size:13px;white-space:nowrap">유형 ${r.types.length}개</summary>${renderTypesByUnit(r.types)}</details>` : '<span class="field-hint">—</span>'}</td>
         <td>${examCellHtml(r)}</td>
         <td>${retestCellHtml(r)}</td>
         <td class="row-actions">
