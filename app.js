@@ -129,10 +129,30 @@ function groupedOptions(mine, others, t, optFn) {
   const all = mine.concat(others);
   const byT = new Map();
   all.forEach(s => { const k = s.teacher || ''; if (!byT.has(k)) byT.set(k, []); byT.get(k).push(s); });
-  if (byT.size <= 1) return all.map(optFn).join('');
+  const GR = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
+  const gIdx = s => { const i = GR.indexOf(s.examGrade || s.grade); return i < 0 ? 99 : i; };
+  // 선생님 안에서 반별로 묶음 — 반은 (그 반 학생들의) 가장 낮은 학년 순, 같으면 반 이름 순. 반이 하나뿐이면 묶지 않음
+  const byClass = list => {
+    const m = new Map();
+    list.forEach(s => { const c = s.class || ''; if (!m.has(c)) m.set(c, []); m.get(c).push(s); });
+    const keys = [...m.keys()].sort((a, b) => {
+      if (a === '' || b === '') return a === '' ? 1 : -1;
+      const ga = Math.min(...m.get(a).map(gIdx)), gb = Math.min(...m.get(b).map(gIdx));
+      return ga - gb || a.localeCompare(b, 'ko');
+    });
+    return keys.map(c => ({ c, list: m.get(c) }));
+  };
+  if (byT.size <= 1) {
+    const cl = byClass(all);
+    if (cl.length <= 1) return all.map(optFn).join('');
+    return cl.map(x => `<optgroup label="${x.c ? escapeHtml(x.c) : '반 미지정'}">${x.list.map(optFn).join('')}</optgroup>`).join('');
+  }
   const rank = k => { const i = TEACHER_OPTIONS.indexOf(k); return k === '' ? 999 : (i < 0 ? 500 : i); };
   const keys = [...byT.keys()].sort((a, b) => (t && a === t ? -1 : t && b === t ? 1 : rank(a) - rank(b)));
-  return keys.map(k => `<optgroup label="${k ? escapeHtml(k) + ' 선생님 반' + (k === t ? ' (내 반)' : '') : '담당 미지정'}">${byT.get(k).map(optFn).join('')}</optgroup>`).join('');
+  return keys.map(k => {
+    const head = k ? escapeHtml(k) + (k === t ? ' (내 반)' : '') : '담당 미지정';
+    return byClass(byT.get(k)).map(x => `<optgroup label="${head} · ${x.c ? escapeHtml(x.c) : '반 미지정'}">${x.list.map(optFn).join('')}</optgroup>`).join('');
+  }).join('');
 }
 
 // 정답률 기준 난이도 6단계 (문항 하나 또는 시험지 전체 정답률에 공통으로 사용)
