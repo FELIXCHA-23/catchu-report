@@ -299,7 +299,7 @@ ${Object.keys(gradeUnits).map(g => '[' + g + ']\n' + gradeUnits[g].map(u => '- '
 
 시험지 맨 위 제목에 "9월 5주차"처럼 주차가 인쇄돼 있으면, 그 주차를 week에 "9-5" 형식(월-주차 숫자)으로, 시험지에 인쇄된 제목을 printedTitle에 그대로 적어주세요. 주차가 인쇄돼 있지 않으면 week는 빈 문자열("")로 두세요 (파일 이름이나 추측으로 채우지 마세요).
 
-이 시험지가 몇 학년 교육과정인지 반드시 grade에 "초3"~"고3" 중 하나로("고1" 형식) 적어주세요. 제목이나 머리글에 학년이 인쇄돼 있으면("고1", "중2", "초5-1", "중1 LEVEL TEST" 같은 표기) 그대로 따르고 gradeBasis에 "printed"를, 인쇄돼 있지 않으면 문항 내용이 속한 대한민국 2022 개정 교육과정(단원·개념·난이도)을 보고 가장 알맞은 학년 하나를 판단해서 gradeBasis에 "content"를 적어주세요. grade는 절대 비워두지 마세요 (여러 학년에 걸친 시험지면 문항 대부분이 속한 학년으로).
+이 시험지가 몇 학년 교육과정인지 반드시 grade에 ${gradeRangeText()} 중 하나로("고1" 형식) 적어주세요. 제목이나 머리글에 학년이 인쇄돼 있으면("고1", "중2", "초5-1", "중1 LEVEL TEST" 같은 표기) 그대로 따르고 gradeBasis에 "printed"를, 인쇄돼 있지 않으면 문항 내용이 속한 대한민국 2022 개정 교육과정(단원·개념·난이도)을 보고 가장 알맞은 학년 하나를 판단해서 gradeBasis에 "content"를 적어주세요. grade는 절대 비워두지 마세요 (여러 학년에 걸친 시험지면 문항 대부분이 속한 학년으로).
 시험지에 실시일자(예: 2026.09.17)가 인쇄돼 있으면 date에 "YYYY-MM-DD" 형식으로, 없거나 "-"이면 빈 문자열("")로 적어주세요 (추측으로 채우지 마세요).
 
 아래 JSON 형식으로만 응답하세요. 다른 설명이나 마크다운 없이 JSON 객체만 출력하세요:
@@ -335,6 +335,7 @@ function findFridayOptionForWeek(dateSel, label) {
 // AI가 시험지에서 읽은 주차(week "9-5")로 날짜를 그 주 금요일에 맞추고, 제목에 주차가 없으면 시험지에 인쇄된 제목을 넣음.
 // 파일 이름 등으로 이미 들어간 제목의 주차와 시험지에 인쇄된 주차가 다르면 인쇄된 쪽을 따르고 경고 문구를 돌려줌.
 // 시험지에 인쇄된 학년을 읽어서 학년 칸을 자동으로 채움 (고르지 않아도 됨). 이미 다른 학년이 골라져 있으면 시험지에 적힌 학년을 따름.
+let roundGradeLocked = false;   // 선생님이 학년을 직접 지정한 경우 — AI가 시험지 내용으로 학년을 바꾸지 못하게 함
 function applyPrintedGrade(json) {
   if (editingRoundId) return '';
   // 캐치유테스트 초등: 초등 학생이 윗학년(중1 등) 과정을 배워도 시험 학년은 초등 그대로 둠 — 학년을 시험지 내용으로 바꾸지 않음
@@ -343,6 +344,8 @@ function applyPrintedGrade(json) {
   if (!m) return '';
   const g = m[1] + m[2];
   const sel = document.getElementById('roundGrade');
+  if (roundGradeLocked && sel.value) return sel.value === g ? '' : ` · AI는 ${g} 과정으로 봤지만 지정하신 ${sel.value} 그대로 뒀어요.`;
+  if (!gradeAllowed(g)) return ` · AI는 ${g}로 봤지만 이 계정은 ${allowedLevels().join('·')}등 시험지만 올려서 학년을 바꾸지 않았어요. 학년을 직접 골라주세요.`;
   if (sel.value === g || !Array.from(sel.options).some(o => o.value === g)) return '';
   const prev = sel.value;
   sel.value = g;
@@ -1154,6 +1157,7 @@ function resetRoundForm() {
   document.getElementById('roundDate').dataset.picked = '';
   populateRoundDateSelect(document.getElementById('roundDate'), '');
   document.getElementById('roundGrade').value = '';
+  roundGradeLocked = false;
   document.getElementById('roundTotal').value = 30;
   document.getElementById('roundTitle').value = '';
   document.getElementById('typeRows').innerHTML = '';
@@ -1452,7 +1456,17 @@ function renderEntranceStatus() {
 
 /* ===== 채점 입력: 주간 시험지 업로드 현황 (중1~고2) ===== */
 let wsWeekOffset = 0;
-const WS_GRADES = ['중1', '중2', '중3', '고1', '고2'];
+const WS_GRADES_ALL = ['중1', '중2', '중3', '고1', '고2'];
+// 선생님마다 맡는 학년대가 정해져 있으면 그 학년대 시험지만 올리고 보게 함 — 방희진은 고등만 (중등 없음)
+const TEACHER_ONLY_LEVEL = { '방희진': ['고'] };
+function allowedLevels() { return TEACHER_ONLY_LEVEL[getCurrentTeacher()] || null; }
+function gradeAllowed(g) { const l = allowedLevels(); return !l || !g || l.includes(String(g).charAt(0)); }
+function wsGradesNow() { return WS_GRADES_ALL.filter(gradeAllowed); }
+function gradeRangeText() { const l = allowedLevels(); return l && l.length === 1 && l[0] === '고' ? '"고1"~"고3"' : '"초3"~"고3"'; }
+// 시험지 탭 학년 선택칸에서 맡지 않는 학년대는 숨김
+function applyGradeOptionLimit() {
+  document.querySelectorAll('#roundGrade option').forEach(o => { if (!o.value) return; const ok = gradeAllowed(o.value); o.hidden = !ok; o.disabled = !ok; });
+}
 function wsDateOf(offset) {
   const d = new Date(); d.setDate(d.getDate() + offset * 7);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1469,7 +1483,7 @@ function renderWeeklyStatus() {
   // 캐치유(30문제)만 보여줌 — 미니캐치유(초등 등 30문제가 아닌 것)는 제외
   const all = scopedRoundsAll().filter(r => !r.individual && r.total === 30 && roundWeekLabel(r) === label);
   const chip = (r, name, path, upAttrs, viewAttrs, kind) => `<div class="ws-row" data-wskind="${kind}"><span class="ws-name">${name}</span><span class="ws-badge ${path ? 'ws-ok' : 'ws-no'}">${path ? '✓ 업로드완료' : '✗ 시험지없음'}</span>${path && fileGradeMismatch(r, kind) ? `<span class="ws-badge ws-no" title="파일 이름에 ${fileGradeMismatch(r, kind)}라고 적혀 있어요. 다른 학년 시험지가 올라간 것 같아요. 교체해 주세요.">⚠ 파일은 ${fileGradeMismatch(r, kind)}</span>` : ''}${path ? `<a href="#" ${viewAttrs}>보기</a>` : ''}${path ? uploadWhoHtml(r, kind) : ''}${can && !(r.retestOnly && kind === 'main') ? `<button class="icon-btn" ${upAttrs}>${path ? '교체' : '올리기'}</button>` : ''}${r.retestOnly && kind === 'main' ? `<button class="icon-btn" data-ph-link="${r.id}">본시험지에 연결</button><span class="field-hint">또는 끌어다 놓아 분석</span>` : ''}${can && path ? `<button class="icon-btn ws-del" data-exam-del="${r.id}" data-kind="${kind}" title="잘못 올렸을 때 삭제">삭제</button>` : ''}</div>`;
-  document.getElementById('weeklyStatusBody').innerHTML = WS_GRADES.map(g => {
+  document.getElementById('weeklyStatusBody').innerHTML = wsGradesNow().map(g => {
     const rs = all.filter(r => r.grade === g).sort((a, b) => a.date.localeCompare(b.date));
     const body = rs.length ? rs.map(r => `<div class="ws-round" data-round="${r.id}"><div class="field-hint">${r.title ? escapeHtml(r.title) : shortDate(r.date)}</div>
       ${chip(r, '본시험지', r.examPath, `data-exam-upload="${r.id}"`, `data-exam-open="${r.id}"`, 'main')}
@@ -1907,8 +1921,8 @@ async function uploadRetestOnly(grade, date, file) {
 /* ===== 채점 입력 · 시험지 업로드 현황: 바로 올리기 / 끌어다 놓기(본시험지·재시험지 고르는 팝업) / 삭제 ===== */
 function wsRounds() {
   const label = dateToWeekLabel(wsDateOf(wsWeekOffset));
-  return scopedRoundsAll().filter(r => !r.individual && r.total === 30 && WS_GRADES.includes(r.grade) && roundWeekLabel(r) === label)
-    .sort((x, y) => WS_GRADES.indexOf(x.grade) - WS_GRADES.indexOf(y.grade) || x.date.localeCompare(y.date));
+  return scopedRoundsAll().filter(r => !r.individual && r.total === 30 && wsGradesNow().includes(r.grade) && roundWeekLabel(r) === label)
+    .sort((x, y) => wsGradesNow().indexOf(x.grade) - wsGradesNow().indexOf(y.grade) || x.date.localeCompare(y.date));
 }
 function closeWsModal() { const m = document.getElementById('wsModal'); if (m) m.remove(); }
 // 본시험지를 시험지 탭의 "본시험지 등록"과 똑같이 처리: 시험지 탭 양식에 파일을 넣고 → AI 분석 → 회차 자동 저장 → 서버 업로드 → 공용 파일 공유.
@@ -1920,6 +1934,7 @@ async function startMainExamAnalysis(file, grade, opt) {
   resetRoundForm();
   const gsel = document.getElementById('roundGrade');
   if (grade) { gsel.value = grade; gsel.dispatchEvent(new Event('change', { bubbles: true })); }
+  roundGradeLocked = !!grade;   // 학년을 지정해서 올렸으면 그 학년 그대로
   const input = document.getElementById('examFileInput');
   const dt = new DataTransfer(); dt.items.add(file);
   input.files = dt.files;
@@ -1967,7 +1982,7 @@ function openWsUpload(file, opt) {
     // 파일 이름에 적힌 주차("[캐치유] 10월4주차 재시험.pdf")와 같은 주차의 본시험지가 하나로 정해지면 그 회차에 바로 붙임
     const fw = weekFromTitle(file.name);
     if (fw) {
-      const hit = scopedRounds().filter(r => !r.individual && WS_GRADES.includes(r.grade) && (!opt.grade || r.grade === opt.grade) && weekLabelsOf(r).has(fw));
+      const hit = scopedRounds().filter(r => !r.individual && wsGradesNow().includes(r.grade) && (!opt.grade || r.grade === opt.grade) && weekLabelsOf(r).has(fw));
       if (hit.length === 1) { uploadRetest(hit[0]); return; }
     }
     const rounds = wsRounds();
@@ -1978,7 +1993,7 @@ function openWsUpload(file, opt) {
     if (only) { uploadRetest(only); return; }
     // 학년을 알고 그 주에 그 학년 회차가 없으면 본시험지 없이 바로 만들어서 올림
     if (opt.grade && !inGrade.length) { closeWsModal(); uploadRetestOnly(opt.grade, wsFridayIso(), file); return; }
-    const noRound = WS_GRADES.filter(g => !rounds.some(r => r.grade === g));
+    const noRound = wsGradesNow().filter(g => !rounds.some(r => r.grade === g));
     const box = document.querySelector('#wsModal .ws-modal-box');
     box.innerHTML = `<h3>어느 학년·회차의 재시험지인가요?</h3><div class="ws-modal-file">${escapeHtml(file.name)}</div>
       <div class="ws-choices">${rounds.map(r => `<button type="button" class="ws-bigbtn" data-pick-round="${r.id}">${escapeHtml(r.grade)} · ${escapeHtml(r.title || shortDate(r.date))}${r.retestPath ? '<small>이미 재시험지가 있어요 (교체돼요)</small>' : ''}</button>`).join('')}
@@ -1988,7 +2003,7 @@ function openWsUpload(file, opt) {
     box.querySelectorAll('[data-new-grade]').forEach(b => b.addEventListener('click', () => { closeWsModal(); uploadRetestOnly(b.dataset.newGrade, wsFridayIso(), file); }));
   };
   const handle = kind => {
-    if (kind === 'main') { closeWsModal(); startMainExamAnalysis(file, opt.grade || ''); return; }
+    if (kind === 'main') { const pg = (document.getElementById('wsPickGrade') || {}).value || opt.grade || ''; closeWsModal(); startMainExamAnalysis(file, pg); return; }
     // 모달이 아직 없으면(버튼으로 종류를 이미 정한 경우) 회차 고르는 창을 띄울 틀부터 만듦
     if (!document.getElementById('wsModal')) {
       const m = document.createElement('div'); m.id = 'wsModal'; m.className = 'ws-modal';
@@ -2004,6 +2019,8 @@ function openWsUpload(file, opt) {
   ov.innerHTML = `<div class="ws-modal-box" role="dialog" aria-label="시험지 올리기">
     <h3>어떤 시험지인가요?</h3>
     <div class="ws-modal-file">${escapeHtml(file.name)}</div>
+    <div class="field-hint" style="margin:8px 0 4px;">학년 지정 (본시험지일 때 · 정하면 AI가 학년을 바꾸지 않아요)</div>
+    <select id="wsPickGrade" style="width:100%;padding:8px;font-size:15px;margin-bottom:10px;"><option value="">AI가 자동으로 판단</option>${ALL_GRADES.filter(g => !isElementaryGrade(g) && gradeAllowed(g)).map(g => `<option value="${g}"${g === opt.grade ? ' selected' : ''}>${g}</option>`).join('')}</select>
     <div class="ws-choices">
       <button type="button" class="ws-bigbtn" data-wskind-pick="main">본시험지<small>AI가 문항별 유형을 분석해서 등록해요 (몇 초~1분, 기다리면 돼요)</small></button>
       <button type="button" class="ws-bigbtn" data-wskind-pick="retest">재시험지<small>분석 없이 바로 업로드해요</small></button>
@@ -2323,26 +2340,30 @@ function renderRounds() {
   if (!filtered.length) {
     wrap.innerHTML = '<div class="empty-state">해당하는 회차가 없어요.</div>';
   } else {
-    const rows = [...filtered].reverse().map(r => {
-      const diff = computeRoundOverallDifficulty(r.id);
-      const diffBadge = diff ? `<span class="badge ${diff.n >= 5 ? 'watch' : 'good'}"><span class="dot"></span>${diff.label}(${diff.n}) · 정답률 ${diff.pct}%</span>` : '<span class="field-hint">채점 전</span>';
-      return `
+    // 학년별로 묶어서 보여줌(채점 입력 현황판처럼) — 학년·회차는 한 줄로, 난이도 열은 없앰
+    const GORDER = ['초1','초2','초3','초4','초5','초6','중1','중2','중3','고1','고2','고3'];
+    const byGrade = new Map();
+    [...filtered].reverse().forEach(r => { const g = r.grade || '학년 없음'; if (!byGrade.has(g)) byGrade.set(g, []); byGrade.get(g).push(r); });
+    const grades = [...byGrade.keys()].sort((x, y) => (GORDER.indexOf(x) < 0 ? 99 : GORDER.indexOf(x)) - (GORDER.indexOf(y) < 0 ? 99 : GORDER.indexOf(y)));
+    const rowHtml = r => `
       <tr>
-        <td>${escapeHtml(r.grade || '-')} ${roundLabel(r)}${roundStudentTag(r)}</td>
+        <td class="nw"><b>${roundLabel(r)}</b>${roundStudentTag(r)}</td>
         <td>${r.title ? escapeHtml(r.title) : '<span class="field-hint">—</span>'}</td>
-        <td>${shortDate(r.date)}</td>
-        <td>${r.total}문항</td>
-        <td>${diffBadge}</td>
+        <td class="nw">${shortDate(r.date)}</td>
+        <td class="nw">${r.total}문항</td>
         <td>${(r.types || []).length ? `<details class="types-fold"><summary style="cursor:pointer;color:var(--muted);font-size:13px;white-space:nowrap">유형 ${r.types.length}개</summary>${renderTypesByUnit(r.types)}</details>` : '<span class="field-hint">—</span>'}</td>
         <td>${examCellHtml(r)}</td>
         <td>${retestCellHtml(r)}</td>
-        <td class="row-actions">
+        <td class="row-actions nw">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
           <button class="icon-btn" data-del-round="${r.id}">삭제</button>
         </td>
       </tr>`;
-    }).join('');
-    wrap.innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>학년·회차</th><th>이름</th><th>날짜</th><th>문항수</th><th>전체 난이도</th><th>유형</th><th>시험지</th><th>재시험지</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    wrap.innerHTML = grades.map(g => `
+      <div class="rounds-grade">
+        <h3 class="rounds-grade-title">${escapeHtml(g)} <span class="field-hint">${byGrade.get(g).length}개</span></h3>
+        <div class="table-wrap"><table class="data-table rounds-table"><thead><tr><th>회차</th><th>이름</th><th>날짜</th><th>문항수</th><th>유형</th><th>시험지</th><th>재시험지</th><th>관리</th></tr></thead><tbody>${byGrade.get(g).map(rowHtml).join('')}</tbody></table></div>
+      </div>`).join('');
   }
   wrap.querySelectorAll('[data-del-round]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.delRound;
@@ -2395,7 +2416,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // 학년을 바꾸면 날짜 목록도 바뀜 (초등: 매일 / 그 외: 금요일만).
   // 같은 종류끼리(초등→초등, 금요일 목록→금요일 목록) 바꿀 땐 고른 날짜를 유지하고,
   // 종류가 바뀔 땐 새 목록의 기본값(초등은 오늘, 그 외는 가까운 금요일)으로 시작함
-  document.getElementById('roundGrade').addEventListener('change', () => {
+  document.getElementById('roundGrade').addEventListener('change', ev => {
+    if (ev && ev.isTrusted) roundGradeLocked = true;   // 사람이 직접 고른 학년은 AI가 바꾸지 않음
     const dateSel = document.getElementById('roundDate');
     const grade = document.getElementById('roundGrade').value;
     const wasDaily = dateSel.dataset.mode === 'daily';
@@ -2569,6 +2591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ================= 채점 입력 ================= */
 
 function populateSelects() {
+  try { applyGradeOptionLimit(); } catch (e) {}
   populateReportStudentSel();
   populateScoreGradeSel();
   populateResetPanelDateSel();

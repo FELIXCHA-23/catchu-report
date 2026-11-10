@@ -729,3 +729,8 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .weak-head .type-unit { margin: 0; }
 .weak-pct { margin-left: auto; white-space: nowrap; font-size: 12.5px; }
 @media (max-width: 560px) { .weak-grid { grid-template-columns: 1fr; } }
+
+/* 시험지 탭 '등록된 회차': 학년별로 묶고, 회차·날짜·문항수는 줄바꿈 없이 한 줄 */
+.rounds-grade { margin-bottom: 18px; }
+.rounds-grade-title { margin: 0 0 6px; font-size: 16px; }
+.rounds-table td.nw, .rounds-table th { white-space: nowrap; }
