@@ -721,3 +721,11 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .es-table td[data-es-cell].es-hot { outline: 2px dashed var(--brand-red); background: #fdeef1; }
 .es-name { white-space: nowrap; }
 @media (max-width: 700px) { .landing-buttons { grid-template-columns: 1fr; } }
+
+/* 보고서 "보완이 필요한 문항": 문항 머리글은 한 줄, 문제 그림은 두 칸으로 나란히 (좁은 화면에서는 한 칸) */
+.weak-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; }
+.weak-item { padding: 8px 0 10px; border-top: 1px solid var(--line); break-inside: avoid; min-width: 0; }
+.weak-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 13px; margin-bottom: 6px; }
+.weak-head .type-unit { margin: 0; }
+.weak-pct { margin-left: auto; white-space: nowrap; font-size: 12.5px; }
+@media (max-width: 560px) { .weak-grid { grid-template-columns: 1fr; } }

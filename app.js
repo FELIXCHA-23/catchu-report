@@ -337,6 +337,8 @@ function findFridayOptionForWeek(dateSel, label) {
 // 시험지에 인쇄된 학년을 읽어서 학년 칸을 자동으로 채움 (고르지 않아도 됨). 이미 다른 학년이 골라져 있으면 시험지에 적힌 학년을 따름.
 function applyPrintedGrade(json) {
   if (editingRoundId) return '';
+  // 캐치유테스트 초등: 초등 학생이 윗학년(중1 등) 과정을 배워도 시험 학년은 초등 그대로 둠 — 학년을 시험지 내용으로 바꾸지 않음
+  if (appScope() === 'elem' && isElementaryGrade(document.getElementById('roundGrade').value)) return ' · 초등 학생이라 학년은 ' + document.getElementById('roundGrade').value + ' 그대로 두고 시험지 내용 기준으로 분석했어요.';
   const m = String(json.grade || '').match(/(초|중|고)\s*([1-6])/);
   if (!m) return '';
   const g = m[1] + m[2];
@@ -6182,23 +6184,17 @@ function buildWeakSection(items, student) {
   if (!items.length) return '';
   const call = fbCallName(student && student.name) || '우리 아이';   // 성을 뺀 호칭 (예: 황시원 → 시원이)
   const types = [...new Set(items.map(it => it.typeName).filter(Boolean))];
+  // 문항마다 한 줄 머리글(회차·번호·유형·재원생 정답률) 아래에 문제 그림 — 두 칸으로 나란히 놓아 세로 길이를 줄임
   const cards = items.map(it => `
-      <div class="weak-item" style="display:grid; grid-template-columns:minmax(130px,190px) 1fr; gap:16px; align-items:start; padding:12px 0; border-top:1px solid var(--line);">
-        <div>
-          <div style="font-weight:700;">${escapeHtml(roundLabel(it.round))} · ${it.q}번</div>
-          ${it.typeName ? `<div class="type-unit" style="margin-top:2px;">${escapeHtml(it.typeName)}</div>` : ''}
-          <div style="margin-top:8px; font-size:13px;">재원생 정답률 <b class="tnum">${it.peerPct}%</b></div>
-          ${buildBarRow(it.peerPct, 'var(--data)')}
-          <div style="margin-top:6px;"><span class="badge watch"><span class="dot"></span>${escapeHtml(call)}의 오답</span></div>
-        </div>
+      <div class="weak-item">
+        <div class="weak-head"><b>${escapeHtml(roundLabel(it.round))} · ${it.q}번</b>${it.typeName ? `<span class="type-unit">${escapeHtml(it.typeName)}</span>` : ''}<span class="weak-pct">재원생 정답률 <b class="tnum">${it.peerPct}%</b></span></div>
         <div class="weak-img" data-wr="${escapeHtml(it.round.id)}" data-wq="${it.q}"><span class="field-hint no-print">문제를 불러오는 중…</span></div>
       </div>`).join('');
   return `
     <div class="card" data-rkey="weak">
       <h2>보완이 필요한 문항</h2>
-      <p class="card-sub" style="font-size:13px;">${escapeHtml(call)}의 오답 중, 재원생들의 정답률이 높은 문항들입니다.</p>
-      ${types.length ? `<p class="comment" style="margin:0 0 6px; font-size:13px; line-height:1.55;">특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.</p>` : ''}
-      ${cards}
+      <p class="card-sub" style="font-size:13px;">${escapeHtml(call)}의 오답 중, 재원생들의 정답률이 높은 문항들입니다.${types.length ? ` 특히 <b>${types.map(escapeHtml).join(', ')}</b> 유형을 먼저 다시 점검하면 좋아요.` : ''}</p>
+      <div class="weak-grid">${cards}</div>
     </div>`;
 }
 // 보고서 안의 문제 그림 자리(.weak-img)를 올라간 본시험지 PDF에서 뽑은 그림으로 채움 (한 번 뽑은 건 기억해 둠)
@@ -6258,7 +6254,7 @@ async function loadWeakImages(out) {
     if (url) {
       box.innerHTML = '';
       const img = new Image(); img.src = url; img.alt = `${q}번 문제`;
-      img.style.cssText = 'max-width:100%; width:340px; height:auto; display:block; border:1px solid var(--line);';   // 원래 비율 그대로(안 잘리고 안 찌그러지게), 너비만 적당히
+      img.style.cssText = 'width:100%; max-width:100%; height:auto; display:block; border:1px solid var(--line);';   // 원래 비율 그대로(안 잘리고 안 찌그러지게), 너비만 적당히
       box.appendChild(img);
       await (img.decode ? img.decode().catch(() => {}) : Promise.resolve());
     } else {
