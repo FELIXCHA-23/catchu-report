@@ -7,7 +7,7 @@
  */
 
 let TB_BOOKS = [];
-const tbState = { school: '', grade: '', bookId: '', studentId: '', tab: 'score', pending: null };
+const tbState = { school: '', grade: '', bookId: '', studentId: '', tab: 'score', pending: null, round: 1 };
 
 async function loadTextbooks() {
   try {
@@ -376,6 +376,56 @@ function tbRenderSelectors() {
 }
 
 /* ----- 맨 위 고정 줄: 지금 고른 교재·학생을 크게 보여줌 ----- */
+/* ----- ROUND 방식 교재(모의고사): ROUND를 고르고 틀린 문항 번호를 눌러서 채점 ----- */
+function tbRoundList(book) {
+  const set = new Set(); book.types.forEach(t => t.problems.forEach(p => set.add(Math.floor(p / 100))));
+  return Array.from(set).sort((a, b) => a - b);
+}
+function tbRenderRoundGrid() {
+  const card = document.getElementById('tbRoundCard');
+  if (!card) return;
+  const { book, student, rec, wrong } = tbCurrent();
+  if (!book || !tbPageMode(book) || tbPageUnit(book) !== 'ROUND') { card.style.display = 'none'; card.innerHTML = ''; return; }
+  card.style.display = '';
+  const map = tbTypeMap(book);
+  const rounds = tbRoundList(book);
+  if (!rounds.includes(tbState.round)) tbState.round = rounds[0];
+  const wset = new Set(wrong);
+  const qOf = r => Array.from(map.keys()).filter(p => Math.floor(p / 100) === r).sort((a, b) => a - b);
+  const tabs = rounds.map(r => {
+    const qs = qOf(r), w = qs.filter(p => wset.has(p)).length;
+    return `<button type="button" class="tb-round-tab${r === tbState.round ? ' active' : ''}" data-round="${r}">ROUND ${r}${w ? `<span class="tb-round-badge">${w}</span>` : ''}</button>`;
+  }).join('');
+  const qs = qOf(tbState.round), w = qs.filter(p => wset.has(p)).length;
+  const grid = qs.map(p => {
+    const t = map.get(p), bad = wset.has(p), d = tbDiffOf(book, p);
+    return `<button type="button" class="tb-q${bad ? ' wrong' : ''}" data-q="${p}" title="${escapeHtml((t ? t.label + ' ' + t.name : '') + (d ? ' · 난이도 ' + TB_DIFF[d] : ''))}"><b>${p % 100}</b><small>${d ? TB_DIFF[d] : ''}</small></button>`;
+  }).join('');
+  card.innerHTML = `
+    <h2>ROUND별 채점</h2>
+    <p class="card-sub">ROUND를 고른 뒤, <b>틀린 문항 번호를 눌러</b> 표시하세요. 다시 누르면 취소돼요. ${student ? `<b>${escapeHtml(student.name)}</b> 학생 · ` : ''}${book.title}</p>
+    ${student ? '' : '<div class="empty">위에서 학생을 먼저 고르세요.</div>'}
+    <div class="tb-round-tabs">${tabs}</div>
+    <div class="tb-round-head"><b>ROUND ${tbState.round}</b> <span class="field-hint">${qs.length}문항 중 틀린 문제 ${w}개</span>
+      <button type="button" class="btn ghost" data-round-clear>이 ROUND 표시 지우기</button></div>
+    <div class="tb-qgrid">${grid}</div>`;
+  card.querySelectorAll('[data-round]').forEach(b => b.addEventListener('click', () => { tbState.round = +b.dataset.round; tbRenderRoundGrid(); }));
+  card.querySelectorAll('.tb-q').forEach(b => b.addEventListener('click', () => {
+    if (!tbState.studentId) { toast('학생을 먼저 골라주세요.'); return; }
+    const r = tbRecord(tbState.studentId, book.id, true), n = +b.dataset.q;
+    r.wrong = r.wrong.includes(n) ? r.wrong.filter(x => x !== n) : [...r.wrong, n].sort((a, c) => a - c);
+    saveState(); renderTextbook();
+  }));
+  const clr = card.querySelector('[data-round-clear]');
+  if (clr) clr.addEventListener('click', () => {
+    const r = tbRecord(tbState.studentId, book.id, false);
+    if (!r) return;
+    const before = r.wrong.length;
+    r.wrong = r.wrong.filter(p => Math.floor(p / 100) !== tbState.round);
+    if (r.wrong.length !== before) { saveState(); renderTextbook(); }
+  });
+}
+
 function tbRenderCurrent() {
   const el = document.getElementById('tbCurrent');
   if (!el) return;
@@ -691,6 +741,7 @@ function renderTextbook() {
   const noBook = !b;
   document.getElementById('tbBody').classList.toggle('tb-nobook', noBook);
   tbRenderChips();
+  try { tbRenderRoundGrid(); } catch (e) { console.warn(e); }
   if (tbState.tab === 'analysis') tbRenderAnalysis();
   if (tbState.tab === 'report') tbRenderReport();
   if (tbState.pending) tbRenderPreview();

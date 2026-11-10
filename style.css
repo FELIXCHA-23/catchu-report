@@ -734,3 +734,16 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .rounds-grade { margin-bottom: 18px; }
 .rounds-grade-title { margin: 0 0 6px; font-size: 16px; }
 .rounds-table td.nw, .rounds-table th { white-space: nowrap; }
+
+/* 교재 채점: ROUND 방식(모의고사) — ROUND 탭 + 문항 번호 버튼(틀린 문항 누르기) */
+.tb-round-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tb-round-tab { position: relative; padding: 8px 12px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #fff); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.tb-round-tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.tb-round-badge { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 12px; }
+.tb-round-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.tb-qgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.tb-q { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; padding: 6px 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #fff); color: var(--ink); font: inherit; cursor: pointer; }
+.tb-q b { font-size: 16px; }
+.tb-q small { font-size: 11px; color: var(--muted); }
+.tb-q.wrong { background: var(--critical); border-color: var(--critical); color: #fff; }
+.tb-q.wrong small { color: #fff; }
