@@ -170,3 +170,202 @@ document.addEventListener('DOMContentLoaded', () => {
   drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) rsHandleFile(f); });
   document.getElementById('rsParseBtn').addEventListener('click', rsHandlePaste);
 });
+
+
+/* ================= 구글 시트 자동 동기화 =================
+ * 학원 전체 인원 시트의 "이번 달 탭"(예: 2611월)을 읽어서 학생 명단(학교·학년·반·담당·퇴원)을 맞춤.
+ * - 시트는 "링크가 있는 모든 사용자 보기"로 공유돼 있어야 하고, 주소는 이 컴퓨터(브라우저)에만 저장함 (공개 저장소 코드에는 넣지 않음)
+ * - 원장(관리자) 계정으로 KMMS를 열면 자동으로 맞춤. 변경이 많으면 자동으로 반영하지 않고 "지금 동기화"에서 확인 후 반영
+ * - 수업을 2개 듣는 학생(시트에 같은 이름이 둘 이상)은 건드리지 않고, "등원 예정" 칸은 읽지 않음. 시험 학년(examGrade)은 바꾸지 않음
+ */
+const RS_TEACHER_EN = { FELIX: '차성빈', LUCAS: '문태민', DAVE: '목윤재', CELINA: '방희진', LIA: '오민경' };
+const RS_SHEET_URL_KEY = 'kmms_sheet_url', RS_SHEET_AUTO_KEY = 'kmms_sheet_auto', RS_SHEET_LAST_KEY = 'kmms_sheet_last';
+function rsSheetUrl() { try { return localStorage.getItem(RS_SHEET_URL_KEY) || ''; } catch (e) { return ''; } }
+function rsSheetId(url) { const m = /\/d\/([a-zA-Z0-9_-]{20,})/.exec(String(url || '')); return m ? m[1] : ''; }
+function rsMonthTab(d) { d = d || new Date(); return String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + '월'; }
+
+function rsCsvRows(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+// 시트의 반 칸(3칸씩: 이름 | 학교+학년 | 날짜)을 읽어 { active: [...], gone: [...] } 로 돌려줌
+function rsSheetParse(rows) {
+  const cell = (r, c) => String((rows[r] || [])[c] == null ? '' : (rows[r] || [])[c]).trim();
+  const isHead = r => { let n = 0; for (let c = 1; c <= 34; c += 3) if (/^(FELIX|LUCAS|DAVE|CELINA|LIA)\b/i.test(cell(r, c))) n++; return n >= 4; };
+  const heads = []; rows.forEach((_, r) => { if (isHead(r)) heads.push(r); });
+  if (heads.length < 2) throw new Error('시트 모양이 달라요 (선생님 줄을 못 찾았어요). 이번 달 탭인지 확인해 주세요.');
+  const groups = h => { const g = []; for (let c = 1; c <= 34; c += 3) { const t = (cell(h, c).match(/[A-Za-z]+/) || [''])[0].toUpperCase(); if (RS_TEACHER_EN[t]) g.push({ c, cls: cell(h + 1, c), teacher: RS_TEACHER_EN[t] }); } return g; };
+  const person = (r, c) => {
+    const name = cell(r, c), sg = cell(r, c + 1);
+    if (!name || !sg || name.length > 8 || !/[가-힣]/.test(name)) return null;
+    if (sg === '예비고1') return { name, school: '', grade: '고1' };
+    const m = /^(.*?)(초|중|고)(\d)$/.exec(sg);
+    return m ? { name, school: m[1] + m[2], grade: m[2] + m[3] } : null;
+  };
+  const active = [], gone = [];
+  let lastEnd = 0;
+  heads.slice(0, 2).forEach(h => {
+    const g = groups(h);
+    let r = h + 2;
+    for (; r < rows.length && !/^현행/.test(cell(r, 1)); r++) {
+      g.forEach(x => { const p = person(r, x.c); if (p) active.push({ ...p, class: x.cls, teacher: x.teacher, status: 'in' }); });
+    }
+    lastEnd = r;
+  });
+  // 퇴원생: 두 번째 블록 아래쪽의 번호 없는 줄들 (같은 칸 배치)
+  // (재원 총인원 숫자만 덩그러니 있는 줄 아래부터가 퇴원생 — "등원 예정·미정" 칸의 학생은 퇴원생이 아니므로 건너뜀. 못 찾으면 8줄 아래부터)
+  let leaverStart = lastEnd + 8;
+  for (let r = lastEnd + 1; r < rows.length; r++) {
+    const filled = (rows[r] || []).filter(x => String(x).trim()).length;
+    if (filled === 1 && /^\d{2,3}$/.test(cell(r, 1))) { leaverStart = r + 1; break; }
+  }
+  for (let r = leaverStart; r < rows.length; r++) {
+    const c0 = cell(r, 0);
+    if (/^\d+$/.test(c0) || /^등원/.test(c0)) continue;
+    for (let c = 1; c <= 34; c += 3) { const p = person(r, c); if (p) gone.push({ ...p, class: '', teacher: '', status: 'out' }); }
+  }
+  return { active, gone };
+}
+
+async function rsSheetFetch() {
+  const id = rsSheetId(rsSheetUrl());
+  if (!id) throw new Error('시트 주소가 없어요.');
+  const url = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(rsMonthTab())}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('시트를 읽지 못했어요 (' + res.status + '). 공유가 "링크가 있는 모든 사용자 보기"인지 확인해 주세요.');
+  const text = await res.text();
+  if (/^\s*</.test(text)) throw new Error('시트를 읽지 못했어요. 공유 설정(링크가 있는 모든 사용자 보기)을 확인해 주세요.');
+  const parsed = rsSheetParse(rsCsvRows(text));
+  if (parsed.active.length < 30) throw new Error(`이번 달(${rsMonthTab()}) 탭에서 재원생을 ${parsed.active.length}명밖에 못 읽었어요. 시트 모양이 바뀌었는지 확인해 주세요.`);
+  return parsed;
+}
+
+// 어떤 변경이 생기는지 계산 (반영은 rsSheetApply)
+function rsSheetPlan(parsed) {
+  const regular = state.students.filter(s => !(typeof isEntranceStudent === 'function' && isEntranceStudent(s)));
+  const count = new Map(); parsed.active.forEach(e => count.set(e.name, (count.get(e.name) || 0) + 1));
+  const activeNames = new Set(parsed.active.map(e => e.name));
+  const plan = { add: [], update: [], hide: [], skipped: [] };
+  const findOne = (e) => {
+    const same = regular.filter(s => s.name === e.name);
+    if (!same.length) return null;
+    const byClass = same.find(s => (s.class || '') === (e.class || '') && e.class);
+    if (byClass) return byClass;
+    return same.length === 1 ? same[0] : undefined;   // undefined: 같은 이름이 여러 명이라 어느 학생인지 몰라 건드리지 않음
+  };
+  parsed.active.forEach(e => {
+    if (count.get(e.name) > 1) { if (!plan.skipped.includes(e.name)) plan.skipped.push(e.name); return; }
+    const teacher = e.teacher || (typeof CLASS_TEACHER_MAP !== 'undefined' ? CLASS_TEACHER_MAP[e.class] : '') || '';
+    const want = { name: e.name, school: e.school, grade: e.grade, class: e.class, teacher };
+    const ex = findOne(e);
+    if (ex === undefined) { plan.skipped.push(e.name); return; }
+    if (!ex) { plan.add.push(want); return; }
+    const changes = [];
+    [['school', '학교'], ['grade', '학년'], ['class', '반'], ['teacher', '담당']].forEach(([k, label]) => {
+      if (want[k] && (ex[k] || '') !== want[k]) changes.push({ k, label, from: ex[k] || '-', to: want[k] });
+    });
+    if (ex.hidden) changes.push({ k: 'hidden', label: '숨김', from: '숨김', to: '다시 보이게' });
+    if (changes.length) plan.update.push({ ex, changes, want });
+  });
+  parsed.gone.forEach(e => {
+    if (activeNames.has(e.name)) return;
+    const same = regular.filter(s => s.name === e.name && !s.hidden);
+    if (same.length === 1) plan.hide.push(same[0]);
+  });
+  return plan;
+}
+function rsSheetApply(plan) {
+  plan.add.forEach(w => state.students.push({ id: uid(), name: w.name, grade: w.grade || '', class: w.class || '', teacher: w.teacher || '', school: w.school || '' }));
+  plan.update.forEach(u => u.changes.forEach(c => { if (c.k === 'hidden') delete u.ex.hidden; else u.ex[c.k] = c.to; }));
+  plan.hide.forEach(s => { s.hidden = true; });
+  if (plan.add.length || plan.update.length || plan.hide.length) { saveState(); try { renderAll(); } catch (e) {} }
+}
+function rsSheetSummary(plan) {
+  return `새 학생 ${plan.add.length}명 · 정보 갱신 ${plan.update.length}명 · 퇴원(숨김) ${plan.hide.length}명` + (plan.skipped.length ? ` · 건드리지 않음 ${plan.skipped.length}명(수업 2개 등)` : '');
+}
+function rsSheetStatus(msg, bad) { const el = document.getElementById('rsSheetStatus'); if (el) { el.textContent = msg; el.style.color = bad ? 'var(--critical)' : ''; } }
+function rsSheetDetail(plan) {
+  const lines = [];
+  plan.add.forEach(w => lines.push(`+ ${w.name} (${w.grade} ${w.class} ${w.teacher})`));
+  plan.update.forEach(u => lines.push(`~ ${u.ex.name}: ${u.changes.map(c => `${c.label} ${c.from} → ${c.to}`).join(', ')}`));
+  plan.hide.forEach(s => lines.push(`- ${s.name} 퇴원(숨김)`));
+  return lines;
+}
+
+let rsSheetBusy = false;
+async function rsSheetRun(opt) {
+  opt = opt || {};
+  if (rsSheetBusy) return;
+  rsSheetBusy = true;
+  try {
+    if (window.KMMS && window.KMMS.demo) throw new Error('체험(guest) 모드에서는 동기화하지 않아요.');
+    rsSheetStatus('시트를 읽는 중…');
+    const parsed = await rsSheetFetch();
+    const plan = rsSheetPlan(parsed);
+    const total = plan.add.length + plan.update.length + plan.hide.length;
+    const stamp = () => { try { localStorage.setItem(RS_SHEET_LAST_KEY, new Date().toLocaleString('ko-KR')); } catch (e) {} };
+    const lastTxt = () => { try { return localStorage.getItem(RS_SHEET_LAST_KEY) || ''; } catch (e) { return ''; } };
+    if (!total) { stamp(); rsSheetStatus(`시트(${rsMonthTab()})와 이미 같아요 · 재원 ${parsed.active.length}명 · 마지막 확인 ${lastTxt()}`); if (!opt.auto) toast('시트와 이미 같아요.'); return; }
+    if (opt.auto) {
+      // 자동 반영은 변경이 작을 때만 — 많으면 직접 확인하게 함
+      if (plan.add.length > 10 || plan.hide.length > 15 || plan.update.length > 40) {
+        rsSheetStatus(`시트와 차이가 많아요(${rsSheetSummary(plan)}). 아래 "지금 동기화"에서 확인하고 반영해 주세요.`, true);
+        toast('시트와 명단 차이가 많아요. 데이터 관리 → 학생 명단에서 확인하고 동기화해 주세요.');
+        return;
+      }
+      rsSheetApply(plan); stamp();
+      rsSheetStatus(`자동 동기화 완료 (${rsMonthTab()}): ${rsSheetSummary(plan)} · ${lastTxt()}`);
+      toast('시트와 학생 명단을 맞췄어요: ' + rsSheetSummary(plan));
+      return;
+    }
+    const lines = rsSheetDetail(plan);
+    const ok = confirm(`시트(${rsMonthTab()})와 비교한 결과예요.\n${rsSheetSummary(plan)}\n\n` + lines.slice(0, 25).join('\n') + (lines.length > 25 ? `\n… 외 ${lines.length - 25}건` : '') + '\n\n이대로 반영할까요?');
+    if (!ok) { rsSheetStatus('반영하지 않았어요.'); return; }
+    rsSheetApply(plan); stamp();
+    rsSheetStatus(`동기화 완료 (${rsMonthTab()}): ${rsSheetSummary(plan)} · ${lastTxt()}`);
+    toast('시트와 학생 명단을 맞췄어요.');
+  } catch (e) {
+    console.warn(e);
+    rsSheetStatus('동기화 실패: ' + e.message, true);
+    if (!opt.auto) toast('동기화 실패: ' + e.message);
+  } finally { rsSheetBusy = false; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const url = document.getElementById('rsSheetUrl');
+  if (!url) return;
+  url.value = rsSheetUrl();
+  const auto = document.getElementById('rsSheetAuto');
+  auto.checked = (() => { try { return localStorage.getItem(RS_SHEET_AUTO_KEY) !== '0'; } catch (e) { return true; } })();
+  auto.addEventListener('change', () => { try { localStorage.setItem(RS_SHEET_AUTO_KEY, auto.checked ? '1' : '0'); } catch (e) {} });
+  const save = () => {
+    const v = url.value.trim();
+    if (v && !rsSheetId(v)) { toast('구글 시트 주소가 아닌 것 같아요. 주소창의 링크를 그대로 붙여넣어 주세요.'); return false; }
+    try { localStorage.setItem(RS_SHEET_URL_KEY, v); } catch (e) {}
+    return true;
+  };
+  document.getElementById('rsSheetSave').addEventListener('click', () => { if (save()) rsSheetRun({}); });
+  document.getElementById('rsSheetNow').addEventListener('click', () => { if (save()) rsSheetRun({}); });
+  rsSheetStatus((() => { try { const l = localStorage.getItem(RS_SHEET_LAST_KEY); return l ? `마지막 동기화 확인: ${l}` : ''; } catch (e) { return ''; } })());
+  // 원장(관리자) 계정으로 열렸을 때: 서버 데이터가 다 준비되면 한 번 맞추고, 열어 두는 동안 3시간마다 다시 맞춤
+  let tries = 0;
+  const timer = setInterval(() => {
+    if (++tries > 90) { clearInterval(timer); return; }
+    const K = window.KMMS;
+    if (!K || K.demo || !K.ready || !K.staff) return;
+    clearInterval(timer);
+    if (K.staff.role !== 'admin' || !rsSheetUrl() || !auto.checked) return;
+    rsSheetRun({ auto: true });
+    setInterval(() => { if (rsSheetUrl() && auto.checked) rsSheetRun({ auto: true }); }, 3 * 60 * 60 * 1000);
+  }, 4000);
+});

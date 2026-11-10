@@ -215,6 +215,17 @@
       <div class="inline-form" style="margin-top:10px;">
         <button type="button" class="btn ghost" id="applyClassTeacherBtn">반별 기본 담당 선생님 일괄 적용</button>
       </div>
+      <div class="admin-only" id="rsSheetBox" style="margin-top:16px; padding-top:14px; border-top:1px dashed var(--border);">
+        <h3 style="margin:0 0 4px; font-size:15px;">구글 시트와 자동 동기화</h3>
+        <p class="card-sub">시트 주소를 한 번 붙여넣어 두면, <b>원장 계정으로 KMMS를 열 때마다</b> 이번 달 탭(예: <b>2611월</b>)을 읽어 학생 명단(학교·학년·반·담당·퇴원)을 맞춰요. 주소는 <b>이 컴퓨터에만</b> 저장돼요. 시트가 "링크가 있는 모든 사용자 보기"로 공유돼 있어야 해요. 수업을 2개 듣는 학생과 "등원 예정" 칸은 건드리지 않고, 변경이 많으면 자동 반영 대신 아래 버튼에서 확인 후 반영해요.</p>
+        <input type="text" id="rsSheetUrl" placeholder="구글 시트 주소 붙여넣기 (https://docs.google.com/spreadsheets/d/…)" style="width:100%; box-sizing:border-box; margin-bottom:8px;">
+        <div class="inline-form">
+          <button type="button" class="btn primary" id="rsSheetSave">저장하고 지금 동기화</button>
+          <button type="button" class="btn ghost" id="rsSheetNow">지금 동기화</button>
+          <label class="field-hint" style="display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="rsSheetAuto" checked> 열 때마다 자동으로 맞추기</label>
+        </div>
+        <div id="rsSheetStatus" class="field-hint" style="margin-top:6px;"></div>
+      </div>
       <div style="margin-top:16px; padding-top:14px; border-top:1px dashed var(--border);">
         <h3 style="margin:0 0 4px; font-size:15px;">구글 시트 · 엑셀로 명단 올리기</h3>
         <p class="card-sub">구글 시트: <b>파일 → 다운로드 → 엑셀(.xlsx)</b> 후 업로드하거나, 칸을 복사해 아래에 붙여넣기. 첫 줄에 <b>이름 · 학교 · 학년 · 반 · 담당 · 상태(또는 비고)</b> 제목이 있으면 해당 열을 읽고, 없으면 이 순서로 읽음.
@@ -578,7 +589,7 @@
 <script src="retest.js?v=20"></script>
 <script src="app.js?v=274"></script>
 <script src="textbook.js?v=18"></script>
-<script src="roster-import.js?v=2"></script>
+<script src="roster-import.js?v=3"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="cloud.js?v=33"></script>
 </body>
