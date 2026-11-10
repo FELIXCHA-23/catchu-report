@@ -34,13 +34,26 @@ function tbTypeMap(book) {
 }
 // 쪽수 방식 교재(개념쎈 등): 문제 번호 = 쪽수×100 + 그 쪽의 번호 (31쪽 02번 → 3102)
 function tbPageMode(book) { const b = book || tbBook(); return !!(b && b.pageMode); }
-function tbNum(n) { return tbPageMode() ? `${Math.floor(n / 100)}쪽 ${String(n % 100).padStart(2, '0')}번` : String(n).padStart(4, '0'); }
-function tbRangeText(lo, hi) { return tbPageMode() ? `${Math.floor(lo / 100)}~${Math.floor(hi / 100)}쪽` : `${tbRangeText(lo, hi)}`; }
+// 쪽수 방식 교재의 묶음 단위: 기본은 "쪽", 모의고사 교재는 "ROUND" (번호 = ROUND×100 + 그 ROUND의 문항 번호)
+const TB_DIFF = ['', '하', '중하', '중', '중상', '상', '최상'];
+function tbDiffOf(book, n) { const d = book && book.diff ? book.diff[n] : 0; return d || 0; }
+function tbDiffTag(book, n) { const d = tbDiffOf(book, n); return d ? ` · ${TB_DIFF[d]}` : ''; }
+function tbDiffRows(book, rec, lo, hi) {
+  if (!book || !book.diff) return [];
+  const wrong = new Set(rec ? rec.wrong : []);
+  const rows = [1, 2, 3, 4, 5, 6].map(d => ({ d, n: 0, w: 0 }));
+  Object.keys(book.diff).forEach(k => { const p = +k; if (p < lo || p > hi) return; const r = rows[book.diff[k] - 1]; if (!r) return; r.n++; if (wrong.has(p)) r.w++; });
+  return rows.filter(r => r.n > 0).map(r => ({ ...r, pct: Math.round(((r.n - r.w) / r.n) * 100) }));
+}
+function tbPageUnit(book) { const b = book || tbBook(); return (b && b.pageUnit) || '쪽'; }
+function tbPageLabel(p, book) { return tbPageUnit(book) === 'ROUND' ? `ROUND ${p}` : `${p}쪽`; }
+function tbNum(n) { return tbPageMode() ? `${tbPageLabel(Math.floor(n / 100))} ${String(n % 100).padStart(2, '0')}번` : String(n).padStart(4, '0'); }
+function tbRangeText(lo, hi) { return tbPageMode() ? (tbPageUnit() === 'ROUND' ? `ROUND ${Math.floor(lo / 100)}~${Math.floor(hi / 100)}` : `${Math.floor(lo / 100)}~${Math.floor(hi / 100)}쪽`) : `${lo}~${hi}번`; }
 // "31쪽 2, 5  33쪽 1~3" 같은 글에서 쪽수와 그 쪽의 번호를 읽음 (3102처럼 쪽수+번호를 붙여 쓴 것도 인정)
 function tbParsePages(text) {
   const s = String(text == null ? '' : text).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\d+\.\d+/g, ' ');
   const out = new Set(); let page = null;
-  const re = /(\d{1,3})(?:\s*쪽|\s*페이지|[pP](?![a-zA-Z]))|[pP]\.?\s*(\d{1,3})|(\d{1,2})\s*[~∼～\-–—]\s*(\d{1,2})|(\d{3,5})|(\d{1,2})/g;
+  const re = /(\d{1,3})(?:\s*쪽|\s*페이지|\s*회|[pP](?![a-zA-Z]))|(?:[pP]|[rR](?:[oO][uU][nN][dD])?)\.?\s*(\d{1,3})|(\d{1,2})\s*[~∼～\-–—]\s*(\d{1,2})|(\d{3,5})|(\d{1,2})/g;
   let m;
   while ((m = re.exec(s))) {
     if (m[1] || m[2]) { page = +(m[1] || m[2]); continue; }
@@ -407,7 +420,7 @@ function tbRenderChips() {
       return `<details class="tb-chap" data-ck="${tbChapKey(book, c.ch)}"${tbOpenChapters.has(tbChapKey(book, c.ch)) ? ' open' : ''}>
         <summary><span class="tb-chap-name">${escapeHtml(c.title)}</span><span class="field-hint">틀린 문제 ${cnt}개 · 유형 ${ts.length}개</span></summary>
         <div class="tb-chap-body">${ts.map(t => `<div class="tb-group"><div class="tb-group-title"><b>${escapeHtml(t.label)}</b> ${escapeHtml(t.name)} <span class="field-hint">${byType.get(t).length}개</span></div>
-          ${byType.get(t).map(n => `<button type="button" class="tb-chip" data-n="${n}" title="누르면 지워져요">${tbNum(n)} ✕</button>`).join('')}</div>`).join('')}</div></details>`;
+          ${byType.get(t).map(n => `<button type="button" class="tb-chip" data-n="${n}" title="누르면 지워져요">${tbNum(n)}${tbDiffTag(book, n)} ✕</button>`).join('')}</div>`).join('')}</div></details>`;
     }).join('');
   chips.querySelectorAll('.tb-chip').forEach(b => b.addEventListener('click', () => {
     const r = tbRecord(student.id, book.id, false);
@@ -490,7 +503,7 @@ function tbRenderAnalysis() {
   tbTypeMap(book);
   const { lo, hi } = tbRangeOf(book);
   document.getElementById('tbFrom').value = tbRange.from; document.getElementById('tbTo').value = tbRange.to;
-  { const pm = tbPageMode(book); const a = document.getElementById('tbFromUnit'), b2 = document.getElementById('tbToUnit'), w = document.getElementById('tbWrongInput'); if (a) a.textContent = pm ? '쪽부터' : '번부터'; if (b2) b2.textContent = pm ? '쪽까지' : '번까지'; if (w) w.placeholder = pm ? '쪽수 + 틀린 번호 + Enter (예: 31쪽 2, 5  33쪽 1~3)' : '틀린 번호 + Enter (예: 14, 20~25)'; }
+  { const pm = tbPageMode(book); const a = document.getElementById('tbFromUnit'), b2 = document.getElementById('tbToUnit'), w = document.getElementById('tbWrongInput'); const ru = tbPageUnit(book) === 'ROUND'; if (a) a.textContent = pm ? (ru ? 'ROUND부터' : '쪽부터') : '번부터'; if (b2) b2.textContent = pm ? (ru ? 'ROUND까지' : '쪽까지') : '번까지'; if (w) w.placeholder = pm ? (ru ? 'ROUND + 틀린 번호 + Enter (예: ROUND 3 : 5, 7  ROUND 4 : 1~3)' : '쪽수 + 틀린 번호 + Enter (예: 31쪽 2, 5  33쪽 1~3)') : '틀린 번호 + Enter (예: 14, 20~25)'; }
   if (!student) { out.innerHTML = '<div class="empty">학생을 먼저 고르세요.</div>'; return; }
   const rows = tbAnalysis(book, rec, lo, hi);
   if (!rows.length) { out.innerHTML = '<div class="empty">이 범위에 해당하는 문제가 없어요.</div>'; return; }
@@ -510,6 +523,7 @@ function tbRenderAnalysis() {
       <div class="pill-tile"><span class="pill-tag" style="background:var(--critical)">틀린 문제</span><div class="pill-value tnum">${totalW}개</div><div class="pill-compare">범위 안에서</div></div>
     </div>
     ${weak.length ? `<p class="comment" style="margin:0 0 12px;">많이 틀린 유형: ${weak.map(r => `<b>${escapeHtml(r.t.label)} ${escapeHtml(r.t.name)}</b> (${r.pct}%)`).join(' · ')}</p>` : '<p class="comment" style="margin:0 0 12px;">이 범위에서는 틀린 문제가 없어요.</p>'}
+    ${(() => { const dr = tbDiffRows(book, rec, lo, hi); return dr.length ? `<h3 class="reset-class-title">난이도별 정답률 <span class="field-hint">(교재에 정해 둔 난이도 기준)</span></h3>${dr.map(r => `<div class="unit-row"><div class="unit-name"><b>${TB_DIFF[r.d]}</b> <span class="field-hint">난이도 ${r.d}</span></div><div class="unit-count">${r.w}/${r.n} 오답</div><div class="unit-bar-wrap">${tbBar(r.pct, tbPctColor(r.pct))}</div><div class="unit-pct tnum">${r.pct}%</div></div>`).join('')}` : ''; })()}
     <h3 class="reset-class-title">단원별 정답률 <span class="field-hint">(단원 클릭 시 유형 표시 · 캐치유 단원명 기준으로 합산)</span></h3>
     ${chapRows.map(({ c, rs, n, w, pct }) => `
       <details class="tb-chap" data-ck="${tbChapKey(book, c.ch)}"${tbOpenChapters.has(tbChapKey(book, c.ch)) ? ' open' : ''}>
