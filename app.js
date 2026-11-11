@@ -1444,9 +1444,10 @@ function renderEntranceStatus() {
         <div class="ent-types">${gr.list.map(t => `<span class="ent-type" title="${escapeHtml(t.unit || '')}">${escapeHtml(t.name)} <i>${rangeToString(t.questions || [])}</i></span>`).join('')}</div></div>`).join('')
         : '<div class="field-hint">유형 정보가 아직 없어요 (분석 전)</div>';
       const upBtn = can ? `<button class="icon-btn" data-exam-upload="${r.id}">${r.examPath ? '교체' : '올리기'}</button>` : '';
+      const editBtn = can ? ` <button class="icon-btn" data-ent-edit="${r.id}" title="제목·학년을 바꾸거나 공용 시험지로 바꿔요">이름·학년·공용</button> <button class="icon-btn" data-ent-del="${r.id}">삭제</button>` : '';
       return `<div class="ws-round" data-round="${r.id}"><div class="ent-head"><span class="ent-title">${escapeHtml(r.title || '입학테스트')}${roundStudentTag(r)}</span>
         <span class="ws-badge ${r.examPath ? 'ws-ok' : 'ws-no'}">${r.examPath ? '✓ 업로드완료' : '✗ 시험지없음'}</span>
-        ${r.examPath ? `<a href="#" data-exam-open="${r.id}">보기</a>${uploadWhoHtml(r, 'main')}` : ''}${upBtn}
+        ${r.examPath ? `<a href="#" data-exam-open="${r.id}">보기</a>${uploadWhoHtml(r, 'main')}` : ''}${upBtn}${editBtn}
         <span class="field-hint">${r.total || ''}문항</span></div>
         <details class="ent-details"><summary class="field-hint" style="cursor:pointer;">유형별 문항 보기${groups.length ? ` (단원 ${groups.length}개)` : ''}</summary>${typeHtml}</details></div>`;
     }).join('');
@@ -6296,3 +6297,51 @@ async function loadWeakImages(out) {
     }
   }
 }
+
+/* ===== 입학테스트 현황: 시험지 이름·학년 바꾸기, 한 학생 전용 시험지를 공용으로, 삭제 (입학테스트 화면에는 시험지 탭이 없어서 여기서 함) ===== */
+function entEditRound(id) {
+  const r = state.rounds.find(x => x.id === id);
+  if (!r) return;
+  closeWsModal();
+  const ov = document.createElement('div');
+  ov.id = 'wsModal'; ov.className = 'ws-modal';
+  ov.innerHTML = `<div class="ws-modal-box"><h3>입학테스트 시험지 정보</h3>
+    <div class="field-hint" style="margin:6px 0 4px;">제목 (앞에 "입학테스트"가 없으면 자동으로 붙어요)</div>
+    <input type="text" id="entEdTitle" value="${escapeHtml(r.title || '')}" style="width:100%;box-sizing:border-box;padding:8px;font-size:15px;margin-bottom:10px;">
+    <div class="field-hint" style="margin:0 0 4px;">학년</div>
+    <select id="entEdGrade" style="width:100%;padding:8px;font-size:15px;margin-bottom:10px;">${ALL_GRADES.map(g => `<option value="${g}"${g === r.grade ? ' selected' : ''}>${g}</option>`).join('')}</select>
+    ${r.individual ? `<label class="field-hint" style="display:flex;align-items:center;gap:6px;margin-bottom:10px;"><input type="checkbox" id="entEdShare" checked> <span>공용 시험지로 바꾸기 (같은 시험지를 보는 학생 누구나 채점 화면에서 고를 수 있어요)</span></label>` : ''}
+    <div class="ws-modal-btns"><button type="button" class="btn ghost" id="entEdCancel">취소</button><button type="button" class="btn primary" id="entEdSave">저장</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => {
+    if (e.target === ov || e.target.closest('#entEdCancel')) { closeWsModal(); return; }
+    if (!e.target.closest('#entEdSave')) return;
+    let title = document.getElementById('entEdTitle').value.trim();
+    if (!title) { toast('제목을 입력해주세요.'); return; }
+    if (!/입학\s*(테스트|TEST)/i.test(title)) title = '입학테스트 ' + title;
+    r.title = title;
+    r.grade = document.getElementById('entEdGrade').value;
+    const share = document.getElementById('entEdShare');
+    if (share && share.checked) { delete r.individual; delete r.studentId; delete r.studentName; delete r.hintName; }
+    saveState(); closeWsModal(); renderRounds(); populateSelects();
+    toast('시험지 정보를 바꿨어요.' + (share && share.checked ? ' 이제 공용 시험지예요.' : ''));
+  });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const body = document.getElementById('entStatusBody');
+  if (!body) return;
+  body.addEventListener('click', e => {
+    const ed = e.target.closest('[data-ent-edit]');
+    if (ed) { entEditRound(ed.dataset.entEdit); return; }
+    const dl = e.target.closest('[data-ent-del]');
+    if (!dl) return;
+    const r = state.rounds.find(x => x.id === dl.dataset.entDel);
+    if (!r) return;
+    if (!confirm(`"${r.title || '이 시험지'}"를 지울까요?\n이 시험지로 채점한 기록도 함께 삭제돼요. 되돌릴 수 없어요.`)) return;
+    state.rounds = state.rounds.filter(x => x.id !== r.id);
+    state.results = state.results.filter(x => x.roundId !== r.id);
+    state.retests = (state.retests || []).filter(x => x.roundId !== r.id);
+    saveState(); renderRounds(); populateSelects();
+    toast('시험지를 삭제했어요.');
+  });
+});
