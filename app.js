@@ -594,11 +594,26 @@ function loadState() {
   return { students: [], rounds: [], results: [], teacherNotes: {}, retests: [], gradeOverrides: {}, difficultyOverrides: {}, reportHidden: {}, textbook: { books: [], results: [] }, sharedRoundIds: [], studentDone: {}, studentMemo: {}, studentMemoRetest: {} };
 }
 
+// 서버(비공개 저장소)에 이미 올라간 시험지는 이 컴퓨터에 파일 사본을 남기지 않음 — 사본이 쌓이면 브라우저 저장공간(약 5MB)이 차서 저장이 실패함
+function freeLocalExamCopies() {
+  let n = 0;
+  (state.rounds || []).forEach(r => {
+    if (r.examFile && r.examFile.dataUrl && r.examPath) { r.examFile = { name: r.examFile.name, dataUrl: null, size: r.examFile.size }; n++; }
+  });
+  return n;
+}
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
-    toast('저장 실패: 브라우저 저장공간을 확인해주세요.');
+    // 저장공간이 부족하면 서버에 올라간 시험지의 이 컴퓨터 사본부터 정리하고 한 번 더 시도함
+    const n = freeLocalExamCopies();
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      toast(`저장공간이 부족해서 이 컴퓨터에 남아 있던 시험지 사본 ${n}개를 정리했어요 (서버에는 그대로 있어요).`);
+    } catch (e2) {
+      toast('저장 실패: 이 컴퓨터의 브라우저 저장공간이 가득 찼어요. 원장님께 알려 주세요.');
+    }
   }
 }
 
@@ -1118,6 +1133,8 @@ async function prepareExamFileForAI(file) {
 // 이 컴퓨터에 남겨둘 시험지 정보 — 작은 파일만 내용까지 보관하고, 큰 파일은 이름·용량만 남김(저장공간 보호)
 function storableExamFile(f) {
   if (!f) return null;
+  // 로그인한 상태에서는 시험지 파일이 서버에 올라가므로 이 컴퓨터에는 이름·용량만 남김 (저장공간 보호)
+  if (window.KMMS && !window.KMMS.demo) return { name: f.name, dataUrl: null, size: f.originalSize || f.size };
   if (f.dataUrl && f.size <= MAX_EXAM_FILE_BYTES) return { name: f.name, dataUrl: f.dataUrl, size: f.size };
   return { name: f.name, dataUrl: null, size: f.originalSize || f.size };
 }
@@ -6344,4 +6361,15 @@ document.addEventListener('DOMContentLoaded', () => {
     saveState(); renderRounds(); populateSelects();
     toast('시험지를 삭제했어요.');
   });
+});
+
+// 앱을 열면(서버 연결 후) 이미 서버에 올라간 시험지의 이 컴퓨터 사본을 한 번 정리함
+document.addEventListener('DOMContentLoaded', () => {
+  let tries = 0;
+  const t = setInterval(() => {
+    if (++tries > 60) { clearInterval(t); return; }
+    if (!(window.KMMS && window.KMMS.ready) || window.KMMS.demo) return;
+    clearInterval(t);
+    if (freeLocalExamCopies()) saveState();
+  }, 3000);
 });
