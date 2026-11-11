@@ -2356,6 +2356,7 @@ function renderRounds() {
         <td>${retestCellHtml(r)}</td>
         <td class="row-actions nw">
           <button class="icon-btn" data-edit-round="${r.id}">수정</button>
+          ${r.individual && !r.elem ? `<button class="icon-btn" data-share-round="${r.id}" title="한 학생 전용이던 시험지를 같은 학년 학생 모두가 고를 수 있는 공용 시험지로 바꿔요">공용으로</button>` : ''}
           <button class="icon-btn" data-del-round="${r.id}">삭제</button>
         </td>
       </tr>`;
@@ -2365,6 +2366,16 @@ function renderRounds() {
         <div class="table-wrap"><table class="data-table rounds-table"><thead><tr><th>회차</th><th>이름</th><th>날짜</th><th>문항수</th><th>유형</th><th>시험지</th><th>재시험지</th><th>관리</th></tr></thead><tbody>${byGrade.get(g).map(rowHtml).join('')}</tbody></table></div>
       </div>`).join('');
   }
+  // 한 학생 전용(개별) 시험지를 공용으로 — 채점 기록은 그대로 두고, 이제 같은 학년의 다른 학생도 이 시험지를 골라 채점할 수 있음
+  wrap.querySelectorAll('[data-share-round]').forEach(b => b.addEventListener('click', () => {
+    const r = state.rounds.find(x => x.id === b.dataset.shareRound);
+    if (!r) return;
+    if (!confirm(`"${r.title || '이 시험지'}"를 공용 시험지로 바꿀까요?
+같은 학년의 다른 학생도 이 시험지를 골라서 채점할 수 있어요. (이미 채점한 기록은 그대로 남아요)`)) return;
+    delete r.individual; delete r.studentId; delete r.studentName; delete r.hintName;
+    saveState(); renderRounds(); populateSelects();
+    toast('공용 시험지로 바꿨어요.');
+  }));
   wrap.querySelectorAll('[data-del-round]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.delRound;
     if (!confirm('이 회차와 관련된 채점 기록도 함께 삭제됩니다. 계속할까요?')) return;
