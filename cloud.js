@@ -99,18 +99,18 @@
 
   function loadSyncMeta() {
     try {
-      const m = JSON.parse(localStorage.getItem(LS_SYNC) || 'null');
+      const m = JSON.parse(appStore.getItem(LS_SYNC) || 'null');
       if (m && m.uid === (session && session.user.id)) { synced = m.hashes || {}; since = m.since || ''; return true; }
     } catch (e) {}
     synced = {}; since = '';
     return false;
   }
   function saveSyncMeta() {
-    try { localStorage.setItem(LS_SYNC, JSON.stringify({ uid: session.user.id, hashes: synced, since })); } catch (e) {}
+    try { appStore.setItem(LS_SYNC, JSON.stringify({ uid: session.user.id, hashes: synced, since })); } catch (e) {}
   }
 
   function writeLocal() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 저장공간 부족은 앱이 따로 알림 */ }
+    try { appStore.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 저장공간 부족은 앱이 따로 알림 */ }
   }
 
   /* ---------- 상태 표시 ---------- */
@@ -584,7 +584,7 @@ body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{disp
     ready = false;
     try { await sb.auth.signOut(); } catch (e) {}
     // 공용 컴퓨터에 학생 정보가 남지 않게 이 컴퓨터의 저장본 삭제
-    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LS_SYNC); } catch (e) {}
+    try { await Promise.all([appStore.removeItem(STORAGE_KEY), appStore.removeItem(LS_SYNC)]); } catch (e) {}
     location.reload();
   }
 
@@ -1238,5 +1238,6 @@ body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{disp
     get demo() { return demoMode; },
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  // store.js가 앱 스크립트를 불러오는 중이면 다른 화면 준비가 끝난 뒤(맨 마지막)에 시작함
+  if (document.readyState === 'loading' || (window.KMMSStore && window.KMMSStore.booting)) document.addEventListener('DOMContentLoaded', start); else start();
 })();

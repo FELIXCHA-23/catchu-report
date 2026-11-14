@@ -1,4 +1,4 @@
-/* 캐치유테스트 리포트 — 로컬 저장(localStorage) 기반, 서버/로그인 불필요 */
+/* 캐치유테스트 리포트 — 이 컴퓨터 저장(IndexedDB, store.js) + 서버 동기화(cloud.js) */
 
 const STORAGE_KEY = 'catchu_v1';
 const TYPE_COLORS = ['#3a3a3a', '#c8102e', '#1e7a3c', '#1f4e8c', '#8a5a00', '#6b6b6b', '#7b2d8b', '#b36b00'];
@@ -548,6 +548,9 @@ function sharedRoundPayload(r) {
   return rest;
 }
 
+// 큰 앱 데이터는 IndexedDB에 저장함 (store.js). store.js가 없으면 예전처럼 localStorage를 씀
+const appStore = window.KMMSStore || { getItem: k => localStorage.getItem(k), setItem: (k, v) => localStorage.setItem(k, v), removeItem: k => { localStorage.removeItem(k); return Promise.resolve(); } };
+if (window.KMMSStore) window.KMMSStore.onError = () => { try { toast('저장 실패: 이 컴퓨터에 저장하지 못했어요. 새로고침 후에도 계속되면 원장님께 알려 주세요.'); } catch (e) {} };
 let state = loadState();
 let editingRoundId = null;
 let editingStudentId = null;
@@ -572,7 +575,7 @@ let lastReportRangeStudentId = undefined;
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = appStore.getItem(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
       if (!data.teacherNotes) data.teacherNotes = {};
@@ -604,12 +607,12 @@ function freeLocalExamCopies() {
 }
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    appStore.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
-    // 저장공간이 부족하면 서버에 올라간 시험지의 이 컴퓨터 사본부터 정리하고 한 번 더 시도함
+    // (예전 localStorage 방식으로 동작할 때만) 저장공간이 부족하면 서버에 올라간 시험지의 이 컴퓨터 사본부터 정리하고 한 번 더 시도함
     const n = freeLocalExamCopies();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      appStore.setItem(STORAGE_KEY, JSON.stringify(state));
       toast(`저장공간이 부족해서 이 컴퓨터에 남아 있던 시험지 사본 ${n}개를 정리했어요 (서버에는 그대로 있어요).`);
     } catch (e2) {
       toast('저장 실패: 이 컴퓨터의 브라우저 저장공간이 가득 찼어요. 원장님께 알려 주세요.');

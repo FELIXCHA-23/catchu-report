@@ -586,11 +586,17 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="retest.js?v=20"></script>
-<script src="app.js?v=277"></script>
-<script src="textbook.js?v=18"></script>
-<script src="roster-import.js?v=3"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="cloud.js?v=33"></script>
+<!-- 저장소(IndexedDB)를 먼저 준비한 뒤 앱 스크립트를 순서대로 불러옴 (store.js 참고) -->
+<script src="store.js?v=1"></script>
+<script>
+KMMSStore.boot([
+  'retest.js?v=20',
+  'app.js?v=278',
+  'textbook.js?v=18',
+  'roster-import.js?v=3',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js',
+  'cloud.js?v=34',
+]);
+</script>
 </body>
 </html>
