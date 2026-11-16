@@ -3910,12 +3910,16 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
 
   // 유형명이 아니라 중단원 기준으로 묶음 (typeGroupKey) — 유형명 그대로 묶으면 주차마다 이름이 조금씩
   // 달라 붙어서 너무 잘게 쪼개지고, 대단원까지만 묶으면 반대로 너무 뭉뚱그려져서 중단원 단위로 묶음
+  // 캐치유테스트 보고서는 회차가 여러 개라 3단계(세부 개념)까지 나누면 유형이 너무 많아짐 → 소단원(대단원 - 중단원
+  // 2단계, typeGroupKey) 단위로 묶어서 보여줌. 입학테스트는 시험지 한 장이라 지금처럼 세부 개념까지 나눔
+  const reportKey = isEntranceStudent(student) ? typeDetailKey : typeGroupKey;
+  const reportLabel = isEntranceStudent(student) ? typeDetailLabel : typeGroupLabel;
   const groupKeys = [];
-  windowed.forEach(x => x.round.types.forEach(t => { const key = typeDetailKey(t); if (!groupKeys.includes(key)) groupKeys.push(key); }));
+  windowed.forEach(x => x.round.types.forEach(t => { const key = reportKey(t); if (!groupKeys.includes(key)) groupKeys.push(key); }));
   // 항상 "단원 순서대로" 보이도록 정렬 — 대단원이 먼저 기준이 되고(같은 대단원끼리는 반드시 붙어서 나오고),
   // 그 안에서는 중단원이 교육과정상 처음 나간 날짜 순. 복습 주차에 새 소단원이 섞여 들어와도 순서가 안 흔들림
   const majorOrder = buildUnitOrderMap(t => t.unit ? t.unit.split(' - ')[0].trim() : null);
-  const typeOrder = buildUnitOrderMap(typeDetailKey);
+  const typeOrder = buildUnitOrderMap(reportKey);
   groupKeys.sort((a, b) => {
     const majorCmp = (majorOrder[a.split(' - ')[0]] || '9999').localeCompare(majorOrder[b.split(' - ')[0]] || '9999');
     if (majorCmp !== 0) return majorCmp;
@@ -3924,7 +3928,7 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
 
   const typeStats = groupKeys.map((key, i) => {
     const series = windowed.map(x => {
-      const matching = x.round.types.filter(tt => typeDetailKey(tt) === key);
+      const matching = x.round.types.filter(tt => reportKey(tt) === key);
       const questions = matching.flatMap(tt => tt.questions);
       if (!questions.length) return null;
       const wrongSet = new Set(x.result.wrong);
@@ -3937,8 +3941,8 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
     const first = vals.length ? vals[0] : null;
     const last = vals.length ? vals[vals.length - 1] : null;
     const delta = (first !== null && last !== null) ? last - first : null;
-    const classAvg = computeClassAverageByType(roundIds, key, studentId);
-    const { title, caption } = typeDetailLabel(key);
+    const classAvg = computeClassAverageByType(roundIds, key, studentId, reportKey);
+    const { title, caption } = reportLabel(key);
     return { name: title, unit: caption, color: TYPE_COLORS[i % TYPE_COLORS.length], series, avg, first, last, delta, classAvg };
   });
 
@@ -4135,12 +4139,12 @@ function computeClassAverageOverall(roundIds, excludeStudentId) {
   return total ? Math.round((correct / total) * 100) : null;
 }
 
-function computeClassAverageByType(roundIds, groupKey, excludeStudentId) {
+function computeClassAverageByType(roundIds, groupKey, excludeStudentId, keyFn = typeDetailKey) {
   let correct = 0, total = 0;
   state.results.filter(r => roundIds.includes(r.roundId) && r.studentId !== excludeStudentId).forEach(r => {
     const round = state.rounds.find(x => x.id === r.roundId);
     if (!round) return;
-    const questions = round.types.filter(tt => typeDetailKey(tt) === groupKey).flatMap(tt => tt.questions);
+    const questions = round.types.filter(tt => keyFn(tt) === groupKey).flatMap(tt => tt.questions);
     if (!questions.length) return;
     const wrongSet = new Set(r.wrong);
     const wrongInType = questions.filter(q => wrongSet.has(q)).length;
