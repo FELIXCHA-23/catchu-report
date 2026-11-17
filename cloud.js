@@ -17,6 +17,12 @@
   const MAPS = [['feedbackUnits'], ['teacherNotes'], ['gradeOverrides'], ['difficultyOverrides'], ['reportHidden'], ['studentDone'], ['studentMemo'], ['studentMemoRetest'], ['mergedRoundIds'], ['printHost'],
     ['textbook', 'notes'], ['textbook', 'hidden'], ['textbook', 'ai']];
 
+  // 채점 이력: 채점 결과가 저장되거나 지워질 때마다 그 순간의 내용을 서버에 한 줄씩 따로 쌓아 둠 (절대 지우지 않음).
+  // 나중에 "채점 이력" 창에서 골라 되살릴 수 있음. 앱 화면에는 안 나타나는 별도 묶음이라 받기(pull)에서도 뺌.
+  const HIST_COL = 'gradeHistory';
+  const HIST_TRACK = new Set(['results', 'retests', 'textbook.results']);
+  const LS_HIST = 'kmms_hist_queue_v1';     // 아직 서버에 못 올린 이력 (인터넷이 끊겨도 이 컴퓨터에 보관했다가 다시 올림)
+
   // 출력 요청·출력 담당 PC 상태는 자주 바뀌므로 "다른 선생님이 바꿨어요" 안내를 띄우지 않음
   const QUIET = new Set(['printJobs', 'printHost']);
 
@@ -31,7 +37,10 @@
   let ready = false;      // 로그인 + 승인 + 첫 동기화 끝
   let statusText = '';
   let pendingChanges = false;
-  let demoMode = false;   // guest 체험 모드: 서버에 로그인하지 않고, 가짜 데이터로만 화면을 둘러봄 (아무것도 저장·업로드되지 않음)
+  let demoMode = false;
+  let known = {};         // key -> 마지막으로 알고 있던 내용(JSON) — 지운 항목의 내용을 이력·서버에 남기려고 기억해 둠
+  let histLogged = {};    // key -> 이력에 이미 남긴 내용의 지문 (같은 내용을 두 번 남기지 않게)
+  let histQueue = null;   // 서버에 올릴 이력 줄들   // guest 체험 모드: 서버에 로그인하지 않고, 가짜 데이터로만 화면을 둘러봄 (아무것도 저장·업로드되지 않음)
 
   /* ---------- 유틸 ---------- */
 
@@ -169,20 +178,39 @@
         if (!ok) { pushing = false; await restoreFromServer(); return; }
       }
 
-      const rows = [];
-      up.forEach(k => { const [c, id] = splitKey(k); rows.push({ collection: c, id, data: JSON.parse(flat[k]), deleted: false }); });
-      del.forEach(k => { const [c, id] = splitKey(k); rows.push({ collection: c, id, data: null, deleted: true }); });
+      // 채점 기록이 바뀌거나 지워진 순간을 먼저 이력에 남김 (서버 저장이 실패해도 이 컴퓨터에 보관됨)
+      recordHistory(up, del, flat, cur);
 
+      const rows = [], delNoData = [];
+      up.forEach(k => { const [c, id] = splitKey(k); rows.push({ collection: c, id, data: JSON.parse(flat[k]), deleted: false }); });
+      // 지울 때도 내용(data)은 서버에 그대로 남기고 "지움" 표시만 함 — 나중에 되살릴 수 있게
+      del.forEach(k => {
+        const [c, id] = splitKey(k);
+        if (known[k] !== undefined) rows.push({ collection: c, id, data: JSON.parse(known[k]), deleted: true });
+        else delNoData.push({ collection: c, id, deleted: true });
+      });
+
+      const markDone = chunk => chunk.forEach(r => {
+        const k = mkKey(r.collection, r.id);
+        if (r.deleted) { delete synced[k]; delete known[k]; } else synced[k] = cur[k];
+      });
       for (let i = 0; i < rows.length; i += 200) {
         const chunk = rows.slice(i, i + 200);
         const { error } = await sb.from('records').upsert(chunk, { onConflict: 'collection,id' });
         if (error) throw error;
-        chunk.forEach(r => {
-          const k = mkKey(r.collection, r.id);
-          if (r.deleted) delete synced[k]; else synced[k] = cur[k];
-        });
+        markDone(chunk);
       }
+      // 내용을 모르는 지움(드묾): 서버에 있는 내용은 건드리지 않고 "지움" 표시만 바꿈
+      for (let i = 0; i < delNoData.length; i += 200) {
+        const chunk = delNoData.slice(i, i + 200);
+        let { error } = await sb.from('records').upsert(chunk, { onConflict: 'collection,id' });
+        if (error) ({ error } = await sb.from('records').upsert(chunk.map(r => ({ ...r, data: null })), { onConflict: 'collection,id' }));
+        if (error) throw error;
+        markDone(chunk);
+      }
+      Object.keys(flat).forEach(k => { known[k] = flat[k]; });
       saveSyncMeta();
+      flushHistory();
       pendingChanges = false;
       setStatus('저장됨');
     } catch (e) {
@@ -192,6 +220,153 @@
     } finally {
       pushing = false;
     }
+  }
+
+  /* ---------- 채점 이력 (절대 지우지 않는 기록) ---------- */
+
+  function histId() { return new Date().toISOString().replace(/[-:.TZ]/g, '') + '-' + Math.random().toString(36).slice(2, 8); }
+  function loadHistQueue() {
+    if (histQueue) return histQueue;
+    try { histQueue = JSON.parse(appStore.getItem(LS_HIST) || '[]'); } catch (e) { histQueue = []; }
+    if (!Array.isArray(histQueue)) histQueue = [];
+    return histQueue;
+  }
+  function saveHistQueue() { try { appStore.setItem(LS_HIST, JSON.stringify(histQueue || [])); } catch (e) {} }
+
+  function recordHistory(up, del, flat, cur) {
+    if (demoMode || !staff) return;
+    const at = new Date().toISOString();
+    const by = staff.name || shownId(staff.email);
+    const add = (k, op, json) => {
+      const [col, rid] = splitKey(k);
+      if (!HIST_TRACK.has(col) || json === undefined) return;
+      const mark = op === 'delete' ? 'DEL' : cur[k];
+      if (histLogged[k] === mark) return;
+      histLogged[k] = mark;
+      let item; try { item = JSON.parse(json); } catch (e) { return; }
+      loadHistQueue().push({ collection: HIST_COL, id: histId(), deleted: false,
+        data: { col, rid: String(rid), op, sid: item.studentId || '', rnd: item.roundId || item.bookId || '', item, at, by, uid: session ? session.user.id : '' } });
+    };
+    up.forEach(k => add(k, 'save', flat[k]));
+    del.forEach(k => add(k, 'delete', known[k]));
+    if (histQueue && histQueue.length) saveHistQueue();
+  }
+
+  let histFlushing = false;
+  async function flushHistory() {
+    if (histFlushing || !sb || !session || demoMode) return;
+    const q = loadHistQueue();
+    if (!q.length) return;
+    histFlushing = true;
+    try {
+      while (histQueue.length) {
+        const chunk = histQueue.slice(0, 200);
+        const { error } = await sb.from('records').upsert(chunk, { onConflict: 'collection,id', ignoreDuplicates: true });
+        if (error) throw error;
+        histQueue.splice(0, chunk.length);
+        saveHistQueue();
+      }
+    } catch (e) {
+      console.warn('history upload failed (이 컴퓨터에 보관 후 다시 시도)', e);
+    } finally { histFlushing = false; }
+  }
+
+  // 한 학생·한 회차(또는 지운 기록 전체)의 이력을 서버에서 최신순으로 가져옴
+  async function loadHistory(opts) {
+    let q = sb.from('records').select('id,data,updated_at').eq('collection', HIST_COL);
+    if (opts.studentId) q = q.eq('data->>sid', opts.studentId);
+    if (opts.roundId) q = q.eq('data->>rnd', opts.roundId);
+    if (opts.deletesOnly) q = q.eq('data->>op', 'delete');
+    const { data, error } = await q.order('id', { ascending: false }).limit(opts.limit || 300);
+    if (error) throw error;
+    // 아직 서버에 못 올린 이 컴퓨터의 이력도 같이 보여줌
+    const local = loadHistQueue().filter(r => (!opts.studentId || r.data.sid === opts.studentId) && (!opts.roundId || r.data.rnd === opts.roundId) && (!opts.deletesOnly || r.data.op === 'delete'));
+    const seen = new Set((data || []).map(r => r.id));
+    return local.filter(r => !seen.has(r.id)).reverse().concat(data || []);
+  }
+
+  // 이력의 한 줄을 지금 데이터로 되살림 (기존 기록은 지우지 않고, 같은 학생·같은 회차 결과가 있으면 그 내용을 이력 내용으로 바꿈 — 바꾸기 전 내용도 이력에 남음)
+  function restoreHistoryItem(h) {
+    const path = h.col.split('.');
+    const parent = walk(path.slice(0, -1), true);
+    const last = path[path.length - 1];
+    if (!Array.isArray(parent[last])) parent[last] = [];
+    const arr = parent[last];
+    const item = JSON.parse(JSON.stringify(h.item));
+    let idx = arr.findIndex(x => String(x.id) === String(item.id));
+    if (idx === -1 && h.col === 'results') idx = arr.findIndex(x => x.studentId === item.studentId && x.roundId === item.roundId);
+    if (idx === -1) arr.push(item);
+    else arr[idx] = { ...item, id: arr[idx].id };
+    if (typeof saveState === 'function') saveState(); else { writeLocal(); schedulePush(); }
+    return idx === -1 ? 'added' : 'replaced';
+  }
+
+  function histItemText(h) {
+    const it = h.item || {};
+    const w = Array.isArray(it.wrong) ? it.wrong.slice().sort((a, b) => a - b) : null;
+    const rt = typeof rangeToString === 'function' ? rangeToString : (a => a.join(','));
+    if (h.col === 'results') return w ? (w.length ? `오답 ${w.length}개 (${esc(rt(w))})` : '전부 정답') : '';
+    if (h.col === 'retests') return '재시험 ' + (it.date ? esc(it.date) + ' ' : '') + (w ? (w.length ? `오답 ${w.length}개 (${esc(rt(w))})` : '전부 정답') : '');
+    return '교재 ' + (w ? `오답 ${w.length}개` : '');
+  }
+  function histWhat(h) {
+    const st = (state.students || []).find(s => s.id === h.sid);
+    const rd = (state.rounds || []).find(r => r.id === h.rnd);
+    const rl = rd ? `${rd.grade || ''} ${typeof roundLabel === 'function' ? roundLabel(rd) : (rd.title || '')}` : (h.col === 'textbook.results' ? '교재' : '(지금은 없는 회차)');
+    return `${esc(st ? st.name : '(지금은 없는 학생)')} · ${esc(rl)}`;
+  }
+
+  async function openHistory(opts) {
+    if (demoMode) { toast('체험(guest) 모드에서는 이력이 없어요.'); return; }
+    if (!ready || !sb) { toast('로그인해서 서버에 연결된 뒤에 볼 수 있어요.'); return; }
+    opts = opts || {};
+    let mode = opts.studentId && opts.roundId ? 'one' : 'deleted';
+    let wrap = document.getElementById('kmmsHist');
+    if (wrap) wrap.remove();
+    wrap = document.createElement('div');
+    wrap.id = 'kmmsHist';
+    wrap.className = 'kmms-modal';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+    const draw = async () => {
+      wrap.innerHTML = '<div class="ka-box">불러오는 중…</div>';
+      let list;
+      try {
+        await flushHistory();
+        list = await loadHistory(mode === 'one' ? { studentId: opts.studentId, roundId: opts.roundId } : { deletesOnly: true, limit: 200 });
+      } catch (e) { wrap.innerHTML = `<div class="ka-box">불러오지 못했어요: ${esc(e.message || e)}<p><button type="button" id="khClose">닫기</button></p></div>`; wrap.querySelector('#khClose').onclick = () => wrap.remove(); return; }
+      const fmt = iso => { try { return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (e) { return iso; } };
+      const rows = list.map((r, i) => {
+        const h = r.data || {};
+        return `<tr>
+          <td>${esc(fmt(h.at || r.updated_at))}</td>
+          <td>${esc(h.by || '')}</td>
+          ${mode === 'deleted' ? `<td>${histWhat(h)}</td>` : ''}
+          <td>${h.op === 'delete' ? '<b style="color:#c8102e">채점취소(지움)</b>' : '저장'}</td>
+          <td>${histItemText(h)}</td>
+          <td>${isObserver() ? '' : `<button type="button" data-restore="${i}">이 내용으로 되살리기</button>`}</td>
+        </tr>`;
+      }).join('');
+      const title = mode === 'one' ? `채점 이력 · ${histWhat({ sid: opts.studentId, rnd: opts.roundId, col: 'results' })}` : '최근 지운(채점취소한) 채점 기록';
+      wrap.innerHTML = `<div class="ka-box"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"><b style="font-size:16px">${title}</b>
+        <span>${opts.studentId && opts.roundId ? `<button type="button" id="khMode">${mode === 'one' ? '지운 기록 전체 보기' : '이 학생·회차 이력 보기'}</button> ` : ''}<button type="button" id="khClose">닫기</button></span></div>
+        <p style="font-size:12px;color:#777;margin:0 0 8px">선생님이 채점을 저장하거나 취소할 때마다 그 순간의 내용이 서버에 따로 보관돼요. 이 기록은 지워지지 않아요. "되살리기"를 누르면 그 내용으로 다시 채점한 것처럼 돌아가요.</p>
+        ${list.length ? `<div style="overflow:auto"><table><thead><tr><th>시각</th><th>선생님</th>${mode === 'deleted' ? '<th>학생 · 회차</th>' : ''}<th>구분</th><th>내용</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+          : '<p>아직 남은 이력이 없어요. (이 기능이 생긴 뒤부터 저장한 것부터 쌓여요)</p>'}</div>`;
+      wrap.querySelector('#khClose').onclick = () => wrap.remove();
+      const mb = wrap.querySelector('#khMode');
+      if (mb) mb.onclick = () => { mode = mode === 'one' ? 'deleted' : 'one'; draw(); };
+      wrap.querySelectorAll('[data-restore]').forEach(b => b.onclick = () => {
+        const h = list[+b.dataset.restore].data;
+        if (!h || !h.item) return;
+        if (!confirm(`${histWhat(h).replace(/&[a-z#0-9]+;/g, '')} 채점을 이 내용으로 되살릴까요?\n(${histItemText(h).replace(/&[a-z#0-9]+;/g, '')})`)) return;
+        restoreHistoryItem(h);
+        if (typeof renderAll === 'function') renderAll();
+        toast('채점 기록을 되살렸어요.');
+        wrap.remove();
+      });
+    };
+    draw();
   }
 
   /* ---------- 서버에서 받기 ---------- */
@@ -247,7 +422,7 @@
     const startFrom = full ? '' : since;
     const flatNow = flatten();
     for (;;) {
-      let q = sb.from('records').select('collection,id,data,deleted,updated_at').order('updated_at', { ascending: true }).order('collection').order('id').range(from, from + 999);
+      let q = sb.from('records').select('collection,id,data,deleted,updated_at').neq('collection', HIST_COL).order('updated_at', { ascending: true }).order('collection').order('id').range(from, from + 999);
       if (startFrom) {
         const d = new Date(new Date(startFrom).getTime() - 5000).toISOString(); // 5초 겹쳐서 받아 놓치는 변경이 없게 함
         q = q.gte('updated_at', d);
@@ -264,6 +439,7 @@
     }
     since = latest;
     saveSyncMeta();
+    Object.assign(known, flatten());
     if (changed || quiet) writeLocal();
     return changed;
   }
@@ -425,12 +601,17 @@
 #kmmsGate .kg-msg.ok{color:#1e7a3c}
 body:not(.kmms-admin) .admin-only{display:none !important}
 body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:none !important}
-body.kmms-observer #scoreGridWrap,body.kmms-observer #quickWrongInput,body.kmms-observer #teacherNoteInput,body.kmms-observer .attitude-picker,body.kmms-observer #saveScoreBtn,body.kmms-observer #clearScoreBtn,body.kmms-observer #saveRetestBtn,body.kmms-observer #aiAnalyzeBtn,body.kmms-observer #aiCommentBtn,body.kmms-observer #addTypeRowBtn,body.kmms-observer #stuSubmitBtn,body.kmms-observer #applyClassTeacherBtn,body.kmms-observer #rsParseBtn,body.kmms-observer #entPickBtn,body.kmms-observer #seedBtn,body.kmms-observer #saveApiKeyBtn,body.kmms-observer #tbAddBtn,body.kmms-observer #tbClearBtn,body.kmms-observer #tbParseBtn,body.kmms-observer #exportBtn,body.kmms-observer #exportRoundsBtn{opacity:.45;pointer-events:none}
+body.kmms-observer #scoreGridWrap,body.kmms-observer #quickWrongInput,body.kmms-observer #teacherNoteInput,body.kmms-observer .attitude-picker,body.kmms-observer #saveScoreBtn,body.kmms-observer #clearScoreBtn,body.kmms-observer #cancelScoreBtn,body.kmms-observer #saveRetestBtn,body.kmms-observer #aiAnalyzeBtn,body.kmms-observer #aiCommentBtn,body.kmms-observer #addTypeRowBtn,body.kmms-observer #stuSubmitBtn,body.kmms-observer #applyClassTeacherBtn,body.kmms-observer #rsParseBtn,body.kmms-observer #entPickBtn,body.kmms-observer #seedBtn,body.kmms-observer #saveApiKeyBtn,body.kmms-observer #tbAddBtn,body.kmms-observer #tbClearBtn,body.kmms-observer #tbParseBtn,body.kmms-observer #exportBtn,body.kmms-observer #exportRoundsBtn{opacity:.45;pointer-events:none}
 body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{display:none !important}
 #kmmsChip{position:fixed;right:10px;bottom:10px;z-index:9000;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.96);border:1px solid #d9d4ca;border-radius:20px;padding:5px 10px;font-size:12px;color:#444;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 #kmmsChip button{border:1px solid #cfc9bd;background:#fff;border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer}
 #kmmsBanner{position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:9001;background:#222;color:#fff;border-radius:10px;padding:9px 14px;font-size:13px}
 #kmmsBanner button{margin-left:8px;border:0;border-radius:6px;padding:3px 9px;cursor:pointer}
+#kmmsHist{position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px}
+#kmmsHist .ka-box{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:820px;max-height:86vh;overflow:auto}
+#kmmsHist table{width:100%;border-collapse:collapse;font-size:13px}
+#kmmsHist th,#kmmsHist td{border-bottom:1px solid #eee;padding:7px 6px;text-align:left;vertical-align:top}
+#kmmsHist button{font-size:12px;padding:4px 8px;cursor:pointer}
 #kmmsAdmin{position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px}
 #kmmsAdmin .ka-box{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:720px;max-height:86vh;overflow:auto}
 #kmmsAdmin table{width:100%;border-collapse:collapse;font-size:13px}
@@ -1230,7 +1411,7 @@ body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{disp
   }
 
   window.KMMS = {
-    uploadExam, uploadAux, deleteFile, fetchBuf, stageExam, attachStaged, viewExam, push, poll,
+    uploadExam, uploadAux, deleteFile, fetchBuf, stageExam, attachStaged, viewExam, push, poll, openHistory,
     sendPrint, waitPrint, setPrintHost, printHostAlive, get printHostIsMine() { return printHostIsMine(); }, get isPrintHost() { return isPrintHost(); }, get printHostInfo() { return (state.printHost && state.printHost.main) || null; },
     get ready() { return ready; }, get staff() { return staff; },
     // 로그인한 선생님의 이름이 선생님 목록에 있으면 그 이름이 곧 담당 선생님
