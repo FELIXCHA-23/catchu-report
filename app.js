@@ -570,6 +570,12 @@ const DEFAULT_REPORT_TO_DATE = '9999-12-31';   // 최신 주차까지
 // 보고서 탭에서 마지막으로 기간을 세팅해준 학생 — 같은 학생이면 선생님이 고른 기간을 유지하고,
 // 다른 학생으로 바뀌면 항상 위 기본 기간으로 다시 리셋되게 함
 let lastReportRangeStudentId = undefined;
+// 보고서 기간 안에서 선생님이 체크를 끈(보고서에서 뺀) 회차들 — 학생별로 기억 { studentId: Set(roundId) }
+const reportExcludedRounds = {};
+function reportExcludedSet(studentId) {
+  if (!reportExcludedRounds[studentId]) reportExcludedRounds[studentId] = new Set();
+  return reportExcludedRounds[studentId];
+}
 
 /* ---------- state ---------- */
 
@@ -3887,7 +3893,7 @@ function studentScoredRounds(studentId) {
     .filter(x => x.result);
 }
 
-function computeStudentReport(studentId, fromRoundId, toRoundId) {
+function computeStudentReport(studentId, fromRoundId, toRoundId, excludedIds) {
   const student = studentId === EXAMPLE_STUDENT_ID ? EXAMPLE_STUDENT : state.students.find(s => s.id === studentId);
   if (!student) return null;
   const withResult = studentScoredRounds(studentId);
@@ -3896,7 +3902,8 @@ function computeStudentReport(studentId, fromRoundId, toRoundId) {
   if (fromIdx === -1) fromIdx = 0;
   if (toIdx === -1) toIdx = withResult.length - 1;
   if (fromIdx > toIdx) { const t = fromIdx; fromIdx = toIdx; toIdx = t; }
-  const windowed = withResult.slice(fromIdx, toIdx + 1);
+  // 기간 안에서 선생님이 체크를 끈 회차는 보고서 계산에서 뺌 (채점 기록 자체는 그대로 둠)
+  const windowed = withResult.slice(fromIdx, toIdx + 1).filter(x => !(excludedIds && excludedIds.has(x.round.id)));
   const roundIds = windowed.map(x => x.round.id);
 
   const points = windowed.map(x => {
@@ -4468,7 +4475,7 @@ function populateReportRoundSelects() {
   const prevFrom = fromSel.value, prevTo = toSel.value;
   fromSel.innerHTML = opts;
   toSel.innerHTML = opts;
-  if (!rounds.length) return;
+  if (!rounds.length) { renderReportRoundChecks(studentId, []); return; }
   if (studentChanged) {
     // 학생이 바뀌면 이번 보고서 기본 기간(8-3주차~9-3주차)으로 다시 맞춤 — 그 기간에 있는 회차만 걸러서
     // 처음/끝을 정하므로, 그 학생이 8-3주차나 9-3주차에 채점 기록이 없으면 있는 데이터 선에서 자동으로 줄어듦
@@ -4481,6 +4488,27 @@ function populateReportRoundSelects() {
     fromSel.value = rounds.some(x => x.round.id === prevFrom) ? prevFrom : rounds[0].round.id;
     toSel.value = rounds.some(x => x.round.id === prevTo) ? prevTo : rounds[rounds.length - 1].round.id;
   }
+  let a = rounds.findIndex(x => x.round.id === fromSel.value), b = rounds.findIndex(x => x.round.id === toSel.value);
+  if (a > b) { const t = a; a = b; b = t; }
+  renderReportRoundChecks(studentId, rounds.slice(a, b + 1));
+}
+
+// 시작~끝 기간 안의 회차를 체크박스로 보여줌 — 체크를 끄면 그 회차는 보고서(그래프·정답률·표·PDF)에서 빠짐
+function renderReportRoundChecks(studentId, inRange) {
+  const box = document.getElementById('reportRoundChecks');
+  if (!box) return;
+  if (!studentId || inRange.length < 2) { box.innerHTML = ''; box.style.display = 'none'; return; }
+  const ex = reportExcludedSet(studentId);
+  const onCount = inRange.filter(x => !ex.has(x.round.id)).length;
+  box.style.display = '';
+  box.innerHTML = `<div class="rrc-head"><b>보고서에 넣을 회차</b> <span class="field-hint">${onCount}/${inRange.length}개 선택 · 체크를 끄면 그 회차는 보고서에서 빠져요</span>
+      <button type="button" class="btn small" data-rrc="all">모두 선택</button></div>
+    <div class="rrc-list">${inRange.map(x => `<label class="rrc-item${ex.has(x.round.id) ? ' off' : ''}"><input type="checkbox" value="${x.round.id}"${ex.has(x.round.id) ? '' : ' checked'}> ${escapeHtml(x.label)} <span class="field-hint">${shortDate(x.round.date)}</span></label>`).join('')}</div>`;
+  box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+    if (cb.checked) ex.delete(cb.value); else ex.add(cb.value);
+    renderReportTab();
+  }));
+  box.querySelector('[data-rrc=all]').addEventListener('click', () => { inRange.forEach(x => ex.delete(x.round.id)); renderReportTab(); });
 }
 
 // 보고서의 각 요소(카드·타일)마다 "PDF 포함" 체크박스를 달아서, 필요 없는 건 빼고 PDF로 저장할 수 있게 함.
@@ -4550,7 +4578,11 @@ function renderReportTab() {
   const fromRoundId = document.getElementById('reportFromSel').value;
   const toRoundId = document.getElementById('reportToSel').value;
 
-  const data = computeStudentReport(studentId, fromRoundId, toRoundId);
+  const data = computeStudentReport(studentId, fromRoundId, toRoundId, reportExcludedSet(studentId));
+  if (data && !data.points.length && studentScoredRounds(studentId).length) {
+    out.innerHTML = '<div class="card empty-state">보고서에 넣을 회차가 하나도 선택되지 않았어요. 위에서 회차를 하나 이상 체크해주세요.</div>';
+    return;
+  }
   if (!data || !data.points.length) {
     out.innerHTML = `<div class="card empty-state">${escapeHtml(data ? displayName(data.student.name) : '')} 학생의 채점 기록이 아직 없어요. 채점 입력 탭에서 먼저 입력해주세요.</div>`;
     return;
@@ -5196,13 +5228,14 @@ function openArchivedReport(studentId) {
   const l = (state.reportLog || []).filter(x => x.studentId === studentId).pop();
   const from = document.getElementById('reportFromSel'), to = document.getElementById('reportToSel');
   if (l && [...from.options].some(o => o.value === l.from) && [...to.options].some(o => o.value === l.to)) { from.value = l.from; to.value = l.to; }
+  if (l && Array.isArray(l.excluded)) reportExcludedRounds[studentId] = new Set(l.excluded);
   renderReportTab();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function logReportPdf(data, fromId, toId) {
   if (!state.reportLog) state.reportLog = [];
   const pts = data.points;
-  state.reportLog.push({ id: uid(), studentId: data.student.id, from: fromId, to: toId, fromDate: pts[0] ? pts[0].date : '', toDate: pts.length ? pts[pts.length - 1].date : '', savedAt: Date.now() });
+  state.reportLog.push({ id: uid(), studentId: data.student.id, from: fromId, to: toId, excluded: [...reportExcludedSet(data.student.id)], fromDate: pts[0] ? pts[0].date : '', toDate: pts.length ? pts[pts.length - 1].date : '', savedAt: Date.now() });
   if (state.reportLog.length > 500) state.reportLog = state.reportLog.slice(-500);
   saveState();
   renderReportArchive();
@@ -5289,7 +5322,7 @@ async function exportReportPDF() {
   const studentId = document.getElementById('reportStudentSel').value;
   const fromRoundId = document.getElementById('reportFromSel').value;
   const toRoundId = document.getElementById('reportToSel').value;
-  const data = computeStudentReport(studentId, fromRoundId, toRoundId);
+  const data = computeStudentReport(studentId, fromRoundId, toRoundId, reportExcludedSet(studentId));
   if (!data || !data.points.length) { status.textContent = '먼저 보고서를 생성하세요.'; return; }
 
   btn.disabled = true;
