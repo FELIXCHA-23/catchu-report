@@ -1739,9 +1739,10 @@ function sameExamRounds(a, b) {
   if (a.id === b.id || a.individual || b.individual || a.retestOnly || b.retestOnly) return false;
   if (a.grade !== b.grade || !a.date || !b.date) return false;
   if (!(Math.abs((new Date(a.date) - new Date(b.date)) / 86400000) <= 7)) return false;
-  if (normT(a.title) && normT(a.title) === normT(b.title)) return true;
-  const tr = typeRatio(roundTypeMap(a), roundTypeMap(b));
-  return tr.n >= 10 && tr.ratio >= 0.9;
+  // 제목이 (괄호·띄어쓰기만 빼고) 똑같을 때만 같은 시험으로 봄.
+  // 예전에는 문항별 유형이 90% 이상 비슷해도 같은 시험으로 봤는데, 같은 주의 1회·2회나 같은 단원을 이어서 보는 주(중3 등)의
+  // 서로 다른 시험까지 하나로 합쳐 버려서 학생의 채점 기록이 지워졌음 (2026-11-17). 그래서 유형 비교는 쓰지 않음.
+  return !!normT(a.title) && normT(a.title) === normT(b.title);
 }
 function reconcileDuplicateRounds() {
   const list = state.rounds.filter(r => !r.individual && !r.retestOnly);
@@ -1753,22 +1754,19 @@ function reconcileDuplicateRounds() {
     for (let j = i + 1; j < list.length; j++) if (!used.has(list[j].id) && sameExamRounds(list[i], list[j])) group.push(list[j]);
     if (group.length < 2) continue;
     group.forEach(g => used.add(g.id));
+    // 한 학생이 두 회차 모두에 채점 기록이 있으면 실제로는 서로 다른 시험임 — 기록이 지워지지 않게 합치지 않음
+    const ids = new Set(group.map(g => g.id));
+    const seen = new Map(); let clash = false;
+    state.results.forEach(x => { if (!ids.has(x.roundId)) return; const prev = seen.get(x.studentId); if (prev && prev !== x.roundId) clash = true; else seen.set(x.studentId, x.roundId); });
+    if (clash) continue;
     // 남길 회차: 파일이 많이 붙어 있고 채점 기록이 많은 것 (같으면 id가 작은 것)
     const score = r => (r.examPath ? 1000 : 0) + (r.retestPath ? 100 : 0) + state.results.filter(x => x.roundId === r.id).length;
     group.sort((x, y) => score(y) - score(x) || String(x.id).localeCompare(String(y.id)));
     const keep = group[0];
     group.slice(1).forEach(o => {
       ['examPath', 'examName', 'examFile', 'mainInfo', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'difficulty', 'competency', 'week', 'hintName'].forEach(k => { if (keep[k] === undefined && o[k] !== undefined) keep[k] = o[k]; });
-      state.results = state.results.filter(r => {
-        if (r.roundId !== o.id) return true;
-        if (state.results.some(x => x !== r && x.roundId === keep.id && x.studentId === r.studentId)) return false;   // 같은 학생 기록이 이미 있으면 남기는 쪽 것을 씀
-        r.roundId = keep.id; return true;
-      });
-      state.retests = (state.retests || []).filter(r => {
-        if (r.roundId !== o.id) return true;
-        if (state.retests.some(x => x !== r && x.roundId === keep.id && x.studentId === r.studentId)) return false;
-        r.roundId = keep.id; return true;
-      });
+      state.results.forEach(r => { if (r.roundId === o.id) r.roundId = keep.id; });   // 위에서 겹치는 학생이 없음을 확인했으므로 지우지 않고 옮기기만 함
+      (state.retests || []).forEach(r => { if (r.roundId === o.id) r.roundId = keep.id; });
       state.rounds = state.rounds.filter(x => x.id !== o.id);
       if (!state.mergedRoundIds) state.mergedRoundIds = {};
       state.mergedRoundIds[o.id] = keep.id;
