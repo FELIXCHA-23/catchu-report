@@ -747,3 +747,11 @@ details.tb-chap[open] > summary::before { transform: rotate(90deg); }
 .tb-q small { font-size: 11px; color: var(--muted); }
 .tb-q.wrong { background: var(--critical); border-color: var(--critical); color: #fff; }
 .tb-q.wrong small { color: #fff; }
+/* 보고서 생성: 기간 안의 회차를 넣을지 뺄지 고르는 체크박스 */
+.report-round-checks { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.rrc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.rrc-head .btn { padding: 2px 10px; font-size: 12px; }
+.rrc-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.rrc-item { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; background: var(--surface-card); }
+.rrc-item input { margin: 0; cursor: pointer; }
+.rrc-item.off { opacity: 0.45; text-decoration: line-through; }
