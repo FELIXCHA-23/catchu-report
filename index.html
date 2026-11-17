@@ -412,6 +412,8 @@
       </div>
       <div class="inline-form" style="margin-top:14px;">
         <button type="button" class="btn primary" id="saveScoreBtn">채점 저장</button>
+        <button type="button" class="btn danger" id="cancelScoreBtn" title="이 학생의 이 회차 채점 기록을 화면에서 지워요 (서버 이력에는 보관됨)">채점취소</button>
+        <button type="button" class="btn ghost" id="scoreHistoryBtn" title="저장·취소했던 채점 기록을 보고 되살려요">채점 이력</button>
         <button type="button" class="btn ghost" id="clearScoreBtn">전체 취소</button>
         <span id="scoreSummary" class="field-hint"></span>
       </div>
@@ -591,11 +593,11 @@
 <script>
 KMMSStore.boot([
   'retest.js?v=20',
-  'app.js?v=279',
+  'app.js?v=280',
   'textbook.js?v=18',
   'roster-import.js?v=3',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js',
-  'cloud.js?v=34',
+  'cloud.js?v=35',
 ]);
 </script>
 </body>

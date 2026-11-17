@@ -3277,6 +3277,28 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('saveScoreBtn').addEventListener('click', () => saveCurrentScore());
+
+  // 채점취소: 이 학생의 이 회차 채점 기록을 지움 (화면·서버 목록에서만 빠지고, 서버 채점 이력에는 그대로 보관되어 "채점 이력"에서 되살릴 수 있음)
+  document.getElementById('cancelScoreBtn').addEventListener('click', () => {
+    if (window.KMMS && window.KMMS.demo) { toast('체험(guest) 모드에서는 채점취소를 할 수 없어요.'); return; }
+    const round = currentScoreRound(), student = currentScoreStudent();
+    if (!round || !student) { toast('회차와 학생을 선택해주세요.'); return; }
+    const existing = state.results.filter(r => r.studentId === student.id && r.roundId === round.id);
+    if (!existing.length) { toast(`${student.name} 학생의 이 회차에는 저장된 채점 기록이 없어요.`); return; }
+    if (!confirm('정말로 삭제하시겠습니까?\n\n' + `${student.name} 학생 · ${roundLabel(round)} 채점 기록\n(지워도 서버의 채점 이력에는 남아서 "채점 이력"에서 되살릴 수 있어요)`)) return;
+    const ids = new Set(existing.map(r => r.id));
+    state.results = state.results.filter(r => !ids.has(r.id));
+    saveState();
+    renderRounds(); populateSelects();
+    renderScoreTab();
+    toast(`${student.name} 학생의 채점 기록을 취소했어요. (채점 이력에서 되살릴 수 있어요)`);
+  });
+
+  document.getElementById('scoreHistoryBtn').addEventListener('click', () => {
+    if (!window.KMMS || !window.KMMS.openHistory) { toast('로그인해서 서버에 연결된 뒤에 볼 수 있어요.'); return; }
+    const round = currentScoreRound(), student = currentScoreStudent();
+    window.KMMS.openHistory(round && student ? { studentId: student.id, roundId: round.id } : {});
+  });
 });
 
 // 채점 그리드의 현재 상태를 저장 — "채점 저장" 버튼과 빠른입력 Enter 저장이 공용으로 씀.
