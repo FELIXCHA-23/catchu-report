@@ -4497,11 +4497,11 @@ function populateReportRoundSelects() {
 function renderReportRoundChecks(studentId, inRange) {
   const box = document.getElementById('reportRoundChecks');
   if (!box) return;
-  if (!studentId || inRange.length < 2) { box.innerHTML = ''; box.style.display = 'none'; return; }
+  if (!studentId || !inRange.length) { box.innerHTML = ''; box.style.display = 'none'; return; }
   const ex = reportExcludedSet(studentId);
   const onCount = inRange.filter(x => !ex.has(x.round.id)).length;
   box.style.display = '';
-  box.innerHTML = `<div class="rrc-head"><b>보고서에 넣을 회차</b> <span class="field-hint">${onCount}/${inRange.length}개 선택 · 체크를 끄면 그 회차는 보고서에서 빠져요</span>
+  box.innerHTML = `<div class="rrc-head"><b>보고서에 넣을 회차</b> <span class="field-hint">${onCount}/${inRange.length}개 선택 · 체크를 끄면 그 회차는 보고서에서 빠져요${inRange.length < 2 ? ' · 위의 시작 회차를 더 앞으로 바꾸면 회차가 더 나와요' : ''}</span>
       <button type="button" class="btn small" data-rrc="all">모두 선택</button></div>
     <div class="rrc-list">${inRange.map(x => `<label class="rrc-item${ex.has(x.round.id) ? ' off' : ''}"><input type="checkbox" value="${x.round.id}"${ex.has(x.round.id) ? '' : ' checked'}> ${escapeHtml(x.label)} <span class="field-hint">${shortDate(x.round.date)}</span></label>`).join('')}</div>`;
   box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
