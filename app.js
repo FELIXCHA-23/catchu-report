@@ -4973,7 +4973,7 @@ function renderReportTab() {
         const { text, stopReason, usage } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 16000, effort: 'low' });
         commentUsageText = usageCostText(usage);
         if (!text.trim()) throw new Error(stopReason === 'max_tokens' ? 'AI가 답을 쓰기 전에 길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답이 비어 있어요. 다시 눌러주세요.');
-        noteInput.value = buildGreeting(student, points) + '\n\n' + toFormalEndings(stripAttitudeHeading(text.trim()));
+        noteInput.value = buildGreeting(student, points) + '\n\n' + stripPercentText(toFormalEndings(stripAttitudeHeading(text.trim())));
         state.teacherNotes[studentId] = noteInput.value;
         saveState();
         out.querySelector('.print-only').innerHTML = escapeHtml(noteInput.value).replace(/\n/g, '<br>');
@@ -4994,9 +4994,6 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
   const period = `${points[0].date} ~ ${points[points.length - 1].date} (${points.length}회차)`;
   const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
   const difficultyLine = difficulty ? `난이도: 전체 평균 ${difficulty.avgAll}/6, 정답 문항 평균 ${difficulty.avgCorrect ?? '—'}, 오답 문항 평균 ${difficulty.avgWrong ?? '—'}` : '';
-  // 재시험을 실제로 채점한 회차만 셈 (기록이 없는 회차는 보고서 표에서 "전부 맞음"으로 자동 처리되지만, AI에게는 사실만 알려줌)
-  const rtDone = retest && retest.items ? retest.items.filter(it => !it.auto) : [];
-  const retestLine = rtDone.length ? `재시험(기록 있는 ${rtDone.length}개 회차): 틀린 ${rtDone.reduce((a, it) => a + it.originalWrong, 0)}문항 중 ${rtDone.reduce((a, it) => a + it.corrected, 0)}문항을 재시험에서 바로잡음` : '재시험: 채점 기록 없음';
   if (isEntranceStudent(student)) {
     const entranceTypeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: ${t.avg}%`).join('\n');
     return `당신은 수학학원 선생님입니다. 아래는 아직 학원에 다니지 않은 신입 예정 학생이 본 "입학테스트" 결과예요. 이 결과를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
@@ -5008,7 +5005,7 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
 - 인사말("안녕하세요" 등)과 자기소개는 앞에 따로 붙으니 쓰지 말고, 바로 본문부터 시작하세요.
 - 모든 문장은 "~습니다", "~입니다", "~하겠습니다"처럼 격식 있는 존댓말로 끝내고, "~어요/~에요/~해요"로 끝나는 문장은 쓰지 마세요. 선생님이 직접 쓴 편지처럼 쓰세요.
 - [ ]로 감싼 제목이나 소제목은 절대 쓰지 마세요.
-- 숫자와 퍼센트는 거의 쓰지 마세요. 전체 수준을 말할 때 꼭 필요한 경우에만 한두 개 넣고, 나머지는 말로 풀어주세요. 유형별 퍼센트를 나열하거나 "%p" 표기는 절대 쓰지 마세요.
+- 퍼센트(%)는 절대 쓰지 말고, 숫자도 거의 쓰지 마세요. 수준은 모두 말로 풀어서 아이를 분석하는 글로 쓰세요.
 - "하락", "부진", "취약", "떨어진다" 같은 딱딱하거나 부정적인 단어는 피하고, 보완할 점은 "입학 후 함께 채워갈 부분", "차근차근 다져갈 부분"처럼 앞으로의 과제로 표현하세요. 다만 사실과 다르게 과장하거나 근거 없이 칭찬하지는 마세요.
 
 [내용]
@@ -5026,47 +5023,63 @@ ${difficultyLine}
 ${entranceTypeLines}`;
   }
   const wrongInfo = buildWrongAnalysisForPrompt(student, points);
-  const unitLines = (unitBreakdown || []).map(u => `- ${u.unit}: ${u.total}문항 중 ${u.correct}개 정답 (${u.pct}%)`).join('\n');
-  return `당신은 학생을 직접 가르치는 수학학원 담임 선생님(원장)입니다. 아래는 캐치유테스트에서 한 학생의 이번 기간 학습 데이터입니다. 이 데이터를 근거로, 학부모님께 드릴 "선생님 의견" 본문을 써주세요.
+  // 숫자·퍼센트를 그대로 넘기면 AI가 글에 그대로 옮겨 써서 숫자투성이가 되므로, 정답률은 말(수준)로 바꿔서 넘김
+  const levelWord = pct => pct >= 95 ? '거의 완벽함' : pct >= 85 ? '탄탄함' : pct >= 70 ? '대체로 잘하지만 가끔 흔들림' : pct >= 50 ? '자주 흔들림, 보완 필요' : '아직 많이 어려워함';
+  const trendWord = d => d === null ? '' : d >= 15 ? ', 처음보다 눈에 띄게 좋아짐' : d >= 5 ? ', 조금씩 좋아짐' : d <= -15 ? ', 최근 많이 흔들림' : d <= -5 ? ', 최근 조금 흔들림' : ', 비슷하게 유지';
+  const unitLines = (unitBreakdown || []).map(u => `- ${u.unit}: ${levelWord(u.pct)}`).join('\n');
+  const typeWordLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 기간 전체 ${levelWord(t.avg)}, 최근 ${levelWord(t.last)}${trendWord(t.delta)}`).join('\n');
+  // 재시험 기록이 없는 회차는 "재시험을 다 맞혀서 따로 적을 게 없었던 것"으로 봄 (보고서 재시험 표와 같은 기준)
+  const rtDoneW = retest && retest.items ? retest.items : [];
+  const rtWrong = rtDoneW.reduce((x, it) => x + it.originalWrong, 0), rtFixed = rtDoneW.reduce((x, it) => x + it.corrected, 0);
+  const retestWord = !rtDoneW.length ? '틀린 문제가 거의 없어 재시험이 필요 없었음'
+    : rtFixed >= rtWrong ? '틀린 문제를 재시험에서 전부 스스로 바로잡음'
+    : rtFixed / rtWrong >= 0.7 ? '틀린 문제를 재시험에서 대부분 스스로 바로잡음, 몇 문제는 재시험에서도 다시 틀림'
+    : rtFixed / rtWrong >= 0.4 ? '틀린 문제 중 절반 정도를 재시험에서 바로잡음, 나머지는 재시험에서도 다시 틀림'
+    : '재시험에서도 다시 틀린 문제가 많음 (개념을 아직 확실히 잡지 못한 것으로 보임)';
+  return `당신은 학생을 직접 가르치는 수학학원 담임 선생님(원장)입니다. 아래는 캐치유테스트에서 한 학생의 이번 기간 학습 데이터입니다. 이 데이터로 학생을 분석해서, 학부모님께 드릴 "선생님 의견" 본문을 써주세요.
+
+[가장 중요한 점]
+- 숫자로 보고하지 말고, 아이를 분석한 글을 쓰세요. 학부모님이 읽고 "우리 아이가 무엇을 잘하고, 어디서 왜 흔들리고, 앞으로 어떻게 해주실지"를 머리 아프지 않게 바로 알 수 있어야 합니다.
+- 퍼센트(%)는 절대 쓰지 마세요. "몇 개 중 몇 개", "몇 번 문항", "난이도 몇", "몇 회차" 같은 숫자 나열도 쓰지 마세요. 숫자는 글 전체에서 꼭 필요할 때 한 번 정도만, 그것도 "매번 두세 문제 정도"처럼 말로 풀어서 쓰세요.
+- 아래 데이터는 판단의 근거일 뿐입니다. 데이터를 그대로 옮기지 말고, 선생님이 아이를 지켜보고 내린 판단으로 바꿔 쓰세요 (예: "개념은 이해하고 있지만 조건이 여러 개 겹치면 마무리를 짓지 못하는 모습입니다", "아는 문제인데 서두르다 계산에서 놓치는 경우가 있습니다").
 
 [문체 — 반드시 지킬 것]
 - 모든 문장은 "~습니다", "~입니다", "~합니다", "~겠습니다", "~보입니다"처럼 격식 있는 존댓말로 끝내세요. "~어요", "~에요", "~해요", "~죠"로 끝나는 문장은 단 하나도 쓰지 마세요.
 - 인사말("안녕하세요" 등)과 자기소개, 보고서 안내 문장은 앞에 따로 붙으니 쓰지 말고, "${studentGivenName(student)}${hasBatchim(studentGivenName(student)) ? '이는' : '는'} ..."처럼 학생 이름으로 바로 본문을 시작하세요.
-- 데이터 보고서가 아니라 학생을 직접 가르친 선생님이 학부모님께 쓰는 편지처럼 쓰되, 막연한 칭찬 대신 구체적으로 짚어주세요.
-- 숫자는 꼭 필요한 곳에만 자연스럽게 넣으세요 (예: "1회차(100점)를 제외하고는 매 회차 2~3개씩 틀리고 있습니다", "틀린 문제 5개 중 4개를 재시험에서 바로잡았습니다"). 유형별 퍼센트를 줄줄이 나열하거나 "%p" 표기는 쓰지 마세요.
+- 학생을 직접 가르친 선생님이 학부모님께 쓰는 편지처럼, 따뜻하지만 막연한 칭찬 대신 구체적으로 짚어주세요. 필요하면 "저도 뿌듯합니다"처럼 선생님의 마음도 담으세요.
 - "하락", "부진", "취약" 같은 딱딱한 단어는 피하고, 보완할 점은 "아직 완전히 자기 것으로 만들지 못한 부분", "조금 더 채워야 할 부분"처럼 표현하세요. 사실과 다르게 과장하지 마세요.
 - [ ]로 감싼 제목, 소제목, 머리말, 따옴표, 마크다운을 절대 쓰지 마세요. 특히 "수업 태도", "학습 성향" 같은 제목 줄은 쓰지 마세요. 결과는 한 문단의 본문만 출력하세요.
 
-[내용 — 아래 순서로 6~9문장, 데이터에 있는 단원 이름을 그대로 넣어서 구체적으로]
-1. 잘하고 있는 단원: 정답률이 높은 단원(중단원 이름)을 구체적으로 짚고, 처음보다 눈에 띄게 좋아진 단원이 있으면 함께 말하세요.
-2. 보완할 단원: 정답률이 낮거나 오답이 몰린 단원을 이름으로 짚고, 어떤 점이 아직 부족해 보이는지 데이터 근거로 말하세요.
-3. 오답 구성: 회차별로 몇 개씩 틀리는지, 그 오답이 "아직 모르는 것"인지 "실수"인지 나눠서 말하세요. 판단 기준 — 재시험에서도 다시 틀린 문항, 난이도 5~6의 어려운 문항 오답은 "아직 모르는 것"으로, 난이도 1~4 문항인데 재시험에서 바로 맞힌 오답은 "실수"로 보세요. 기록이 없으면 단정하지 말고 "~로 보입니다"처럼 조심스럽게 쓰세요.
-4. 재시험 결과: 틀린 문제를 재시험에서 얼마나 스스로 바로잡았는지 구체적으로 말하세요 (재시험 기록이 없는 회차는 언급하지 마세요).
-5. 앞으로의 지도 계획: 어느 단원을 어떻게 지도할지 구체적으로 쓰세요 (예: "모르는 것은 개념부터 다시 촘촘히 가르쳐 알 때까지, 실수는 검산 습관으로 최대한 줄일 수 있도록 지도하겠습니다"). "~하겠습니다" 또는 "~하려고 합니다"로 마무리하세요.
+[내용 — 아래 흐름으로 6~8문장, 단원 이름은 그대로 넣어서]
+1. 잘하고 있는 단원: 탄탄한 단원을 이름으로 짚고, 처음보다 좋아진 단원이 있으면 함께 칭찬하세요.
+2. 보완할 단원: 아직 흔들리는 단원을 이름으로 짚고, 왜 흔들리는지 분석하세요 — 개념이 아직 덜 잡힌 것인지, 여러 개념이 섞인 어려운 문제에서 마무리를 못 짓는 것인지, 아는 문제에서 실수하는 것인지.
+3. 오답의 성격: 틀린 문제가 주로 "아직 모르는 것"인지 "실수"인지 말로 판단해 주세요. 판단 기준 — 재시험에서도 다시 틀렸거나 어려운 문제에서 틀린 것은 "아직 모르는 것", 쉬운~보통 문제인데 재시험에서 바로 맞힌 것은 "실수"로 보세요. 확실하지 않으면 "~로 보입니다"처럼 조심스럽게 쓰세요.
+4. 재시험: 틀린 문제를 다시 풀 때 스스로 바로잡는 모습(또는 아직 다시 틀리는 부분)을 아이의 이해력·회복력과 연결해서 말하세요. 재시험에서 바로잡은 문제는 이제 이해한 것으로 보고 긍정적으로 써 주세요.
+5. 앞으로의 지도 계획: 어느 단원을 어떤 방법으로 지도할지 구체적으로 쓰세요 (예: "모르는 것은 개념부터 다시 촘촘히 가르쳐 알 때까지, 실수는 검산 습관을 잡아 최대한 줄일 수 있도록 지도하겠습니다"). "~하겠습니다" 또는 "~하려고 합니다"로 마무리하세요.
 - 데이터에 없는 사실(수업 태도, 숙제, 성격, 시험 등급, 있었던 일 등)은 절대 지어내지 마세요.
 
-[참고할 문체 예시 — 다른 학생 것이니 내용은 따라 하지 말고 말투와 구체성만 참고]
-서윤이는 함수의 극한부터 미분계수와 미분가능성, 도함수의 계산, 접선의 방정식까지 미분의 핵심 흐름을 빠짐없이 이해하도록 탄탄하게 다져 놓았습니다. 특히 접선의 방정식 부분은 처음보다 눈에 띄게 좋아진 모습을 보여주어 지켜보는 저도 뿌듯합니다. 다만 속도·가속도 등 활용 부분은 아직 완벽히 이해하기까지 조금 더 노력이 필요한 모습이라, 얼른 채워가면 좋겠다고 생각합니다. 현재 매 회차 2~3개씩 틀리고 있는데, 대부분 모르는 것 1개 정도와 실수 1개 정도로 오답이 구성되어 있습니다. 틀린 문제를 다시 풀 때는 대부분 스스로 바로잡아내는 모습을 보여주어 이해력은 충분히 따라오고 있다고 판단됩니다. 앞으로는 모르는 것은 더 촘촘히 가르쳐 알 때까지, 그리고 실수는 최대한 줄일 수 있도록 적분의 넓이와 속도·가속도 등 운동 관련 문제를 집중적으로 다뤄 전체적인 균형을 맞춰 보겠습니다.
+[참고할 글 예시 — 다른 학생 것이니 내용은 따라 하지 말고 말투와 분석하는 방식만 참고]
+서윤이는 함수의 극한부터 미분계수와 미분가능성, 도함수의 계산, 접선의 방정식까지 미분의 핵심 흐름을 빠짐없이 이해하도록 탄탄하게 다져 놓았습니다. 특히 접선의 방정식 부분은 처음보다 눈에 띄게 좋아진 모습을 보여주어 지켜보는 저도 뿌듯합니다. 다만 속도·가속도 등 활용 부분은 아직 완벽히 이해하기까지 조금 더 노력이 필요한 모습이라, 얼른 채워가면 좋겠다고 생각합니다. 이 부분은 물리와도 관련이 깊기 때문에 서윤이는 곧 잘해낼 것이라고 봅니다. 아직 여러 개념이 합쳐진 복잡한 문제를 만나면 대부분 해결해 놓고도 마무리를 짓지 못하는 등 흔들리는 순간도 있지만, 부족한 부분을 지도해주고 다시 풀 때는 대부분 스스로 바로잡아내는 저력을 보여주어 확실히 이해하고 있다는 믿음이 들었습니다. 앞으로는 적분의 넓이와 속도·가속도 등 운동 관련 문제를 조금 더 집중적으로 다뤄서 전체적인 균형을 맞춰 보려고 합니다.
 
-[학생 데이터]
+[학생 데이터 — 판단 근거로만 쓰고, 글에 숫자를 옮기지 말 것]
 학생: ${displayName(student.name)}
-측정 기간: ${period}
-전체 정답률: ${overallPct}%
-강점 유형: ${strengths.length ? strengths.map(t => `${t.name}(${t.last}%)`).join(', ') : '없음'}
-보완할 유형: ${watch.length ? watch.map(t => `${t.name}(${t.avg}%)`).join(', ') : '없음'}
-${difficultyLine}
-${retestLine}
+측정 기간: ${points.length}회 시험
+전체 수준: ${levelWord(overallPct)}
+강점 유형: ${strengths.length ? strengths.map(t => t.name).join(', ') : '없음'}
+보완할 유형: ${watch.length ? watch.map(t => t.name).join(', ') : '없음'}
+${difficulty && difficulty.avgWrong !== null && difficulty.avgCorrect !== null ? (difficulty.avgWrong > difficulty.avgCorrect + 0.5 ? '오답 경향: 주로 어려운 문제에서 틀림' : difficulty.avgWrong < difficulty.avgCorrect - 0.5 ? '오답 경향: 쉬운 문제에서도 틀리는 경우가 섞여 있음 (실수 가능성)' : '오답 경향: 난이도와 크게 상관없이 고르게 틀림') : ''}
+재시험: ${retestWord}
 
-단원(중단원)별 정답률 — 기간 전체 합계:
+단원(중단원)별 수준:
 ${unitLines || '(단원 정보 없음)'}
 
-유형별 변화 (처음 회차 → 최근 회차):
-${typeLines}
+유형별 수준과 변화:
+${typeWordLines}
 
-회차별 결과와 오답 문항 (난이도는 1 쉬움 ~ 6 아주 어려움):
+회차별 오답 문항 (판단 근거 — 난이도는 1 쉬움 ~ 6 아주 어려움, 글에 번호·개수를 쓰지 말 것):
 ${wrongInfo.roundLines || '(정보 없음)'}
 
-오답 구성 요약: ${wrongInfo.summary}`;
+오답 구성 요약 (판단 근거): ${wrongInfo.summary}`;
 }
 
 // AI 의견 프롬프트에 넣을 "회차별 오답 문항" 정리 — 각 오답이 어느 유형·몇 난이도였고 재시험에서 바로잡았는지를 적어서
@@ -5090,12 +5103,11 @@ function buildWrongAnalysisForPrompt(student, points) {
       const dRaw = round.difficulty ? Number(round.difficulty[q] ?? round.difficulty[String(q)]) : NaN;
       const d = dRaw >= 1 && dRaw <= 6 ? dRaw : null;
       if (d !== null) { if (d >= 5) hardWrong++; else easyWrong++; }
-      let rt = '재시험 기록 없음';
-      if (stillSet) {
-        withRetest++;
-        if (stillSet.has(q)) { rt = '재시험에서도 틀림'; stillAny++; }
-        else { rt = '재시험에서 바로잡음'; fixedAny++; if (d !== null && d <= 4) fixedEasy++; }
-      }
+      // 재시험 기록이 없으면 재시험을 다 맞힌 것(바로잡음)으로 봄 — 원장님 기준 (2026-11-18)
+      let rt;
+      withRetest++;
+      if (stillSet && stillSet.has(q)) { rt = '재시험에서도 틀림'; stillAny++; }
+      else { rt = '재시험에서 바로잡음'; fixedAny++; if (d !== null && d <= 4) fixedEasy++; }
       return `${q}번 ${name}${d !== null ? ` 난이도${d}` : ''} → ${rt}`;
     });
     lines.push(`- ${p.label} (${p.date}): ${p.total}문항 중 ${p.correct}개 정답, 오답 ${wrong.length}개${items.length ? `\n    ${items.join(' / ')}` : ''}`);
@@ -5113,9 +5125,18 @@ const FORMAL_ENDINGS = [
   ['거예요', '것입니다'], ['이에요', '입니다'], ['예요', '입니다'], ['보여요', '보입니다'], ['같아요', '같습니다'],
   ['싶어요', '싶습니다'], ['좋아요', '좋습니다'], ['돼요', '됩니다'], ['해요', '합니다'], ['봐요', '봅니다'],
 ];
+// AI 초안에 퍼센트가 섞여 나오면 지움 — "(85%)", "(정답률 60%)"처럼 괄호 속 퍼센트는 괄호째 빼고,
+// 문장 속 "80% 이상" 같은 표현은 그 앞뒤 말이 어색해지지 않게 "대부분"으로 바꿈 (선생님이 직접 쓴 글은 건드리지 않음)
+function stripPercentText(text) {
+  return String(text || '')
+    .replace(/\s*[(（][^()（）]*\d+(?:\.\d+)?\s*%p?[^()（）]*[)）]/g, '')
+    .replace(/\d+(?:\.\d+)?\s*%p?\s*(이상|넘게|가까이|정도|대|가량)?/g, '대부분');
+}
 function toFormalEndings(text) {
   let out = String(text || '');
   for (const [a, b] of FORMAL_ENDINGS) out = out.replace(new RegExp(a + '(?=\\s*(?:[.!?~^]|$))', 'gm'), b);
+  // 남은 "맞혔어요/좋아졌어요"처럼 받침 ㅆ + 어요 → "~습니다"
+  out = out.replace(/([가-힣])어요(?=\s*(?:[.!?~^]|$))/gm, (m, ch) => ((ch.charCodeAt(0) - 0xAC00) % 28 === 20 ? ch + '습니다' : m));
   return out;
 }
 
