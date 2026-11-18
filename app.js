@@ -4314,7 +4314,6 @@ function computeStrengthWatch(typeStats) {
 
 // "[수업 태도 · 학습 성향]" 칸에 선생님이 눌러서 고를 수 있는 예시 문장들 — 이 앱은 태도 데이터가 없으므로
 // 실제로 관찰하신 내용에 맞는 문장만 선생님이 골라 쓰도록 함 (자동으로 넣지 않음)
-const ATTITUDE_HEADING = '[수업 태도 · 학습 성향]';
 // text: 처음 넣을 때 쓰는 완결된 문장("-습니다." 등으로 끝남)
 // clause: 뒤에 다른 문장을 같은 결로 이어 붙일 때 쓰는 연결형("-고,"로 끝남 — "-습니다/-ㅂ니다"를 떼고 고쳐 씀)
 // polarity: 'positive'(강점·장점) / 'caution'(보완이 필요한 부분) — 문장을 이어 붙일 때 결이 바뀌는지 판단하는 데 씀
@@ -4362,31 +4361,38 @@ const ATTITUDE_CONNECTORS_SAME = ['또한 ', '그리고 ', '특히 ', '아울러
 // 결이 바뀔 때(강점 다음에 보완할 점 등) 쓰는 역접 접속어
 const ATTITUDE_CONNECTORS_CONTRAST = ['다만 ', '그러나 ', '하지만 '];
 
-// 예시 문장을 "[수업 태도 · 학습 성향]" 아래에 이어붙임 — 제목이 없으면 새로 만들고, 처음 들어 있던 안내 문구는 지움.
-// 바로 앞에 붙은 문장과 같은 결이면 "-습니다"를 "-고,"로 바꿔 한 문장처럼 이어 붙이고, 결이 바뀌면 새 문장으로
-// 끊고 역접 접속어로 시작함. 선생님이 글을 직접 고쳐서 끝 문장을 못 찾으면(패턴이 안 맞으면) 안전하게
-// 접속어만 붙여 새 문장으로 추가함.
-function insertAttitudePhrase(text, phrase) {
-  const idx = text.indexOf(ATTITUDE_HEADING);
-  if (idx < 0) return text.replace(/\s+$/, '') + '\n\n' + ATTITUDE_HEADING + '\n' + phrase.text;
-  const head = text.slice(0, idx + ATTITUDE_HEADING.length);
-  let body = text.slice(idx + ATTITUDE_HEADING.length).trim();
-  if (body.startsWith('이 부분은 선생님이 직접 관찰하신')) body = '';
-  if (body.includes(phrase.text)) return head + '\n' + body;
-  if (!body) return head + '\n' + phrase.text;
+// 예전 초안에 들어가던 "[수업 태도 · 학습 성향]" 제목 줄과 안내 문구는 보고서(화면·PDF)에 절대 나오면 안 되므로 지움.
+// 제목 아래에 선생님이 써 둔 문장은 그대로 남기고, 제목 줄만 빼서 빈 줄 하나로 문단을 나눔.
+const ATTITUDE_GUIDE_PREFIX = '이 부분은 선생님이 직접 관찰하신';
+function stripAttitudeHeading(text) {
+  if (!text) return text;
+  const lines = String(text).split('\n').filter(line => {
+    const t = line.trim();
+    if (/^[\[［【(]?\s*수업\s*태도\s*[·・•ㆍ,.\/]?\s*학습\s*성향\s*[\]］】)]?\s*:?$/.test(t)) return false;
+    if (t.startsWith(ATTITUDE_GUIDE_PREFIX)) return false;
+    return true;
+  });
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+}
 
-  const sentenceCount = (body.match(/[.!?]\s*/g) || []).length;
+// 예시 문장을 의견 맨 끝 문단에 이어붙임 (제목 없이). 맨 끝 문단이 이미 예시 문장으로 끝나면 그 문단에 이어 쓰고,
+// 아니면 빈 줄을 두고 새 문단으로 시작함.
+// 바로 앞에 붙은 문장과 같은 결이면 "-습니다"를 "-고,"로 바꿔 한 문장처럼 이어 붙이고, 결이 바뀌면 새 문장으로
+// 끊고 역접 접속어로 시작함.
+function insertAttitudePhrase(text, phrase) {
+  text = stripAttitudeHeading(text || '');
+  if (text.includes(phrase.text)) return text;
+  if (!text.trim()) return phrase.text;
+  const cut = text.lastIndexOf('\n\n');
+  const head = cut >= 0 ? text.slice(0, cut) : '';
+  const body = cut >= 0 ? text.slice(cut + 2) : text;
   const prev = ATTITUDE_PHRASE_LIST.find(p => body.endsWith(p.text));
-  if (!prev) {
-    const connector = ATTITUDE_CONNECTORS_SAME[sentenceCount % ATTITUDE_CONNECTORS_SAME.length];
-    return head + '\n' + body + ' ' + connector + phrase.text;
-  }
-  if (prev.polarity === phrase.polarity) {
-    const merged = body.slice(0, body.length - prev.text.length) + prev.clause;
-    return head + '\n' + merged + ' ' + phrase.text;
-  }
-  const connector = ATTITUDE_CONNECTORS_CONTRAST[sentenceCount % ATTITUDE_CONNECTORS_CONTRAST.length];
-  return head + '\n' + body + ' ' + connector + phrase.text;
+  if (!prev) return text + '\n\n' + phrase.text;   // 태도 문단이 아직 없음 → 새 문단
+  const sentenceCount = (body.match(/[.!?]\s*/g) || []).length;
+  let merged;
+  if (prev.polarity === phrase.polarity) merged = body.slice(0, body.length - prev.text.length) + prev.clause + ' ' + phrase.text;
+  else merged = body + ' ' + ATTITUDE_CONNECTORS_CONTRAST[sentenceCount % ATTITUDE_CONNECTORS_CONTRAST.length] + phrase.text;
+  return (head ? head + '\n\n' : '') + merged;
 }
 
 // 선생님 의견 칸의 기본 초안으로 쓰이는 평문 요약 (HTML 태그 없음 — textarea에 직접 들어감)
@@ -4395,9 +4401,12 @@ function insertAttitudePhrase(text, phrase) {
 // (실제로 관찰하지 않은 내용을 지어내지 않기 위함)
 // 선생님 의견 맨 앞 인사말 — 학생 담당 선생님(없으면 지금 로그인한 선생님)으로 자동 작성.
 // 이름은 성을 뺀 이름으로, 받침이 있으면 "이"를 붙임 (예: 민준 → 민준이, 서연 → 서연)
-function buildGreeting(student, points) {
+function studentGivenName(student) {
   const full = displayName(student.name).trim();
-  const given = full.length === 3 ? full.slice(1) : full.length >= 4 ? full.slice(2) : full;
+  return full.length === 3 ? full.slice(1) : full.length >= 4 ? full.slice(2) : full;
+}
+function buildGreeting(student, points) {
+  const given = studentGivenName(student);
   const nick = given + (hasBatchim(given) ? '이' : '');
   const teacher = student.teacher || getCurrentTeacher();
   const teacherTxt = teacher ? `${teacherDisplayName(teacher)} ${teacherTitle(teacher)}` : '선생님';
@@ -4414,7 +4423,6 @@ function buildGreeting(student, points) {
 function buildComment(student, points, typeStats, difficulty, unitBreakdown, retest) {
   const name = displayName(student.name);
   const greeting = buildGreeting(student, points);
-  const attitudeNote = '\n\n[수업 태도 · 학습 성향]\n이 부분은 선생님이 직접 관찰하신 내용으로 채워주세요 — 수업 참여도, 질문하는 태도, 과제·재시험 성실도, 성향(꼼꼼함/급함 등) 등을 자유롭게 적어보세요.';
   if (isEntranceStudent(student)) {
     // 입학테스트는 성장 추이가 아니라 "지금 실력의 첫 진단"이므로, 변화·추세 표현 없이 현재 수준과 앞으로의 출발점만 씀
     const overall = Math.round(points.reduce((a, p) => a + p.pct, 0) / points.length);
@@ -4423,21 +4431,21 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
     const weak = known.filter(t => t.last < 70).sort((a, b) => a.last - b.last);
     const nameList = arr => arr.map(t => t.name).join(', ');
     const eParts = [];
-    eParts.push(overall >= 90 ? `${josa(name, '은', '는')} 입학테스트에서 전반적으로 탄탄한 기본기를 보여줬어요.`
-      : overall >= 75 ? `${josa(name, '은', '는')} 입학테스트에서 대체로 안정적인 기본기를 보여줬어요.`
-      : overall >= 60 ? `${josa(name, '은', '는')} 입학테스트에서 기본 개념은 잡혀 있고, 조금 더 다져가면 좋을 부분도 함께 확인됐어요.`
-      : `${josa(name, '은', '는')} 입학테스트를 통해 지금 실력의 출발점을 정확히 확인했어요. 기초부터 차근차근 함께 쌓아가면 충분히 좋아질 수 있어요.`);
-    if (strong.length) eParts.push(`특히 ${nameList(strong)} 유형은 이미 잘 갖추고 있었어요.`);
-    if (weak.length) eParts.push(`${nameList(weak)} 유형은 입학 후 가장 먼저 함께 다져갈 부분으로 보고 있어요.`);
-    if (!strong.length && !weak.length) eParts.push('유형별로 크게 두드러지는 부분 없이 고르게 확인됐어요.');
+    eParts.push(overall >= 90 ? `${josa(name, '은', '는')} 입학테스트에서 전반적으로 탄탄한 기본기를 보여주었습니다.`
+      : overall >= 75 ? `${josa(name, '은', '는')} 입학테스트에서 대체로 안정적인 기본기를 보여주었습니다.`
+      : overall >= 60 ? `${josa(name, '은', '는')} 입학테스트에서 기본 개념은 잡혀 있고, 조금 더 다져가면 좋을 부분도 함께 확인되었습니다.`
+      : `${josa(name, '은', '는')} 입학테스트를 통해 지금 실력의 출발점을 정확히 확인했습니다. 기초부터 차근차근 함께 쌓아가면 충분히 좋아질 수 있습니다.`);
+    if (strong.length) eParts.push(`특히 ${nameList(strong)} 유형은 이미 잘 갖추고 있었습니다.`);
+    if (weak.length) eParts.push(`${nameList(weak)} 유형은 입학 후 가장 먼저 함께 다져갈 부분으로 보고 있습니다.`);
+    if (!strong.length && !weak.length) eParts.push('유형별로 크게 두드러지는 부분 없이 고르게 확인되었습니다.');
     if (difficulty && difficulty.avgWrong !== null && difficulty.avgCorrect !== null && difficulty.avgWrong > difficulty.avgCorrect + 0.5) {
-      eParts.push('어려운 문제에서는 조금 어려워하는 모습이 있어, 그 부분을 단계별로 지도할 계획이에요.');
+      eParts.push('어려운 문제에서는 조금 어려워하는 모습이 있어, 그 부분을 단계별로 지도할 계획입니다.');
     }
     eParts.push('이 결과를 바탕으로 학생에게 맞는 수업 계획을 세워 지도하겠습니다.');
     return greeting + '\n\n' + eParts.join(' ');   // 입학테스트는 수업 태도·학습 성향 칸 없음
   }
   if (points.length < 2) {
-    return `${greeting}\n\n${josa(name, '은', '는')} 아직 비교할 회차가 부족해요. 다음 회차 결과가 쌓이면 성장 추이를 자동으로 분석해드릴게요.${attitudeNote}`;
+    return `${greeting}\n\n${josa(name, '은', '는')} 아직 비교할 회차가 부족합니다. 다음 회차 결과가 쌓이면 성장 추이를 함께 분석해 말씀드리겠습니다.`;
   }
   const first = points[0].pct, last = points[points.length - 1].pct;
   // 처음·마지막 두 회차만 비교하면 그 사이 기복에 따라 과장돼 보일 수 있어서,
@@ -4447,11 +4455,11 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
   for (let i = 1; i < recentPts.length; i++) recentDeltas.push(recentPts[i].pct - recentPts[i - 1].pct);
   const recentTrend = recentDeltas.length ? recentDeltas.reduce((a, b) => a + b, 0) / recentDeltas.length : (last - first);
   // 숫자·%는 거의 안 쓰고 선생님이 직접 쓴 편지처럼 — 상승폭 크기에 따라 표현 세기만 다르게 함
-  const overallVerb = recentTrend > 5 ? '이번 기간 동안 눈에 띄게 좋아지는 모습을 보였어요'
-    : recentTrend > 1 ? '이번 기간 동안 조금씩 꾸준히 좋아지고 있어요'
-    : recentTrend < -5 ? '이번 기간 동안 조금 주춤하는 모습도 있었지만, 다시 끌어올리는 중이에요'
-    : recentTrend < -1 ? '이번 기간 동안 살짝 흔들리는 모습도 있었어요'
-    : '이번 기간 동안 비슷한 수준을 꾸준히 유지하고 있어요';
+  const overallVerb = recentTrend > 5 ? '이번 기간 동안 눈에 띄게 좋아지는 모습을 보였습니다'
+    : recentTrend > 1 ? '이번 기간 동안 조금씩 꾸준히 좋아지고 있습니다'
+    : recentTrend < -5 ? '이번 기간 동안 조금 주춤하는 모습도 있었지만, 다시 끌어올리는 중입니다'
+    : recentTrend < -1 ? '이번 기간 동안 살짝 흔들리는 모습도 있었습니다'
+    : '이번 기간 동안 비슷한 수준을 꾸준히 유지하고 있습니다';
 
   const withDelta = typeStats.filter(t => t.delta !== null);
   const strengths = withDelta.filter(t => t.last >= 90 && t.delta >= 0).sort((a, b) => b.last - a.last);
@@ -4462,27 +4470,27 @@ function buildComment(student, points, typeStats, difficulty, unitBreakdown, ret
 
   const parts = [];
   parts.push(`${josa(name, '은', '는')} ${overallVerb}.`);
-  if (strengths.length) parts.push(`특히 ${nameList(strengths)} 유형은 이제 믿고 맡길 만큼 탄탄해졌어요.`);
-  if (improving.length) parts.push(`${nameList(improving)} 유형도 눈에 띄게 좋아지고 있어요.`);
-  if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 다음 학습에서 함께 좀 더 다져가면 좋을 부분이에요.`);
-  if (!strengths.length && !improving.length && !watch.length) parts.push('아직 뚜렷한 강점·약점 유형을 판단하기엔 데이터가 조금 더 필요해요.');
+  if (strengths.length) parts.push(`특히 ${nameList(strengths)} 유형은 이제 믿고 맡길 만큼 탄탄해졌습니다.`);
+  if (improving.length) parts.push(`${nameList(improving)} 유형도 눈에 띄게 좋아지고 있습니다.`);
+  if (watch.length) parts.push(`다만 ${nameList(watch)} 유형은 다음 학습에서 함께 좀 더 다져가면 좋을 부분입니다.`);
+  if (!strengths.length && !improving.length && !watch.length) parts.push('아직 뚜렷한 강점·약점 유형을 판단하기에는 데이터가 조금 더 필요합니다.');
 
   if (difficulty && difficulty.avgWrong !== null && difficulty.avgCorrect !== null) {
-    if (difficulty.avgWrong > difficulty.avgCorrect + 0.5) parts.push('어려운 문제에서 막히는 경향이 있어, 심화 개념 보완이 필요해 보여요.');
-    else if (difficulty.avgWrong < difficulty.avgCorrect - 0.5) parts.push('오답 중 비교적 쉬운 문제도 섞여 있어, 실수를 줄이는 연습이 도움이 될 수 있어요.');
+    if (difficulty.avgWrong > difficulty.avgCorrect + 0.5) parts.push('어려운 문제에서 막히는 경향이 있어, 심화 개념 보완이 필요해 보입니다.');
+    else if (difficulty.avgWrong < difficulty.avgCorrect - 0.5) parts.push('오답 중 비교적 쉬운 문제도 섞여 있어, 실수를 줄이는 연습이 도움이 될 것으로 보입니다.');
   }
   if (unitBreakdown && unitBreakdown.length) {
     const weakest = [...unitBreakdown].sort((a, b) => a.pct - b.pct)[0];
-    if (weakest.pct < 70) parts.push(`단원 중에서는 ${josa(typeGroupLabel(weakest.unit).title, '을', '를')} 다음에 함께 좀 더 채워가면 좋겠어요.`);
+    if (weakest.pct < 70) parts.push(`단원 중에서는 ${josa(typeGroupLabel(weakest.unit).title, '을', '를')} 다음에 함께 좀 더 채워가면 좋겠습니다.`);
   }
   if (retest && retest.items.length) {
-    const retestPhrase = retest.overallPct >= 90 ? '재시험에서는 틀렸던 문항들을 거의 다 스스로 바로잡아냈어요.'
-      : retest.overallPct >= 60 ? '재시험에서는 틀렸던 문항 중 상당수를 스스로 바로잡아냈어요.'
-      : '재시험에서는 틀렸던 문항들을 다시 짚어보며 차근차근 보완해가고 있어요.';
+    const retestPhrase = retest.overallPct >= 90 ? '재시험에서는 틀렸던 문항들을 거의 다 스스로 바로잡아냈습니다.'
+      : retest.overallPct >= 60 ? '재시험에서는 틀렸던 문항 중 상당수를 스스로 바로잡아냈습니다.'
+      : '재시험에서는 틀렸던 문항들을 다시 짚어보며 차근차근 보완해가고 있습니다.';
     parts.push(retestPhrase);
   }
 
-  return greeting + '\n\n' + parts.join(' ') + attitudeNote;
+  return greeting + '\n\n' + parts.join(' ');
 }
 
 // 선택된 학생이 채점 기록을 가진 회차들로 시작/종료 드롭다운을 채움 (가능하면 기존 선택 유지)
@@ -4738,7 +4746,7 @@ function renderReportTab() {
       ${competencyLegend}
     </div>` : '';
 
-  const savedNote = state.teacherNotes[studentId] || buildComment(student, points, typeStats, difficulty, unitBreakdown, retest);
+  const savedNote = stripAttitudeHeading(state.teacherNotes[studentId] || buildComment(student, points, typeStats, difficulty, unitBreakdown, retest));
 
   // "전체 정답률 추이" 그래프는 선택한 기간 그대로 항상 보여주고, 체크하면 원하는 기간을 직접 골라
   // 추이 그래프를 하나 더 "추가"로 붙일 수 있게 함 (기존 그래프를 대체하지 않음)
@@ -4934,6 +4942,7 @@ function renderReportTab() {
   const noteInput = document.getElementById('teacherNoteInput');
   if (noteInput) {
     noteInput.addEventListener('change', () => {
+      noteInput.value = stripAttitudeHeading(noteInput.value);
       state.teacherNotes[studentId] = noteInput.value;
       saveState();
       out.querySelector('.print-only').innerHTML = noteInput.value ? escapeHtml(noteInput.value).replace(/\n/g, '<br>') : '(작성된 의견이 없어요)';
@@ -4960,11 +4969,11 @@ function renderReportTab() {
       status.textContent = '작성 중이에요...';
       let commentUsageText = '';
       try {
-        const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest);
+        const prompt = buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest, unitBreakdown);
         const { text, stopReason, usage } = await callClaudeAPI({ content: [{ type: 'text', text: prompt }], maxTokens: 16000, effort: 'low' });
         commentUsageText = usageCostText(usage);
         if (!text.trim()) throw new Error(stopReason === 'max_tokens' ? 'AI가 답을 쓰기 전에 길이 한도에 걸렸어요. 다시 눌러주세요.' : 'AI 응답이 비어 있어요. 다시 눌러주세요.');
-        noteInput.value = buildGreeting(student, points) + '\n\n' + text.trim();
+        noteInput.value = buildGreeting(student, points) + '\n\n' + toFormalEndings(stripAttitudeHeading(text.trim()));
         state.teacherNotes[studentId] = noteInput.value;
         saveState();
         out.querySelector('.print-only').innerHTML = escapeHtml(noteInput.value).replace(/\n/g, '<br>');
@@ -4981,11 +4990,13 @@ function renderReportTab() {
   }
 }
 
-function buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest) {
+function buildTeacherCommentPrompt(student, points, typeStats, overallPct, classAvgOverall, strengths, watch, difficulty, retest, unitBreakdown) {
   const period = `${points[0].date} ~ ${points[points.length - 1].date} (${points.length}회차)`;
   const typeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: 최근 ${t.last}%, 기간평균 ${t.avg}%${t.delta !== null ? `, 변화 ${t.delta > 0 ? '+' : ''}${t.delta}%p` : ''}`).join('\n');
   const difficultyLine = difficulty ? `난이도: 전체 평균 ${difficulty.avgAll}/6, 정답 문항 평균 ${difficulty.avgCorrect ?? '—'}, 오답 문항 평균 ${difficulty.avgWrong ?? '—'}` : '';
-  const retestLine = retest && retest.items.length ? `재시험: 오답 ${retest.sumOriginal}문항 중 ${retest.sumCorrected}문항 정답 전환` : '';
+  // 재시험을 실제로 채점한 회차만 셈 (기록이 없는 회차는 보고서 표에서 "전부 맞음"으로 자동 처리되지만, AI에게는 사실만 알려줌)
+  const rtDone = retest && retest.items ? retest.items.filter(it => !it.auto) : [];
+  const retestLine = rtDone.length ? `재시험(기록 있는 ${rtDone.length}개 회차): 틀린 ${rtDone.reduce((a, it) => a + it.originalWrong, 0)}문항 중 ${rtDone.reduce((a, it) => a + it.corrected, 0)}문항을 재시험에서 바로잡음` : '재시험: 채점 기록 없음';
   if (isEntranceStudent(student)) {
     const entranceTypeLines = typeStats.filter(t => t.last !== null).map(t => `- ${t.name}${t.unit ? `(${t.unit})` : ''}: ${t.avg}%`).join('\n');
     return `당신은 수학학원 선생님입니다. 아래는 아직 학원에 다니지 않은 신입 예정 학생이 본 "입학테스트" 결과예요. 이 결과를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
@@ -4995,7 +5006,8 @@ function buildTeacherCommentPrompt(student, points, typeStats, overallPct, class
 
 [문체]
 - 인사말("안녕하세요" 등)과 자기소개는 앞에 따로 붙으니 쓰지 말고, 바로 본문부터 시작하세요.
-- 따뜻하고 정중한 존댓말("~했어요", "~하고 있습니다", "~해 보려고 합니다")로, 선생님이 직접 쓴 편지처럼 쓰세요.
+- 모든 문장은 "~습니다", "~입니다", "~하겠습니다"처럼 격식 있는 존댓말로 끝내고, "~어요/~에요/~해요"로 끝나는 문장은 쓰지 마세요. 선생님이 직접 쓴 편지처럼 쓰세요.
+- [ ]로 감싼 제목이나 소제목은 절대 쓰지 마세요.
 - 숫자와 퍼센트는 거의 쓰지 마세요. 전체 수준을 말할 때 꼭 필요한 경우에만 한두 개 넣고, 나머지는 말로 풀어주세요. 유형별 퍼센트를 나열하거나 "%p" 표기는 절대 쓰지 마세요.
 - "하락", "부진", "취약", "떨어진다" 같은 딱딱하거나 부정적인 단어는 피하고, 보완할 점은 "입학 후 함께 채워갈 부분", "차근차근 다져갈 부분"처럼 앞으로의 과제로 표현하세요. 다만 사실과 다르게 과장하거나 근거 없이 칭찬하지는 마세요.
 
@@ -5013,32 +5025,98 @@ ${difficultyLine}
 유형별 상세:
 ${entranceTypeLines}`;
   }
-  return `당신은 학생을 직접 가르치는 수학학원 담임 선생님입니다. 아래는 캐치유테스트에서 한 학생의 최근 학습 데이터예요. 이 데이터를 참고해서, 학부모님께 보여드릴 "선생님 의견"을 선생님이 손수 쓴 편지글처럼 4~6문장으로 써주세요.
+  const wrongInfo = buildWrongAnalysisForPrompt(student, points);
+  const unitLines = (unitBreakdown || []).map(u => `- ${u.unit}: ${u.total}문항 중 ${u.correct}개 정답 (${u.pct}%)`).join('\n');
+  return `당신은 학생을 직접 가르치는 수학학원 담임 선생님(원장)입니다. 아래는 캐치유테스트에서 한 학생의 이번 기간 학습 데이터입니다. 이 데이터를 근거로, 학부모님께 드릴 "선생님 의견" 본문을 써주세요.
 
-[문체]
-- 인사말("안녕하세요" 등)과 자기소개는 앞에 따로 붙으니 쓰지 말고, 바로 본문부터 시작하세요.
-- 데이터 리포트가 아니라 학생을 지켜본 선생님의 말투로 쓰세요. "~했어요", "~하고 있습니다", "~해 보려고 합니다"처럼 따뜻하고 정중한 존댓말을 쓰고, 필요하면 "저는", "제가"도 자연스럽게 쓰세요.
-- 숫자는 거의 쓰지 마세요. 전체 흐름을 말할 때 꼭 필요한 경우에만 숫자를 한두 개 넣고, 나머지는 말로 풀어주세요 (예: "90%" 대신 "거의 다 맞힐 만큼", "+12%p" 대신 "눈에 띄게 좋아졌어요", "정체" 대신 "조금 더 시간이 필요한"). 유형별 퍼센트를 줄줄이 나열하거나 "%p" 표기는 절대 쓰지 마세요.
-- 유형·단원 이름은 그대로 언급해도 좋지만 "OO 유형은 몇 %" 식의 나열이 아니라 "OO은 이제 믿고 맡길 만큼 탄탄해졌어요"처럼 문장 속에 녹여주세요.
-- "하락", "떨어졌다", "부진", "취약" 같은 딱딱하거나 부정적인 단어는 피하고, 보완할 점은 "다음에 함께 채워갈 부분", "조금만 더 다듬으면 좋아질 부분"처럼 앞으로의 과제로 표현하세요. 그렇다고 사실과 다르게 과장하거나 근거 없이 칭찬하지는 마세요.
+[문체 — 반드시 지킬 것]
+- 모든 문장은 "~습니다", "~입니다", "~합니다", "~겠습니다", "~보입니다"처럼 격식 있는 존댓말로 끝내세요. "~어요", "~에요", "~해요", "~죠"로 끝나는 문장은 단 하나도 쓰지 마세요.
+- 인사말("안녕하세요" 등)과 자기소개, 보고서 안내 문장은 앞에 따로 붙으니 쓰지 말고, "${studentGivenName(student)}${hasBatchim(studentGivenName(student)) ? '이는' : '는'} ..."처럼 학생 이름으로 바로 본문을 시작하세요.
+- 데이터 보고서가 아니라 학생을 직접 가르친 선생님이 학부모님께 쓰는 편지처럼 쓰되, 막연한 칭찬 대신 구체적으로 짚어주세요.
+- 숫자는 꼭 필요한 곳에만 자연스럽게 넣으세요 (예: "1회차(100점)를 제외하고는 매 회차 2~3개씩 틀리고 있습니다", "틀린 문제 5개 중 4개를 재시험에서 바로잡았습니다"). 유형별 퍼센트를 줄줄이 나열하거나 "%p" 표기는 쓰지 마세요.
+- "하락", "부진", "취약" 같은 딱딱한 단어는 피하고, 보완할 점은 "아직 완전히 자기 것으로 만들지 못한 부분", "조금 더 채워야 할 부분"처럼 표현하세요. 사실과 다르게 과장하지 마세요.
+- [ ]로 감싼 제목, 소제목, 머리말, 따옴표, 마크다운을 절대 쓰지 마세요. 특히 "수업 태도", "학습 성향" 같은 제목 줄은 쓰지 마세요. 결과는 한 문단의 본문만 출력하세요.
 
-[내용]
-- 잘하고 있는 점을 먼저, 그다음 보완할 점, 마지막에 앞으로의 지도 계획을 한 문장으로 쓰세요.
-- 난이도·재시험 데이터가 있으면 숫자 대신 경향으로 자연스럽게 녹여주세요 (예: 어려운 문제에서 조금 흔들리는 모습, 재시험에서 틀렸던 문제를 잘 바로잡은 모습).
-- 데이터에 없는 사실(수업 태도, 숙제, 성격, 있었던 일 등)은 절대 지어내지 마세요. 이 앱은 그런 정보를 갖고 있지 않습니다.
-- 마지막 줄에 "[수업 태도 · 학습 성향]"이라는 제목만 쓰고, 그 아래는 선생님이 직접 채울 수 있도록 비워두세요.
-- 결과는 본문 텍스트만 출력하세요 (따옴표, 마크다운, 별도 제목 없이 — 단, 마지막의 "[수업 태도 · 학습 성향]" 제목 줄은 그대로 출력하세요).
+[내용 — 아래 순서로 6~9문장, 데이터에 있는 단원 이름을 그대로 넣어서 구체적으로]
+1. 잘하고 있는 단원: 정답률이 높은 단원(중단원 이름)을 구체적으로 짚고, 처음보다 눈에 띄게 좋아진 단원이 있으면 함께 말하세요.
+2. 보완할 단원: 정답률이 낮거나 오답이 몰린 단원을 이름으로 짚고, 어떤 점이 아직 부족해 보이는지 데이터 근거로 말하세요.
+3. 오답 구성: 회차별로 몇 개씩 틀리는지, 그 오답이 "아직 모르는 것"인지 "실수"인지 나눠서 말하세요. 판단 기준 — 재시험에서도 다시 틀린 문항, 난이도 5~6의 어려운 문항 오답은 "아직 모르는 것"으로, 난이도 1~4 문항인데 재시험에서 바로 맞힌 오답은 "실수"로 보세요. 기록이 없으면 단정하지 말고 "~로 보입니다"처럼 조심스럽게 쓰세요.
+4. 재시험 결과: 틀린 문제를 재시험에서 얼마나 스스로 바로잡았는지 구체적으로 말하세요 (재시험 기록이 없는 회차는 언급하지 마세요).
+5. 앞으로의 지도 계획: 어느 단원을 어떻게 지도할지 구체적으로 쓰세요 (예: "모르는 것은 개념부터 다시 촘촘히 가르쳐 알 때까지, 실수는 검산 습관으로 최대한 줄일 수 있도록 지도하겠습니다"). "~하겠습니다" 또는 "~하려고 합니다"로 마무리하세요.
+- 데이터에 없는 사실(수업 태도, 숙제, 성격, 시험 등급, 있었던 일 등)은 절대 지어내지 마세요.
 
+[참고할 문체 예시 — 다른 학생 것이니 내용은 따라 하지 말고 말투와 구체성만 참고]
+서윤이는 함수의 극한부터 미분계수와 미분가능성, 도함수의 계산, 접선의 방정식까지 미분의 핵심 흐름을 빠짐없이 이해하도록 탄탄하게 다져 놓았습니다. 특히 접선의 방정식 부분은 처음보다 눈에 띄게 좋아진 모습을 보여주어 지켜보는 저도 뿌듯합니다. 다만 속도·가속도 등 활용 부분은 아직 완벽히 이해하기까지 조금 더 노력이 필요한 모습이라, 얼른 채워가면 좋겠다고 생각합니다. 현재 매 회차 2~3개씩 틀리고 있는데, 대부분 모르는 것 1개 정도와 실수 1개 정도로 오답이 구성되어 있습니다. 틀린 문제를 다시 풀 때는 대부분 스스로 바로잡아내는 모습을 보여주어 이해력은 충분히 따라오고 있다고 판단됩니다. 앞으로는 모르는 것은 더 촘촘히 가르쳐 알 때까지, 그리고 실수는 최대한 줄일 수 있도록 적분의 넓이와 속도·가속도 등 운동 관련 문제를 집중적으로 다뤄 전체적인 균형을 맞춰 보겠습니다.
+
+[학생 데이터]
 학생: ${displayName(student.name)}
 측정 기간: ${period}
 전체 정답률: ${overallPct}%
 강점 유형: ${strengths.length ? strengths.map(t => `${t.name}(${t.last}%)`).join(', ') : '없음'}
-취약 유형: ${watch.length ? watch.map(t => `${t.name}(${t.avg}%)`).join(', ') : '없음'}
+보완할 유형: ${watch.length ? watch.map(t => `${t.name}(${t.avg}%)`).join(', ') : '없음'}
 ${difficultyLine}
 ${retestLine}
 
-유형별 상세:
-${typeLines}`;
+단원(중단원)별 정답률 — 기간 전체 합계:
+${unitLines || '(단원 정보 없음)'}
+
+유형별 변화 (처음 회차 → 최근 회차):
+${typeLines}
+
+회차별 결과와 오답 문항 (난이도는 1 쉬움 ~ 6 아주 어려움):
+${wrongInfo.roundLines || '(정보 없음)'}
+
+오답 구성 요약: ${wrongInfo.summary}`;
+}
+
+// AI 의견 프롬프트에 넣을 "회차별 오답 문항" 정리 — 각 오답이 어느 유형·몇 난이도였고 재시험에서 바로잡았는지를 적어서
+// AI가 "모르는 것"과 "실수"를 근거를 가지고 나눠 쓸 수 있게 함 (채점 기록은 읽기만 함)
+function buildWrongAnalysisForPrompt(student, points) {
+  const resultsSource = student.id === EXAMPLE_STUDENT_ID ? EXAMPLE_RESULTS : state.results;
+  const roundOf = id => state.rounds.find(r => r.id === id) || EXAMPLE_ROUNDS.find(r => r.id === id) || null;
+  let easyWrong = 0, hardWrong = 0, fixedEasy = 0, stillAny = 0, fixedAny = 0, withRetest = 0;
+  const lines = [];
+  points.forEach(p => {
+    const round = roundOf(p.roundId);
+    const result = resultsSource.find(r => r.studentId === student.id && r.roundId === p.roundId);
+    if (!round || !result) return;
+    const wrong = [...new Set((result.wrong || []).map(Number))].sort((a, b) => a - b);
+    const attempts = (state.retests || []).filter(rt => rt.studentId === student.id && rt.roundId === p.roundId).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const lastRt = attempts[attempts.length - 1];
+    const stillSet = lastRt ? new Set((lastRt.stillWrong || []).map(Number)) : null;
+    const items = wrong.map(q => {
+      const t = (round.types || []).find(tt => (tt.questions || []).map(Number).includes(q));
+      const name = t ? (t.unit ? typeGroupLabel(typeGroupKey(t)).title : t.name) : '유형 미지정';
+      const dRaw = round.difficulty ? Number(round.difficulty[q] ?? round.difficulty[String(q)]) : NaN;
+      const d = dRaw >= 1 && dRaw <= 6 ? dRaw : null;
+      if (d !== null) { if (d >= 5) hardWrong++; else easyWrong++; }
+      let rt = '재시험 기록 없음';
+      if (stillSet) {
+        withRetest++;
+        if (stillSet.has(q)) { rt = '재시험에서도 틀림'; stillAny++; }
+        else { rt = '재시험에서 바로잡음'; fixedAny++; if (d !== null && d <= 4) fixedEasy++; }
+      }
+      return `${q}번 ${name}${d !== null ? ` 난이도${d}` : ''} → ${rt}`;
+    });
+    lines.push(`- ${p.label} (${p.date}): ${p.total}문항 중 ${p.correct}개 정답, 오답 ${wrong.length}개${items.length ? `\n    ${items.join(' / ')}` : ''}`);
+  });
+  const sum = [];
+  if (easyWrong || hardWrong) sum.push(`난이도 1~4 문항 오답 ${easyWrong}개, 난이도 5~6 문항 오답 ${hardWrong}개`);
+  if (withRetest) sum.push(`재시험 본 오답 ${withRetest}개 중 ${fixedAny}개 바로잡음(그중 난이도 1~4라 실수로 볼 만한 것 ${fixedEasy}개), ${stillAny}개는 재시험에서도 틀림(아직 모르는 것)`);
+  return { roundLines: lines.join('\n'), summary: sum.length ? sum.join(' · ') : '난이도·재시험 정보가 부족함' };
+}
+
+// AI가 혹시 "~어요/~에요"로 끝낸 문장을 격식체("~습니다/~입니다")로 바꿈 — 문장 끝(마침표·느낌표·줄끝 앞)만 고침
+const FORMAL_ENDINGS = [
+  ['있어요', '있습니다'], ['없어요', '없습니다'], ['겠어요', '겠습니다'], ['였어요', '였습니다'], ['었어요', '었습니다'],
+  ['았어요', '았습니다'], ['했어요', '했습니다'], ['됐어요', '되었습니다'], ['줬어요', '주었습니다'], ['보였어요', '보였습니다'],
+  ['거예요', '것입니다'], ['이에요', '입니다'], ['예요', '입니다'], ['보여요', '보입니다'], ['같아요', '같습니다'],
+  ['싶어요', '싶습니다'], ['좋아요', '좋습니다'], ['돼요', '됩니다'], ['해요', '합니다'], ['봐요', '봅니다'],
+];
+function toFormalEndings(text) {
+  let out = String(text || '');
+  for (const [a, b] of FORMAL_ENDINGS) out = out.replace(new RegExp(a + '(?=\\s*(?:[.!?~^]|$))', 'gm'), b);
+  return out;
 }
 
 // 이 요소를 더 쪼갤 수 있으면 쪼갤 자식 목록을 돌려줌 (표는 줄 단위로, 그 외엔 DOM 자식 단위로)
