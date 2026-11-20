@@ -1484,8 +1484,9 @@ function renderEntranceStatus() {
 /* ===== 채점 입력: 주간 시험지 업로드 현황 (중1~고2) ===== */
 let wsWeekOffset = 0;
 const WS_GRADES_ALL = ['중1', '중2', '중3', '고1', '고2'];
-// 선생님마다 맡는 학년대가 정해져 있으면 그 학년대 시험지만 올리고 보게 함 — 방희진은 고등만 (중등 없음)
-const TEACHER_ONLY_LEVEL = { '방희진': ['고'] };
+// 선생님마다 맡는 학년대를 제한하려면 여기에 적음 (예: { '선생님': ['고'] }).
+// 2026-11-20 원장님 요청: 모든 선생님이 모든 학년 시험지를 올릴 수 있게 — 제한 없음
+const TEACHER_ONLY_LEVEL = {};
 function allowedLevels() { return TEACHER_ONLY_LEVEL[getCurrentTeacher()] || null; }
 function gradeAllowed(g) { const l = allowedLevels(); return !l || !g || l.includes(String(g).charAt(0)); }
 function wsGradesNow() { return WS_GRADES_ALL.filter(gradeAllowed); }
