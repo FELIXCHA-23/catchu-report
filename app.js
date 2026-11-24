@@ -544,7 +544,7 @@ try { localStorage.removeItem('catchu_gh_token'); } catch (e) {}
 // 이름 전체가 들어간 예전 방식 개별시험지는 개인정보라서 아예 올리지 않음(null)
 function sharedRoundPayload(r) {
   if (r.retestOnly || (r.studentName && !r.individual)) return null;
-  const { examFile, studentId, examPath, examName, examBy, examAt, retestPath, retestName, retestBy, retestAt, retestAnsPath, retestAnsName, retestAnsBy, retestAnsAt, retestInfo, mainInfo, ...rest } = r;   // 서버 파일 경로·읽어 둔 유형표는 공용(GitHub) 파일에 넣지 않음
+  const { examFile, studentId, examPath, examName, examBy, examAt, retestPath, retestName, retestBy, retestAt, retestAnsPath, retestAnsName, retestAnsBy, retestAnsAt, retestInfo, mainInfo, examRange, mainInfoTried, diffRepairTried, ...rest } = r;   // 서버 파일 경로·읽어 둔 유형표는 공용(GitHub) 파일에 넣지 않음
   return rest;
 }
 
@@ -1604,11 +1604,15 @@ async function describeFile(file) {
 // 이 회차의 본시험지 유형표: 저장해 둔 것 > 서버의 본시험지 PDF에서 읽은 것 > 분석해 둔 유형 이름
 async function infoOfRound(round) {
   if (round.mainInfo && round.mainInfo.types && Object.keys(round.mainInfo.types).length >= 5) return round.mainInfo.types;
+  // 같은 시험지 파일은 한 번만 서버에서 읽음 (읽어 봤는데 유형이 적으면 다시 받지 않고 분석해 둔 유형 이름으로)
+  if (round.mainInfoTried && round.mainInfoTried === round.examPath) return roundTypeMap(round);
   if (round.examPath && window.KMMS && window.KMMS.ready && window.RETEST && window.RETEST.describePaper) {
     try {
       const buf = await window.KMMS.fetchBuf(round.examPath);
       const info = await window.RETEST.describePaper(buf.slice(0));
+      if (info && info.range && !round.examRange) round.examRange = String(info.range);
       if (Object.keys(info.types || {}).length >= 5) { round.mainInfo = info; saveState(); return info.types; }
+      round.mainInfoTried = round.examPath; saveState();
     } catch (e) { /* 파일을 못 읽으면 분석해 둔 유형 이름으로 */ }
   }
   return roundTypeMap(round);
@@ -1771,7 +1775,7 @@ function reconcileDuplicateRounds() {
     group.sort((x, y) => score(y) - score(x) || String(x.id).localeCompare(String(y.id)));
     const keep = group[0];
     group.slice(1).forEach(o => {
-      ['examPath', 'examName', 'examFile', 'mainInfo', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'difficulty', 'competency', 'week', 'hintName'].forEach(k => { if (keep[k] === undefined && o[k] !== undefined) keep[k] = o[k]; });
+      ['examPath', 'examName', 'examFile', 'mainInfo', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'difficulty', 'competency', 'week', 'hintName', 'examRange', 'mainInfoTried', 'diffRepairTried'].forEach(k => { if (keep[k] === undefined && o[k] !== undefined) keep[k] = o[k]; });
       state.results.forEach(r => { if (r.roundId === o.id) r.roundId = keep.id; });   // 위에서 겹치는 학생이 없음을 확인했으므로 지우지 않고 옮기기만 함
       (state.retests || []).forEach(r => { if (r.roundId === o.id) r.roundId = keep.id; });
       state.rounds = state.rounds.filter(x => x.id !== o.id);
@@ -2618,6 +2622,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!editingRoundIdWas) (async () => {
       try {
         const info = mainFileForInfo ? await describeFile(mainFileForInfo) : null;
+        if (info && info.range) { savedRound.examRange = String(info.range); saveState(); }
         if (info && info.types && Object.keys(info.types).length >= 5) { savedRound.mainInfo = info; saveState(); }
         if (!savedRound.individual) await matchPlaceholdersFor(savedRound);
       } catch (e) { console.warn('match failed', e); }
@@ -5971,7 +5976,7 @@ async function syncSharedRounds() {
         // 예전에는 이걸 지워서, 올려 둔 재시험지가 앱을 열 때마다 없어졌음
         const old = state.rounds[idx];
         const merged = { ...sr, examFile: old.examFile, studentId: old.studentId };
-        ['examPath', 'examName', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'mainInfo'].forEach(k => { if (old[k] !== undefined) merged[k] = old[k]; else delete merged[k]; });
+        ['examPath', 'examName', 'retestPath', 'retestName', 'retestAnsPath', 'retestAnsName', 'retestInfo', 'mainInfo', 'examRange', 'mainInfoTried', 'diffRepairTried'].forEach(k => { if (old[k] !== undefined) merged[k] = old[k]; else delete merged[k]; });
         if (old.week !== undefined) merged.week = old.week;
         state.rounds[idx] = merged;
       }
@@ -6151,7 +6156,7 @@ function fbWeekText(label, kind) {
 // 단원명: 시험지 이름의 " - " 뒤(예: "유리함수의 그래프 ~ 무리함수의 그래프") > 유형들의 대단원 첫~끝 > 비워 두면 "N월N주차 캐치유 TEST"
 const fbRangeCache = new Map();   // 회차id → 시험지 PDF 첫 장 제목 바로 아래 줄(시험 범위). '' = 못 읽음
 function fbUnitName(round) {
-  const pdfRange = fbRangeCache.get(round.id);
+  const pdfRange = fbRangeCache.get(round.id) || fbCleanRange((round.mainInfo && round.mainInfo.range) || round.examRange || '');
   if (pdfRange) return pdfRange;
   const t = String(round.title || ''), i = t.indexOf(' - ');
   if (i >= 0) { const u = t.slice(i + 3).trim(); if (u) return u; }
@@ -6292,30 +6297,10 @@ function paintFeedbackList() {
   </div>`).join('');
   fbLoadRanges(items);
 }
-// 시험지 PDF 첫 장에서 제목 바로 아래 줄(시험 범위)을 읽어 단원명으로 씀 (읽은 뒤 한 번만 화면을 다시 그림)
-let fbRangeBusy = false;
-async function fbLoadRanges(items) {
-  if (fbRangeBusy || !(window.KMMS && window.KMMS.ready && window.RETEST && window.RETEST.describePaper)) return;
-  const todo = [...new Map(items.filter(it => !fbRangeCache.has(it.round.id)).map(it => [it.round.id, it.round])).values()];
-  if (!todo.length) return;
-  fbRangeBusy = true;
-  try {
-    for (const round of todo) {
-      let range = '';
-      const path = round.examPath || round.retestPath;
-      if (path) {
-        try {
-          const buf = await window.KMMS.fetchBuf(path);
-          const info = await window.RETEST.describePaper(buf.slice(0));
-          range = String((info && info.range) || '').replace(/^\s*(시험\s*)?범위\s*[:：]?\s*/, '').trim();
-        } catch (e) { console.warn('시험 범위를 못 읽었어요', e); }
-      }
-      fbRangeCache.set(round.id, range);
-    }
-  } finally { fbRangeBusy = false; }
-  const wSel = document.getElementById('fbWeek');
-  if (wSel && document.getElementById('panel-feedback').classList.contains('active')) paintFeedbackList();
-}
+// 시험 범위(시험지 첫 장 제목 아래 줄)는 시험지를 올릴 때 읽어 둔 것만 씀.
+// 문자 피드백 탭을 열 때마다 서버의 시험지 PDF를 내려받지 않음 (원장님 PC에서 PDF가 저절로 받아지고 열리던 문제)
+function fbCleanRange(t) { return String(t || '').replace(/^\s*(시험\s*)?범위\s*[:：]?\s*/, '').trim(); }
+function fbLoadRanges() { /* 일부러 아무것도 받지 않음 */ }
 async function fbCopy(text, doneEl) {
   let ok = false;
   try { await navigator.clipboard.writeText(text); ok = true; }
@@ -6426,7 +6411,9 @@ async function repairRoundDifficulties(roundIds) {
   for (const id of new Set(roundIds)) {
     const round = state.rounds.find(r => r.id === id);
     if (!round || diffRepairTried.has(id) || !round.examPath || isElementaryGrade(round.grade) || roundDifficultyOk(round)) continue;
+    if (round.diffRepairTried === round.examPath) continue;   // 이 시험지 파일은 이미 한 번 읽어 봤음 → 다시 받지 않음
     diffRepairTried.add(id);
+    round.diffRepairTried = round.examPath; changed = true;
     try {
       const buf = await window.KMMS.fetchBuf(round.examPath);
       const info = buf ? await window.RETEST.describePaper(buf.slice(0)) : null;

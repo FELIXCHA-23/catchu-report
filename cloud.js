@@ -877,7 +877,7 @@ body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{disp
       round.examPath = path;
       round.examName = file.name;
       round.examBy = (staff && (staff.name || shownId(staff.email))) || ''; round.examAt = Date.now();   // 누가 언제 올렸는지
-      if (old) delete round.mainInfo;   // 교체한 시험지 기준으로 다시 읽게 함
+      if (old) { delete round.mainInfo; delete round.examRange; delete round.mainInfoTried; delete round.diffRepairTried; }   // 교체한 시험지 기준으로 다시 읽게 함
       if (old) { delete bufCache[old]; sb.storage.from('exams').remove([old]).catch(() => {}); }
       saveState();
       toast('시험지를 서버에 안전하게 올렸어요.');
