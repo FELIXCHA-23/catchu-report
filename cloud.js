@@ -600,6 +600,7 @@
 #kmmsGate .kg-msg{font-size:13px;margin-top:12px;color:#c8102e;white-space:pre-line}
 #kmmsGate .kg-msg.ok{color:#1e7a3c}
 body:not(.kmms-admin) .admin-only{display:none !important}
+body.kmms-assistant #goElemBtn{display:none !important}
 body.kmms-demo .tab-btn[data-tab="data"], body.kmms-demo #panel-data{display:none !important}
 body.kmms-observer #scoreGridWrap,body.kmms-observer #quickWrongInput,body.kmms-observer #teacherNoteInput,body.kmms-observer .attitude-picker,body.kmms-observer #saveScoreBtn,body.kmms-observer #clearScoreBtn,body.kmms-observer #cancelScoreBtn,body.kmms-observer #saveRetestBtn,body.kmms-observer #aiAnalyzeBtn,body.kmms-observer #aiCommentBtn,body.kmms-observer #addTypeRowBtn,body.kmms-observer #stuSubmitBtn,body.kmms-observer #applyClassTeacherBtn,body.kmms-observer #rsParseBtn,body.kmms-observer #entPickBtn,body.kmms-observer #seedBtn,body.kmms-observer #saveApiKeyBtn,body.kmms-observer #tbAddBtn,body.kmms-observer #tbClearBtn,body.kmms-observer #tbParseBtn,body.kmms-observer #exportBtn,body.kmms-observer #exportRoundsBtn{opacity:.45;pointer-events:none}
 body.kmms-observer .tab-btn[data-tab="data"],body.kmms-observer #panel-data{display:none !important}
