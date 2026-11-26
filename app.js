@@ -56,13 +56,17 @@ const CURRENT_TEACHER_KEY = 'catchu_current_teacher';
 function lockedTeacher() { return (window.KMMS && window.KMMS.teacherName) || ''; }
 function getCurrentTeacher() { if (window.KMMS && window.KMMS.demo) return demoTeacherPick; return lockedTeacher() || localStorage.getItem(CURRENT_TEACHER_KEY) || ''; }
 function teacherSelectHtml() {
+  if (isAssistantAccount()) return '<option value="">조교 · 중등·고등 전체</option>';
   const lt = lockedTeacher();
   return lt ? `<option value="${lt}">${lt}</option>`
     : '<option value="">담당 선생님 선택 (전체 보기)</option>' + TEACHER_OPTIONS.map(t => `<option value="${t}">${t}</option>`).join('');
 }
 function refreshTeacherSelects() {
-  const lt = lockedTeacher();
-  if (lt) setCurrentTeacher(lt);
+  const asst = isAssistantAccount();
+  document.body.classList.toggle('kmms-assistant', asst);   // 조교 계정: 초등 버튼 숨김
+  if (asst) setCurrentTeacher('');
+  const lt = asst ? '조교' : lockedTeacher();
+  if (lt && !asst) setCurrentTeacher(lt);
   ['landingTeacherSel', 'currentTeacherSel', 'textbookTeacherSel', 'studentsTeacherSel'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -79,7 +83,14 @@ function setCurrentTeacher(t) {
 }
 // 원장님처럼 모든 학년·모든 학생을 채점/조회해야 하는 선생님 — 이 선생님을 고르면 담당 학생 제한 없이 전체가 다 보임
 const ALL_ACCESS_TEACHERS = ['차성빈'];
-function hasAllAccess() { return ALL_ACCESS_TEACHERS.includes(getCurrentTeacher()); }
+// 조교 계정 — 담당 반 없이 중등·고등 모든 학생을 채점/조회할 수 있음. 초등은 안 보임. (아이디 기준, 소문자)
+const ASSISTANT_ACCOUNTS = ['kastle-6@kastlemath.local'];
+function isAssistantAccount() {
+  if (window.KMMS && window.KMMS.demo) return false;
+  const s = window.KMMS && window.KMMS.staff;
+  return !!(s && s.approved && ASSISTANT_ACCOUNTS.includes(String(s.email || '').toLowerCase()));
+}
+function hasAllAccess() { return isAssistantAccount() || ALL_ACCESS_TEACHERS.includes(getCurrentTeacher()); }
 // 담당 선생님이 선택되어 있으면 그 선생님 학생만 남기고, 선택 안 했거나 전체 권한 선생님이면 그대로 반환
 // 지금 화면이 어떤 범위의 데이터를 보여줘야 하는지: 입학테스트 화면은 'entrance', 학생 관리·대문은 'all'(전부), 나머지(캐치유테스트·교재)는 'regular'(입학테스트 제외)
 function appScope() {
@@ -92,6 +103,7 @@ function appScope() {
 let studentsShowHidden = false;   // 학생 관리 화면에서만 켜지는 "숨긴 학생도 보기"
 function inStudentScope(st) {
   const sc = appScope();
+  if (isAssistantAccount() && isElementaryGrade(st.examGrade || st.grade)) return false;   // 조교 계정은 초등 학생 안 보임
   if (st.hidden && !(sc === 'all' && studentsShowHidden)) return false;
   if (sc === 'all') return true;
   if (sc === 'elem') return !isEntranceStudent(st) && isElementaryGrade(st.examGrade || st.grade);
@@ -101,6 +113,7 @@ function inStudentScope(st) {
 }
 function inRoundScope(r) {
   const sc = appScope();
+  if (isAssistantAccount() && isElementaryGrade(r.grade)) return false;   // 조교 계정은 초등 시험지 안 보임
   if (sc === 'all') return true;
   if (sc === 'elem') return !isEntranceRound(r) && isElementaryGrade(r.grade);
   if (sc === 'entrance') return isEntranceRound(r);
@@ -2727,6 +2740,7 @@ function populateScoreGradeSel() {
     // 그 학년에 아직 등록된 시험지(회차)가 없어도 학년 자체는 미리 열어둠 — 학생이 들어오면 바로 쓸 수 있게
     grades = Array.from(new Set([...grades, ...ELEMENTARY_GRADES]));
   }
+  if (isAssistantAccount()) grades = grades.filter(g => !isElementaryGrade(g));   // 조교 계정은 초등 학년 안 보임
   grades.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   const mineGrades = getCurrentTeacher() && !hasAllAccess() ? grades.filter(g => myStudents.some(s => (s.examGrade || s.grade) === g)) : [];
   const otherGrades = grades.filter(g => !mineGrades.includes(g));
@@ -2986,7 +3000,7 @@ function renderStudentResetPanel() {
   // 그 반 학생이 전부 다 있는지(아직 손도 안 댄 학생이 누군지) 알 수 있게 함
   // 전체 권한 선생님(차성빈)은 여기서만 예외 — 다른 선생님 담당으로 이미 정해진 학생은 안 보이게 하고,
   // 담당이 아직 없는 학생과 본인 담당 학생만 보여줌 (다른 선생님 현황까지 여기 다 뒤섞이지 않게)
-  const studentsForPanel = hasAllAccess()
+  const studentsForPanel = hasAllAccess() && !isAssistantAccount()
     ? state.students.filter(inStudentScope).filter(s => !s.teacher || s.teacher === getCurrentTeacher())
     : filterByCurrentTeacher(state.students);
   // 다른 선생님 반 학생도 채점 드롭다운에는 뜨는데, 내 담당이 아니라는 이유로 여기서만 빠지면 저장했는데 안 보이는 것처럼 됨 —
@@ -5867,6 +5881,7 @@ function currentView() {
   return 'landing';
 }
 function showView(name) {
+  if (name === 'elem' && isAssistantAccount()) name = 'landing';   // 조교 계정은 초등 화면 못 들어감
   document.body.classList.remove('view-landing', 'view-catchu', 'view-textbook', 'view-students', 'view-entrance', 'view-elem');
   document.body.classList.add('view-' + name);
   // 학생 관리 전용 화면은 새로고침하면 열려 있던 곳이 아니라 대문으로 돌아가므로 저장하지 않음
