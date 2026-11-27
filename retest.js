@@ -10,6 +10,7 @@
   const PDFJS_URL = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.min.js`;
   const PDFJS_WORKER = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.worker.min.js`;
   const RENDER_SCALE = 2.78;                 // PDF 1pt = 2.78px (200dpi)
+  const ANS_ZOOM = 3;                        // 빠른정답 칸은 3배 해상도로 잘라서, 크게 키워 붙여도 글씨가 또렷하게
   const PAGE_W = 1654, PAGE_H = 2339;        // A4 @200dpi
   const FOOTER_PT = 56;                      // 쪽 아래 여백(pt) — 쪽 번호가 있는 곳은 문제로 안 침
 
@@ -273,35 +274,53 @@
   }
 
   // PDF 쪽을 한 번만 그려서 재사용하며 영역을 잘라냄
-  function makeCropper(pdf) {
+  // zoom > 1 이면 (빠른정답처럼 작은 글씨를 크게 키워 붙일 때) 쪽 전체 대신 필요한 영역만 더 높은 해상도로 그려서 글씨가 흐려지지 않게 함
+  function makeCropper(pdf, zoom) {
     const cache = {};
+    const Z = zoom && zoom > 1 ? zoom : 1;
     return async (spec) => {
-      if (!cache[spec.page]) {
+      const S = RENDER_SCALE * Z;
+      let src, bx = 0, by = 0;   // src 캔버스의 (0,0)이 쪽 전체 좌표로 (bx, by)
+      if (Z === 1) {
+        if (!cache[spec.page]) {
+          const page = await pdf.getPage(spec.page);
+          const vp = page.getViewport({ scale: RENDER_SCALE });
+          const cv = document.createElement('canvas');
+          cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          cache[spec.page] = cv;
+        }
+        src = cache[spec.page];
+      } else {
         const page = await pdf.getPage(spec.page);
-        const vp = page.getViewport({ scale: RENDER_SCALE });
+        const vp = page.getViewport({ scale: S });
+        bx = Math.max(0, Math.floor(spec.left * S) - 4); by = Math.max(0, Math.floor(spec.top * S) - 4);
         const cv = document.createElement('canvas');
-        cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+        cv.width = Math.max(1, Math.min(Math.ceil(vp.width) - bx, Math.ceil((spec.right - spec.left) * S) + 8));
+        cv.height = Math.max(1, Math.min(Math.ceil(vp.height) - by, Math.ceil((spec.bottom - spec.top) * S) + 8));
         const ctx = cv.getContext('2d');
         ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-        cache[spec.page] = cv;
+        await page.render({ canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, -bx, -by] }).promise;
+        src = cv;
       }
-      const src = cache[spec.page], S = RENDER_SCALE;
+      const fullW = Z === 1 ? src.width : bx + src.width, fullH = Z === 1 ? src.height : by + src.height;
       const x = Math.max(0, Math.floor(spec.left * S)), y = Math.max(0, Math.floor(spec.top * S));
-      const w = Math.min(src.width - x, Math.ceil((spec.right - spec.left) * S)), h = Math.min(src.height - y, Math.ceil((spec.bottom - spec.top) * S));
-      if (!(w > 0 && h > 0)) console.warn('crop 영역이 이상해요', JSON.stringify({ spec: { ...spec, mark: undefined }, x, y, w, h, sw: src.width, sh: src.height }));
+      const w = Math.min(fullW - x, Math.ceil((spec.right - spec.left) * S)), h = Math.min(fullH - y, Math.ceil((spec.bottom - spec.top) * S));
+      if (!(w > 0 && h > 0)) console.warn('crop 영역이 이상해요', JSON.stringify({ spec: { ...spec, mark: undefined }, x, y, w, h, sw: fullW, sh: fullH }));
       const out = document.createElement('canvas');
       out.width = Math.max(1, w); out.height = Math.max(1, h);
       const octx = out.getContext('2d');
       octx.fillStyle = '#fff'; octx.fillRect(0, 0, out.width, out.height);
-      octx.drawImage(src, x, y, w, h, 0, 0, w, h);
+      octx.drawImage(src, x - bx, y - by, w, h, 0, 0, w, h);
       if (spec.mark && spec.label) {
         // 원래 번호표(03 같은 숫자)를 지우고, 같은 자리·같은 색으로 재시험지 번호(1, 2, 3…)를 다시 씀
         const mk = spec.mark;
         const mx = Math.floor(mk.left * S), my = Math.floor(mk.top * S), mw = Math.ceil((mk.right - mk.left) * S), mh = Math.ceil((mk.bottom - mk.top) * S);
         let best = null, bestC = 40;
         try {
-          const d = src.getContext('2d').getImageData(Math.max(0, mx), Math.max(0, my), Math.max(1, mw), Math.max(1, mh)).data;
+          const d = src.getContext('2d').getImageData(Math.max(0, mx - bx), Math.max(0, my - by), Math.max(1, mw), Math.max(1, mh)).data;
           for (let k = 0; k < d.length; k += 4) { const c = Math.max(d[k], d[k + 1], d[k + 2]) - Math.min(d[k], d[k + 1], d[k + 2]); if (c > bestC) { bestC = c; best = [d[k], d[k + 1], d[k + 2]]; } }
         } catch (e) { /* 색을 못 읽으면 검정 */ }
         const ox = mx - x, oy = my - y;
@@ -408,7 +427,7 @@
           if (!Object.keys(aspots).length) aspots = await scanExplanations(paper);   // 빠른정답 표가 없으면 해설 쪽의 "정답"에서 따옴
         }
       } catch (e) { console.warn('빠른정답을 읽지 못했어요', e && (e.stack || e.message || String(e))); aspots = {}; }
-      streams.push({ spots, crop: makeCropper(paper), aspots, acrop: makeCropper(ans) });
+      streams.push({ spots, crop: makeCropper(paper), aspots, acrop: makeCropper(ans, ANS_ZOOM) });
     };
     if (src.mainBuf) await mk(src.mainBuf, null);
     if (src.paperBuf) await mk(src.paperBuf, src.ansBuf);
@@ -491,17 +510,27 @@
     if (hasAns) {
       const { cv, ctx } = newPage();
       drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
-      // 빠른정답은 작게, 왼쪽 위부터 가로로 1번, 2번, 3번… 쭉 채우고 한 줄이 차면 다음 줄에서 이어서 씀
+      // 빠른정답: 왼쪽 위부터 가로로 1번, 2번, 3번… 쭉 채우고 한 줄이 차면 다음 줄에서 이어서 씀
+      // 인쇄했을 때 잘 보이도록, 정답 개수에 맞춰 칸 높이를 한 장 안에서 최대한 크게 잡고 답 글씨도 칸에 맞게 키움
       const N = acs.length, cols = N > 12 ? 4 : 3;
-      const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols, rowH = 100;
-      // 모든 정답을 같은 배율로 붙여서 번호·글자 크기가 칸마다 달라지지 않게 함 (분수처럼 키가 큰 칸에 맞춰 전체가 같이 줄어듦)
-      const sAns = Math.min(1.0, ...acs.map(a => Math.min(cw / a.img.width, (rowH - 30) / a.img.height)));
+      const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols;
+      const rows = Math.ceil(N / cols);
+      const rowH = Math.min(320, (BOT - TOP - 20) / rows);
+      const pad = 14;   // 칸 테두리 안쪽 여백
+      // 칸마다 들어갈 수 있는 최대 배율
+      const fits = acs.map(a => Math.min((cw - 4) / a.img.width, (rowH - 14 - 2 * pad) / a.img.height));
+      // 대부분의 답이 같은 크기로 보이도록 공통 배율을 정함 (분수·그림처럼 큰 칸 하나 때문에 전체가 작아지지 않게,
+      // 공통 배율에 안 들어가는 칸만 그 칸 크기에 맞게 따로 줄임). 원래 크기의 최대 3배까지.
+      const sorted = fits.slice().sort((p, q) => p - q);
+      const sCommon = Math.min(3.0 / ANS_ZOOM, sorted[Math.floor(sorted.length * 0.3)] || 1);
       acs.forEach((a, i) => {
         const c = i % cols, r = Math.floor(i / cols);
         const x = L + c * (cw + gapX), y = TOP + 10 + r * rowH;
-        if (y + rowH > BOT) return;
-        ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
-        ctx.drawImage(a.img, x, y + 2, a.img.width * sAns, a.img.height * sAns);
+        ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
+        const sc = Math.min(sCommon, fits[i]);
+        const h = a.img.height * sc;
+        // 칸 안에서 세로 가운데에 놓음
+        ctx.drawImage(a.img, x + 2, y - 8 + Math.max(pad, (rowH - 14 - h) / 2), a.img.width * sc, h);
       });
       drawFooter(ctx, `빠른 정답 ${opts.studentName || ''} · ${pages.length + 1}/${totalPages}`);
       pages.push(cv);
