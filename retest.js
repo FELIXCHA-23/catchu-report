@@ -136,13 +136,15 @@
     // 머리말의 "30문제" 같은 숫자를 번호표로 오인하지 않도록, 표가 시작하는 "01"보다 위에 있는 것은 버림
     const firstOne = marks.filter(m => m.num === 1).sort((a, b) => b.y - a.y)[0];
     if (firstOne) { for (let i = marks.length - 1; i >= 0; i--) if (marks[i].y < firstOne.y - 8) marks.splice(i, 1); }
-    // 정답 안에 든 두 자리 숫자(예: "x=12")를 번호표로 오인하지 않게, 번호표가 늘어선 세로줄(열)에 있는 숫자만 씀
-    if (marks.length >= 6) {
+    // 정답 안에 든 두 자리 숫자(예: "x=12")를 번호표로 오인하지 않게: 같은 번호가 두 번 나오면
+    // 번호표가 많이 늘어선 세로줄(열)에 있는 쪽만 번호로 씀
+    {
       const colCount = {};
       marks.forEach(m => { const k = Math.round(m.x / 8); colCount[k] = (colCount[k] || 0) + 1; });
-      const nRows = new Set(marks.map(m => Math.round(m.y / 6))).size;
-      const inCol = m => [-1, 0, 1].reduce((s, d) => s + (colCount[Math.round(m.x / 8) + d] || 0), 0) >= Math.min(2, nRows);
-      for (let i = marks.length - 1; i >= 0; i--) if (!inCol(marks[i])) marks.splice(i, 1);
+      const colScore = m => [-1, 0, 1].reduce((s, d) => s + (colCount[Math.round(m.x / 8) + d] || 0), 0);
+      const best = {};
+      marks.forEach(m => { const b = best[m.num]; if (!b || colScore(m) > colScore(b)) best[m.num] = m; });
+      for (let i = marks.length - 1; i >= 0; i--) if (best[marks[i].num] !== marks[i]) marks.splice(i, 1);
     }
     const rows = []; // 같은 줄끼리 묶음
     marks.slice().sort((a, b) => a.y - b.y).forEach(m => {
