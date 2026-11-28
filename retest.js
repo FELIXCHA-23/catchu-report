@@ -141,7 +141,7 @@
       const colCount = {};
       marks.forEach(m => { const k = Math.round(m.x / 8); colCount[k] = (colCount[k] || 0) + 1; });
       const nRows = new Set(marks.map(m => Math.round(m.y / 6))).size;
-      const inCol = m => [-1, 0, 1].reduce((s, d) => s + (colCount[Math.round(m.x / 8) + d] || 0), 0) >= Math.min(3, nRows);
+      const inCol = m => [-1, 0, 1].reduce((s, d) => s + (colCount[Math.round(m.x / 8) + d] || 0), 0) >= Math.min(2, nRows);
       for (let i = marks.length - 1; i >= 0; i--) if (!inCol(marks[i])) marks.splice(i, 1);
     }
     const rows = []; // 같은 줄끼리 묶음
