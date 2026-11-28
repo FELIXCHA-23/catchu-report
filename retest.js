@@ -169,7 +169,7 @@
       }
       r.items.sort((a, b) => a.x - b.x).forEach((m, ci, arr) => {
         if (found[m.num]) return;
-        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 2.5, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : Math.max(m.x + colGap - 6, tableRight),
+        found[m.num] = { page: pageNo, eraseRules: true, top: r.y - up, bottom: r.y + down, left: m.x - 2.5, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : Math.max(m.x + colGap - 6, tableRight),
           mark: { left: m.x - 1, right: m.x + m.w + 1.5, top: m.base - m.size * 0.85, bottom: m.base + m.size * 0.25, base: m.base, size: m.size } };
       });
     });
@@ -261,6 +261,27 @@
     return out;
   }
 
+  // 빠른정답 칸을 넓게 잘라 왔을 때 딸려 들어온 표의 세로줄(칸 높이 거의 전체를 차지하는 가는 줄)을 하얗게 지움
+  function eraseVerticalRules(cv) {
+    const ctx = cv.getContext('2d');
+    const { width: w, height: h } = cv;
+    if (w < 3 || h < 10) return;
+    const img = ctx.getImageData(0, 0, w, h), d = img.data;
+    const maxRun = Math.max(3, Math.round(h * 0.06));   // 줄은 가늚 (글자 획보다 훨씬 김)
+    let x = 0, changed = false;
+    const isRule = x => { let dark = 0; for (let y = 0; y < h; y++) { const i = (y * w + x) * 4; if (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) dark++; } return dark >= h * 0.9; };
+    while (x < w) {
+      if (!isRule(x)) { x++; continue; }
+      let e = x; while (e + 1 < w && isRule(e + 1)) e++;
+      if (e - x + 1 <= maxRun) {
+        for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, e + 1); xx++) for (let y = 0; y < h; y++) { const i = (y * w + xx) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; }
+        changed = true;
+      }
+      x = e + 1;
+    }
+    if (changed) ctx.putImageData(img, 0, 0);
+  }
+
   // 아래쪽의 흰 여백만 줄임 (위·옆은 그대로 둠)
   function trimBottom(cv, pad) {
     const ctx = cv.getContext('2d');
@@ -340,6 +361,7 @@
         octx.textBaseline = 'alphabetic'; octx.textAlign = 'left';
         octx.fillText(spec.label, ox, Math.round(mk.base * S) - y);
       }
+      if (spec.eraseRules) eraseVerticalRules(out);
       if (spec.align) {
         // 문제 칸: 아래 빈 곳만 줄이고, 번호 윗선이 칸 위에서 몇 px 떨어져 있는지 기록 (붙일 때 번호 높이를 똑같이 맞추는 데 씀)
         const o = trimBottom(out, 10);
@@ -583,7 +605,7 @@
         g = geo(pi);
         const room = Math.floor((g.colH + (first ? mt * sc : 0)) / sc);
         let ey = img.height;
-        if (sy + room < img.height) ey = sy + findBreakRow(img, sy + Math.floor(room * 0.55), sy + room);
+        if (sy + room < img.height) ey = findBreakRow(img, sy + Math.floor(room * 0.55), sy + room);
         placed.push({ pi, col, row: 0, img, sy, sh: ey - sy, sc, mt: first ? mt : 0, first });
         first = false;
         sy = ey;
@@ -636,7 +658,8 @@
           let img = a.img;
           let k = 1;
           while (k < cols && img.width * s > spanW(k) - 4) k++;
-          if (img.width * s > spanW(k) - 4) img = wrapImage(a.img, (spanW(cols) - 4) / s);
+          // 한 줄 전체를 써도 안 들어가면: 조금만 줄이면 되는 답은 줄여서 한 줄로, 아주 긴 답만 줄을 바꿈
+          if (img.width * s > spanW(k) - 4 && (spanW(k) - 4) / img.width < s * 0.7) img = wrapImage(a.img, (spanW(cols) - 4) / (s * 0.85));
           if (c + k > cols) { r++; c = 0; }
           const it = { a, img, k, r, c };
           c += k;
