@@ -136,6 +136,16 @@
     // 머리말의 "30문제" 같은 숫자를 번호표로 오인하지 않도록, 표가 시작하는 "01"보다 위에 있는 것은 버림
     const firstOne = marks.filter(m => m.num === 1).sort((a, b) => b.y - a.y)[0];
     if (firstOne) { for (let i = marks.length - 1; i >= 0; i--) if (marks[i].y < firstOne.y - 8) marks.splice(i, 1); }
+    // 정답 안에 든 두 자리 숫자(예: "x=12")를 번호표로 오인하지 않게: 같은 번호가 두 번 나오면
+    // 번호표가 많이 늘어선 세로줄(열)에 있는 쪽만 번호로 씀
+    {
+      const colCount = {};
+      marks.forEach(m => { const k = Math.round(m.x / 8); colCount[k] = (colCount[k] || 0) + 1; });
+      const colScore = m => [-1, 0, 1].reduce((s, d) => s + (colCount[Math.round(m.x / 8) + d] || 0), 0);
+      const best = {};
+      marks.forEach(m => { const b = best[m.num]; if (!b || colScore(m) > colScore(b)) best[m.num] = m; });
+      for (let i = marks.length - 1; i >= 0; i--) if (best[marks[i].num] !== marks[i]) marks.splice(i, 1);
+    }
     const rows = []; // 같은 줄끼리 묶음
     marks.slice().sort((a, b) => a.y - b.y).forEach(m => {
       const r = rows.find(r => Math.abs(r.y - m.y) < 6);
@@ -144,6 +154,8 @@
     rows.sort((a, b) => a.y - b.y);
     const colXs = Array.from(new Set(marks.map(m => Math.round(m.x / 8) * 8))).sort((a, b) => a - b);
     const colGap = colXs.length > 1 ? (colXs[colXs.length - 1] - colXs[0]) / (colXs.length - 1) : 80;
+    // 표의 오른쪽 끝: 답이 길면 원본 표에서 칸 여러 개를 합쳐 한 줄에 쓰므로, 줄의 마지막 번호는 표 끝까지 잘라 와야 답이 안 잘림
+    const tableRight = Math.max(...marks.map(m => m.x)) + colGap - 6;
     // 분수(1/10, 75/4)처럼 키가 큰 정답은 칸(줄)이 더 높고 글자 위치만으로는 높이를 알 수 없어서,
     // 표의 가로줄을 직접 찾아 "줄과 줄 사이"를 한 칸으로 씀. 못 찾으면 예전처럼 이웃 줄과의 거리로 짐작함
     let rules = [];
@@ -159,7 +171,7 @@
       }
       r.items.sort((a, b) => a.x - b.x).forEach((m, ci, arr) => {
         if (found[m.num]) return;
-        found[m.num] = { page: pageNo, top: r.y - up, bottom: r.y + down, left: m.x - 2.5, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : m.x + colGap - 6,
+        found[m.num] = { page: pageNo, eraseRules: true, top: r.y - up, bottom: r.y + down, left: m.x - 2.5, right: ci + 1 < arr.length ? arr[ci + 1].x - 6 : Math.max(m.x + colGap - 6, tableRight),
           mark: { left: m.x - 1, right: m.x + m.w + 1.5, top: m.base - m.size * 0.85, bottom: m.base + m.size * 0.25, base: m.base, size: m.size } };
       });
     });
@@ -251,6 +263,27 @@
     return out;
   }
 
+  // 빠른정답 칸을 넓게 잘라 왔을 때 딸려 들어온 표의 세로줄(칸 높이 거의 전체를 차지하는 가는 줄)을 하얗게 지움
+  function eraseVerticalRules(cv) {
+    const ctx = cv.getContext('2d');
+    const { width: w, height: h } = cv;
+    if (w < 3 || h < 10) return;
+    const img = ctx.getImageData(0, 0, w, h), d = img.data;
+    const maxRun = Math.max(3, Math.round(h * 0.06));   // 줄은 가늚 (글자 획보다 훨씬 김)
+    let x = 0, changed = false;
+    const isRule = x => { let dark = 0; for (let y = 0; y < h; y++) { const i = (y * w + x) * 4; if (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) dark++; } return dark >= h * 0.9; };
+    while (x < w) {
+      if (!isRule(x)) { x++; continue; }
+      let e = x; while (e + 1 < w && isRule(e + 1)) e++;
+      if (e - x + 1 <= maxRun) {
+        for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, e + 1); xx++) for (let y = 0; y < h; y++) { const i = (y * w + xx) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; }
+        changed = true;
+      }
+      x = e + 1;
+    }
+    if (changed) ctx.putImageData(img, 0, 0);
+  }
+
   // 아래쪽의 흰 여백만 줄임 (위·옆은 그대로 둠)
   function trimBottom(cv, pad) {
     const ctx = cv.getContext('2d');
@@ -330,6 +363,7 @@
         octx.textBaseline = 'alphabetic'; octx.textAlign = 'left';
         octx.fillText(spec.label, ox, Math.round(mk.base * S) - y);
       }
+      if (spec.eraseRules) eraseVerticalRules(out);
       if (spec.align) {
         // 문제 칸: 아래 빈 곳만 줄이고, 번호 윗선이 칸 위에서 몇 px 떨어져 있는지 기록 (붙일 때 번호 높이를 똑같이 맞추는 데 씀)
         const o = trimBottom(out, 10);
@@ -338,6 +372,61 @@
       }
       return trim(out, 6);
     };
+  }
+
+  // 긴 문제를 나눌 자리: [from, to) 사이에서 가로줄 전체가 하얀 줄(글줄 사이 빈 곳)을 아래쪽부터 찾음. 없으면 to에서 자름
+  function findBreakRow(cv, from, to) {
+    const w = cv.width;
+    from = Math.max(0, Math.floor(from)); to = Math.min(cv.height, Math.floor(to));
+    if (to - from < 4) return to;
+    const d = cv.getContext('2d').getImageData(0, from, w, to - from).data;
+    let run = 0;
+    for (let y = to - from - 1; y >= 0; y--) {
+      let white = true;
+      for (let x = 0; x < w; x += 2) { const i = (y * w + x) * 4; if (d[i] < 225 || d[i + 1] < 225 || d[i + 2] < 225) { white = false; break; } }
+      if (white) { run++; if (run >= 6) return from + y + run - 1 - Math.floor(run / 2); } else run = 0;   // 빈 줄이 몇 px 이어지는 곳의 가운데
+    }
+    return to;
+  }
+
+  // 가로로 너무 긴 답 그림을 띄어쓰기(세로로 하얀 틈) 자리에서 여러 줄로 나눠 세로로 쌓음 (줄마다 maxW 이하)
+  function wrapImage(cv, maxW) {
+    maxW = Math.floor(maxW);
+    if (cv.width <= maxW || maxW < 20) return cv;
+    const { width: w, height: h } = cv;
+    const d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    const white = new Uint8Array(w);
+    for (let x = 0; x < w; x++) {
+      let ok = 1;
+      for (let y = 0; y < h; y++) { const i = (y * w + x) * 4; if (d[i] < 225 || d[i + 1] < 225 || d[i + 2] < 225) { ok = 0; break; } }
+      white[x] = ok;
+    }
+    const minGap = Math.max(3, Math.round(h * 0.12));   // 글자 사이 틈보다 넓은 틈(띄어쓰기·쉼표 뒤)
+    const pieces = [];
+    let start = 0;
+    while (w - start > maxW) {
+      let cut = -1, fallback = -1;
+      for (let x = start + maxW; x > start + maxW * 0.4; x--) {
+        if (!white[x]) continue;
+        let a = x; while (a > start && white[a - 1]) a--;
+        if (fallback < 0) fallback = x;
+        if (x - a + 1 >= minGap) { cut = x; break; }
+        x = a;
+      }
+      if (cut < 0) cut = fallback > 0 ? fallback : start + maxW;
+      pieces.push([start, cut]);
+      start = cut;
+      while (start < w - 1 && white[start]) start++;   // 다음 줄 앞의 빈 곳은 뺌
+    }
+    pieces.push([start, w]);
+    const lineGap = Math.round(h * 0.15);
+    const out = document.createElement('canvas');
+    out.width = Math.max(...pieces.map(([a, b]) => b - a));
+    out.height = pieces.length * h + (pieces.length - 1) * lineGap;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, out.height);
+    pieces.forEach(([a, b], i) => ctx.drawImage(cv, a, 0, b - a, h, 0, i * (h + lineGap), b - a, h));
+    return out;
   }
 
   function fitImage(ctx, img, x, y, maxW, maxH, maxScale) {
@@ -476,35 +565,75 @@
     if (!crops.length) throw new Error('재시험지에서 해당 번호의 문제를 찾지 못했어요. 재시험지 PDF가 맞는지 확인해주세요.');
     const answersFound = acs.map(a => a.n);
 
-    // 문제 쪽: 한 쪽에 4문제, 왼쪽 열 위→아래, 오른쪽 열 위→아래 순서 (시험지와 같은 배치)
+    // 문제 쪽: 한 쪽에 4칸(왼쪽 열 위·아래, 오른쪽 열 위·아래) — 시험지와 같은 배치, 순서대로 채움
     // 첫 쪽에만 머릿말(로고·제목·이름·날짜)을 두고, 2쪽부터는 머릿말을 빼고 그만큼 위로 당겨서 문제를 배치함
-    const pages = [];
+    // 긴 문제는 글씨를 줄이지 않고 칸을 더 씀: 한 칸에 안 들어가면 열 하나(위아래 두 칸)를 통째로 쓰고,
+    // 열 하나에도 안 들어가면 문장 사이 빈 줄에서 나눠 다음 열(다음 쪽)로 이어서 붙임
     const L = 90, R = PAGE_W - 90, TOP = 420, TOP_NEXT = 150, BOT = PAGE_H - 110, GAP = 34;
     const colW = (R - L - 2 * GAP) / 2;
-    const totalProblemPages = Math.ceil(crops.length / 4);
     const hasAns = acs.length > 0;
-    const blankPages = 0;   // 정답은 문제 쪽 바로 뒤에 붙임
-    const totalPages = totalProblemPages + blankPages + (hasAns ? 1 : 0);
     const metaTitle = opts.title || '';
-    // 모든 문제를 같은 배율로 붙여서 글자·번호 크기가 문제마다 달라지지 않게 함 (칸보다 긴 문제만 그 칸에 맞게 줄임)
+    const geo = pi => { const top = pi === 0 ? TOP : TOP_NEXT; return { top, cellH: (BOT - top - GAP) / 2, colH: BOT - top }; };
+    // 모든 문제를 같은 배율로 붙여서 글자·번호 크기가 문제마다 달라지지 않게 함
     const baseScale = Math.min(1.6, ...crops.map(c => colW / c.img.width));
-    for (let pi = 0; pi < totalProblemPages; pi++) {
+    const placed = [];   // { pi, col, row, img, sy, sh, sc, first }
+    let pi = 0, col = 0, row = 0;
+    const nextCol = () => { row = 0; col++; if (col > 1) { col = 0; pi++; } };
+    crops.forEach(c => {
+      const img = c.img, mt = img.markTopPx || 0;
+      if (row > 1) nextCol();
+      let g = geo(pi);
+      const needH = (img.height - mt) * baseScale;
+      if (needH <= g.cellH * 1.12) {
+        // 한 칸 (살짝 넘치는 것만 그 칸에 맞게 조금 줄임)
+        const sc = Math.min(baseScale, (g.cellH + mt * baseScale) / img.height);
+        placed.push({ pi, col, row, img, sy: 0, sh: img.height, sc, mt, first: true });
+        row++;
+        return;
+      }
+      // 두 칸 이상: 새 열의 맨 위에서 시작
+      if (row !== 0) nextCol();
+      g = geo(pi);
+      if (needH <= g.colH * 1.08) {
+        const sc = Math.min(baseScale, (g.colH + mt * baseScale) / img.height);
+        placed.push({ pi, col, row: 0, img, sy: 0, sh: img.height, sc, mt, first: true });
+        row = 2;
+        return;
+      }
+      // 열 하나보다 긴 문제: 빈 줄에서 나눠 여러 열에 이어 붙임
+      const sc = baseScale;
+      let sy = 0, first = true;
+      while (sy < img.height - 2) {
+        g = geo(pi);
+        const room = Math.floor((g.colH + (first ? mt * sc : 0)) / sc);
+        let ey = img.height;
+        if (sy + room < img.height) ey = findBreakRow(img, sy + Math.floor(room * 0.55), sy + room);
+        placed.push({ pi, col, row: 0, img, sy, sh: ey - sy, sc, mt: first ? mt : 0, first });
+        first = false;
+        sy = ey;
+        row = 2;
+        if (sy < img.height - 2) nextCol();
+      }
+    });
+    const totalProblemPages = placed.length ? placed[placed.length - 1].pi + 1 : 1;
+    const totalPages = totalProblemPages + (hasAns ? 1 : 0);
+    const pages = [];
+    for (let p = 0; p < totalProblemPages; p++) {
       const { cv, ctx } = newPage();
-      const top = pi === 0 ? TOP : TOP_NEXT;
-      const cellH = (BOT - top - GAP) / 2;
-      if (pi === 0) drawHeader(ctx, { kind: '캐치유 재시험', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
+      const { top, cellH } = geo(p);
+      if (p === 0) drawHeader(ctx, { kind: '캐치유 재시험', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
       ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(PAGE_W / 2, top - 10); ctx.lineTo(PAGE_W / 2, BOT); ctx.stroke();
-      crops.slice(pi * 4, pi * 4 + 4).forEach((c, k) => {
-        const col = k < 2 ? 0 : 1, row = k % 2;
-        const x = col === 0 ? L : PAGE_W / 2 + GAP / 2;
-        const sc = Math.min(baseScale, (cellH + (c.img.markTopPx || 0) * baseScale) / c.img.height);
-        const y = top + row * (cellH + GAP) - (c.img.markTopPx || 0) * sc;   // 번호 윗선이 칸 맨 위에 오도록
-        ctx.drawImage(c.img, x, y, c.img.width * sc, c.img.height * sc);
+      placed.filter(o => o.pi === p).forEach(o => {
+        const x = o.col === 0 ? L : PAGE_W / 2 + GAP / 2;
+        const y = top + o.row * (cellH + GAP) - o.mt * o.sc;   // 번호 윗선이 칸 맨 위에 오도록
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x - 4, top - 6, colW + 8, BOT - top + 6); ctx.clip();   // 옆 열·아래 여백으로 넘치지 않게
+        ctx.drawImage(o.img, 0, o.sy, o.img.width, o.sh, x, y, o.img.width * o.sc, o.sh * o.sc);
+        ctx.restore();
       });
-      drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${pi + 1}/${totalPages}`);
+      drawFooter(ctx, `재시험 ${opts.studentName || ''} · ${p + 1}/${totalPages}`);
       pages.push(cv);
     }
-    if (blankPages) pages.push(newPage().cv);   // 양면 인쇄용 빈 쪽 (아무것도 그리지 않음)
 
     // 빠른정답 쪽: 같은 번호의 정답 칸만 모아 붙임 (정답은 따로 한 장으로 나가므로 머릿말을 둠)
     if (hasAns) {
@@ -512,25 +641,50 @@
       drawHeader(ctx, { kind: '캐치유 재시험 · 빠른 정답', title: metaTitle, studentName: opts.studentName, dateText: opts.dateText, logo });
       // 빠른정답: 왼쪽 위부터 가로로 1번, 2번, 3번… 쭉 채우고 한 줄이 차면 다음 줄에서 이어서 씀
       // 인쇄했을 때 잘 보이도록, 정답 개수에 맞춰 칸 높이를 한 장 안에서 최대한 크게 잡고 답 글씨도 칸에 맞게 키움
+      // 가로로 긴 답은 글씨를 줄이지 않고 옆 칸까지 이어서 넓게 쓰고, 한 줄을 다 써도 안 들어가면 띄어쓰기 자리에서 줄을 바꿈
       const N = acs.length, cols = N > 12 ? 4 : 3;
       const gapX = 26, cw = (R - L - (cols - 1) * gapX) / cols;
-      const rows = Math.ceil(N / cols);
-      const rowH = Math.min(320, (BOT - TOP - 20) / rows);
+      const spanW = k => k * cw + (k - 1) * gapX;
       const pad = 14;   // 칸 테두리 안쪽 여백
-      // 칸마다 들어갈 수 있는 최대 배율
-      const fits = acs.map(a => Math.min((cw - 4) / a.img.width, (rowH - 14 - 2 * pad) / a.img.height));
-      // 대부분의 답이 같은 크기로 보이도록 공통 배율을 정함 (분수·그림처럼 큰 칸 하나 때문에 전체가 작아지지 않게,
-      // 공통 배율에 안 들어가는 칸만 그 칸 크기에 맞게 따로 줄임). 원래 크기의 최대 3배까지.
-      const sorted = fits.slice().sort((p, q) => p - q);
-      const sCommon = Math.min(3.0 / ANS_ZOOM, sorted[Math.floor(sorted.length * 0.3)] || 1);
-      acs.forEach((a, i) => {
-        const c = i % cols, r = Math.floor(i / cols);
-        const x = L + c * (cw + gapX), y = TOP + 10 + r * rowH;
-        ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, cw + 16, rowH - 14);
-        const sc = Math.min(sCommon, fits[i]);
-        const h = a.img.height * sc;
+      const availH = BOT - TOP - 20;
+      const innerH = rh => rh - 14 - 2 * pad;
+      // 대부분의 답이 같은 크기로 보이도록 공통 배율을 정함 (분수·그림처럼 큰 칸 하나 때문에 전체가 작아지지 않게). 원래 크기의 최대 3배까지.
+      const commonScale = rh => {
+        const fits = acs.map(a => Math.min((cw - 4) / a.img.width, innerH(rh) / a.img.height)).sort((p, q) => p - q);
+        return Math.min(3.0 / ANS_ZOOM, fits[Math.floor(fits.length * 0.3)] || 1);
+      };
+      // 배율 s에서 각 답이 차지할 칸 수(가로)와 그림(긴 답은 줄을 바꾼 그림)을 정하고, 몇 줄이 되는지 셈
+      const plan = s => {
+        let r = 0, c = 0;
+        const items = acs.map(a => {
+          let img = a.img;
+          let k = 1;
+          while (k < cols && img.width * s > spanW(k) - 4) k++;
+          // 한 줄 전체를 써도 안 들어가면: 조금만 줄이면 되는 답은 줄여서 한 줄로, 아주 긴 답만 줄을 바꿈
+          if (img.width * s > spanW(k) - 4 && (spanW(k) - 4) / img.width < s * 0.7) img = wrapImage(a.img, (spanW(cols) - 4) / (s * 0.85));
+          if (c + k > cols) { r++; c = 0; }
+          const it = { a, img, k, r, c };
+          c += k;
+          if (c >= cols) { r++; c = 0; }
+          return it;
+        });
+        return { items, rows: r + (c > 0 ? 1 : 0) };
+      };
+      let rowH = Math.min(320, availH / Math.ceil(N / cols));
+      let s = commonScale(rowH);
+      let lay = plan(s);
+      for (let t = 0; t < 2; t++) {
+        const rh = Math.min(320, availH / Math.max(1, lay.rows));
+        if (Math.abs(rh - rowH) < 1) break;
+        rowH = rh; s = commonScale(rowH); lay = plan(s);
+      }
+      lay.items.forEach(it => {
+        const x = L + it.c * (cw + gapX), y = TOP + 10 + it.r * rowH, w = spanW(it.k);
+        ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2; ctx.strokeRect(x - 8, y - 8, w + 16, rowH - 14);
+        const sc = Math.min(s, (w - 4) / it.img.width, innerH(rowH) / it.img.height);
+        const h = it.img.height * sc;
         // 칸 안에서 세로 가운데에 놓음
-        ctx.drawImage(a.img, x + 2, y - 8 + Math.max(pad, (rowH - 14 - h) / 2), a.img.width * sc, h);
+        ctx.drawImage(it.img, x + 2, y - 8 + Math.max(pad, (rowH - 14 - h) / 2), it.img.width * sc, h);
       });
       drawFooter(ctx, `빠른 정답 ${opts.studentName || ''} · ${pages.length + 1}/${totalPages}`);
       pages.push(cv);
